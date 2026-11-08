@@ -29,6 +29,20 @@ Last updated: 2026-11-08.
 
 ## 2. Goals and scope
 
+**The aim:** a Jarvis for your own PC. You tell Red to do something and it does it, locally and safely.
+
+| You say | What Red does | Where it is in the plan |
+|---|---|---|
+| "Shut down" | Shuts down, after a yes | v0.1, Track A (`shutdown`) |
+| "Open YouTube" | Opens it in the browser | v0.1, Track A (`open_url`) |
+| "Open PowerPoint" | Starts the app | v0.1, Track A (`open_app`). Add Word, Excel and PowerPoint to the built-in apps when they're installed |
+| "Find my resume" / "where is file X" | Finds the file or folder and offers to open it | **New, v0.2:** `find_file`. Read-only search of known folders and allowlisted folders (or the Windows Search index), never the whole disk unasked |
+| "Search the web for X" | Opens a web search in the browser | **New, v0.2:** `web_search`, building a search URL. Reading results aloud and summarising them comes later |
+| "Compose a mail to X about Y" | Opens a new draft with the recipient, subject and body filled in | **New, v0.2:** `compose_mail` through a `mailto:` link (works with any mail app, no account access). Sending through Gmail stays with the Gmail work, and always asks first |
+| Anything else | Says it can't do that yet | New abilities arrive as tools (section 4), and the plugin system (v0.4) makes adding them easy |
+
+The safety model doesn't change as Red grows: every ability is a tool with a fixed schema, nothing the model says is run as a command, and destructive actions ask first.
+
 **MVP (v0.1):**
 - Wake word "Hey Red" plus a global shortcut to activate
 - Floating overlay window that shows Red's status and reply
@@ -534,7 +548,7 @@ Before doing anything else, read D:\RED\red\progress.md (all of it, especially s
 
 ## 12. Future plans
 
-- **v0.2:** Gmail read and mark-as-read through the Gmail API, with confirmation for each batch.
+- **v0.2:** `find_file`, `web_search` and `compose_mail` (see the table in section 2), plus Gmail read and mark-as-read through the Gmail API, with confirmation for each batch.
 - **v0.3:** Multi-step automations, such as "open my project, check the repo sync, and tell me what's unpushed", with a short plan shown before running.
 - **v0.4:** A plugin system so others can add tools without editing core code, with tool discovery from a `tools/` folder.
 - **v0.5:** Calendar, reminders and timers.
