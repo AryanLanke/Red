@@ -5,6 +5,7 @@
     python -m red --dry-run                type commands, only show the tool calls
     python -m red setup                    download the LLM backend, the model and the voice models
     python -m red doctor                   check that everything Red needs is in place
+    python -m red startup on|off           start Red when you sign in, or stop doing that
     python -m red route "open Downloads"   show the tool call for one command (never runs it)
     python -m red run "open Downloads"     run one typed command
 
@@ -16,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import shutil
 import sys
 import threading
@@ -451,6 +453,8 @@ def _check_allowlist(settings: Settings) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="red")
+    parser.add_argument("--home", metavar="FOLDER",
+                        help="use this RED_HOME for this run (the sign-in shortcut uses it)")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--typed", action="store_true", help="type commands instead of speaking")
     mode.add_argument("--dry-run", action="store_true",
@@ -458,11 +462,15 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd")
     sub.add_parser("setup", help="download the LLM backend, the model and the voice models")
     sub.add_parser("doctor", help="check that everything Red needs is in place")
+    p_startup = sub.add_parser("startup", help="start Red when you sign in: on, off, or show")
+    p_startup.add_argument("action", nargs="?", choices=("on", "off"))
     p_route = sub.add_parser("route", help="show the tool call for one command")
     p_route.add_argument("text", nargs="+")
     p_run = sub.add_parser("run", help="run one typed command")
     p_run.add_argument("text", nargs="+")
     args = parser.parse_args(argv)
+    if args.home:
+        os.environ["RED_HOME"] = args.home   # this process only
 
     if args.cmd == "doctor":
         from .doctor import main as doctor_main
@@ -470,6 +478,9 @@ def main(argv: list[str] | None = None) -> int:
 
     settings = load_settings()
     settings.ensure_dirs()
+    if args.cmd == "startup":
+        from .startup import main as startup_main
+        return startup_main(args.action, settings.home)
     logging.basicConfig(filename=settings.logs_dir / "red.log", level=logging.INFO,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
     if args.cmd == "setup":
