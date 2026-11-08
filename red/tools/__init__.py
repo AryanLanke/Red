@@ -7,6 +7,7 @@ from .mail import ComposeMail
 from .music import PlayMusic, StopMusic
 from .quick import (EmptyRecycleBin, LockPC, NextMedia, OpenSettings, PauseMedia, PreviousTrack,
                     ResumeMedia, SleepPC, TakeScreenshot, TellStatus, Volume)
+from .reminders import CancelReminder, ListReminders, SetReminder, SetTimer
 from .system import CancelShutdown, OpenApp, OpenFolder, Restart, Shutdown
 from .web import OpenUrl, WebSearch
 
@@ -20,6 +21,7 @@ def default_registry() -> ToolRegistry:
         Shutdown(), Restart(), CancelShutdown(), SleepPC(), LockPC(),
         PlayMusic(), StopMusic(), PauseMedia(), ResumeMedia(), NextMedia(), PreviousTrack(),
         Volume(), OpenSettings(), TellStatus(), TakeScreenshot(), EmptyRecycleBin(),
+        SetTimer(), SetReminder(), ListReminders(), CancelReminder(),
         CheckRepos(),
     ])
 
