@@ -418,21 +418,82 @@ Manual checks for the user:
 
 Spec: 7.2. Done when `python -m red.voice_demo` works: press the hotkey or say the wake word, speak, see the transcript, and hear it read back; spoken yes/no works; unit tests pass without a microphone.
 
-- [ ] `requirements-voice.txt`, pinned and verified on Windows with Python 3.11
-- [ ] `audio.py`: recording that stops on silence
-- [ ] `stt.py`: Whisper loaded on first use, GPU with CPU int8 fallback, models under `RED_HOME\models\whisper`
-- [ ] `tts.py`: Piper with a pinned, checksum-verified voice under `RED_HOME\models\piper`
-- [ ] `listener.py`: global hotkey and pre-trained wake word, with pause and resume
-- [ ] `voice_confirm.py`: `spoken_ask`
-- [ ] `voice_demo.py`
-- [ ] Unit tests with fake audio, fake models and a fake keyboard
-- [ ] Section updated, committed on `track-b-voice`
+- [x] `requirements-voice.txt`, pinned and verified on Windows with Python 3.11
+- [x] `audio.py`: recording that stops on silence
+- [x] `stt.py`: Whisper loaded on first use, GPU with CPU int8 fallback, models under `RED_HOME\models\whisper`
+- [x] `tts.py`: Piper with a pinned, checksum-verified voice under `RED_HOME\models\piper`
+- [x] `listener.py`: global hotkey and pre-trained wake word, with pause and resume
+- [x] `voice_confirm.py`: `spoken_ask`
+- [x] `voice_demo.py`
+- [x] Unit tests with fake audio, fake models and a fake keyboard
+- [x] Section updated, committed on `track-b-voice`
+
+**Result (2026-11-08):** 88 new unit tests pass with no microphone, speakers, keyboard hook or real model (126 passed in total, with the real-model tests skipped). The new real-model file `tests/test_voice_models.py` (`RED_INTEGRATION=1`) also passes, 7 tests in about 20 s. It feeds Piper's speech into Whisper on the CPU (int8) and into the wake word detector: every phrase comes back word for word, and "Hey Jarvis" fires while a normal command doesn't. A short command takes about 2 s to transcribe on the CPU. The real hotkey hook starts and stops, and the real microphone opens on MME and WASAPI. Everything that needs your voice or ears is under "Manual checks".
 
 Decisions:
+- **Wake word: `hey_jarvis`**, openWakeWord v0.5.1's ONNX model. It's the most reliable of the pre-trained phrases, and it passed the real-model test. `hey_mycroft`, `hey_rhasspy` and `alexa` are pinned too. A path to a custom `.onnx` file also works, ready for a future "Hey Red" model. Following section 10, the hotkey always works.
+- **Piper voice: `en_US-lessac-medium`**, from `rhasspy/piper-voices` at commit `e7229f7`. It's a clear US English voice at medium quality, 63 MB. A voice that isn't pinned can be used by putting its `.onnx` and `.onnx.json` files in `models\piper`.
+- **Whisper `small`**, from `Systran/faster-whisper-small` at commit `536b066`. Each file is pinned and fetched with `red.downloads.download` into `models\whisper\small`. Red doesn't use the huggingface_hub cache, so every file is checksum-verified like the LLM. Settings: language `en`, beam size 5, faster-whisper's built-in Silero VAD filter on, no conditioning on previous text.
+- **GPU check at load:** CUDA libraries load lazily, so `load()` runs a 1-second warm-up on the GPU. A missing cuBLAS or running out of VRAM then falls back to the CPU at startup, not during your first command. An error during a later transcription also falls back and retries once. After a fallback, Whisper stays on the CPU for the rest of the session.
+- **Audio library: `sounddevice`**, for both recording and playback. It bundles PortAudio, so nothing extra needs installing. It asks the device for 16 kHz mono, and if the device refuses (WASAPI does), it records at the device's own rate and resamples.
+- **Silence detection: energy-based, with no extra dependency.** The noise floor is measured over the first 0.25 s, ignoring the exact-zero blocks a microphone sends while it starts up, and capped at 0.02. Speech means 3× the noise floor and at least 0.008 RMS, sustained for 90 ms, so a click doesn't count. 0.3 s of audio before the speech starts is kept. If nobody speaks, `record_command` returns an empty array and nothing is sent to Whisper, because Whisper tends to invent words for silence.
+- **Threading:** `on_trigger` runs on the listener's own worker thread, one trigger at a time. A trigger that arrives while one is being handled is dropped, so a double press doesn't start two recordings. While a trigger is being handled, the wake word is paused automatically and its microphone stream is closed. `pause()` and `resume()` nest, and the hotkey keeps working while the wake word is paused.
+- **Spoken question:** a trailing `[y/N]` or `(y/n)` is removed and "Say yes to confirm." is added. You get `timeout` seconds to start answering, then up to 4 s to finish. Silence or an empty transcript returns `None`. The transcript is returned as heard, so `confirm.is_yes` makes the yes/no decision.
+- **A short beep** (`audio.chime()`) plays before recording so you know when to speak. It finishes before the microphone opens, so it's never recorded.
+- **What `requirements-voice.txt` pins:** the direct dependencies plus the compiled dependencies under them (ctranslate2, av, tokenizers, onnxruntime, scipy, scikit-learn). It doesn't include NVIDIA GPU libraries (see the integration notes). Checked in a fresh venv with `--only-binary=:all:` and `pip check`.
 
 Integration notes:
+- **Install the voice requirements into the shared venv.** The new tests import numpy and the voice packages, so the integration step needs `pip install -r requirements-voice.txt` in `D:\RED\.venv`, plus `-r requirements-voice.txt` in `requirements.txt`. Otherwise the voice tests fail to import there.
+- **New settings for `Settings` and `.env.example`.** All are read by `VoiceConfig.from_env()` in `red/voice_demo.py`, except `RED_MIC_DEVICE`, which `audio.default_input_device()` reads:
+  - `RED_HOTKEY`: default `Ctrl+Alt+R`. Accepts `Ctrl+Alt+R` or pynput's `<ctrl>+<alt>+r`; `off` disables it.
+  - `RED_WAKEWORD`: default `hey_jarvis`. Also `hey_mycroft`, `hey_rhasspy`, `alexa`, a path to an `.onnx` model, or `off`.
+  - `RED_WAKEWORD_THRESHOLD`: default `0.5`.
+  - `RED_WHISPER_MODEL`: default `small`, the only pinned model.
+  - `RED_WHISPER_DEVICE`: `auto`, `cuda` or `cpu`; default `auto`.
+  - `RED_PIPER_VOICE`: default `en_US-lessac-medium`.
+  - `RED_MIC_DEVICE`: an input device index or part of its name. Empty means the Windows default.
+- **`python -m red setup`** should also fetch the voice models, about 550 MB: `Transcriber.download()`, `Speaker.download()` and `listener.download_wakeword(models\wakeword, wakeword)`. `python -m red.voice_demo --setup` does the same today. On this machine they're already downloaded and verified under `D:\RED\models\{whisper,piper,wakeword}`.
+- **Differences from the 8.5 contracts.** Everything is additive; the contracted names and positional signatures are unchanged.
+  - `record_command(...)` takes extra keyword-only arguments `start_timeout`, `mic` (any context manager with `read()`) and `stop_event`. It returns an empty array when nothing was said.
+  - `Transcriber(...)` takes extra keyword arguments `language`, `beam_size`, `model_factory` and `cuda_check`, and adds `download()`, `load()`, `.device` and `.compute_type`. Call `load()` at startup so the first command isn't slow.
+  - `Speaker(...)` takes extra keyword arguments `voice_loader` and `player`, and adds `download()`, `load()`, `synthesize()` and `.speaking`.
+  - `Listener(...)`: `hotkey` may be `None`. It takes extra keyword arguments `model_dir` (default `RED_HOME\models\wakeword`), `threshold`, `hotkey_factory`, `mic_factory` and `detector_factory`, and adds `paused_while()`, a context manager. `start()` raises if the wake word model can't load.
+  - `spoken_ask(speaker, transcriber, *, record=..., listener=None)`.
+- **Swap the stand-in yes check.** Replace `voice_demo._is_yes` with `confirm.is_yes`. In the `Executor`, use `spoken_ask(speaker, transcriber)`. When it runs inside the trigger handler, the wake word is already paused.
+- **Overlay states in the trigger handler:** `listening` before `chime()` and `record_command()`, `thinking` around transcribe and route, `confirm` around `spoken_ask`, and `speaking` around `Speaker.say`. Anything Red says outside a trigger handler, such as a future reminder, should go inside `with listener.paused_while():`.
+- **`PinnedFiles`** (a pinned URL prefix plus files with SHA-256s) lives in `red/audio.py` because Track B couldn't add a module. It could move into `red/downloads.py`.
+- **GPU Whisper on this machine:** `cublas64_12.dll` isn't on PATH; the only copy is in Ollama's `lib\ollama\cuda_v12` folder. So `auto` currently falls back to the CPU at load, with a warning. ctranslate2 already bundles cuDNN 9. To enable the GPU, install `nvidia-cublas-cu12`; `stt.add_nvidia_dll_dirs()` puts its `bin` folder on PATH for Red's process automatically. I didn't pin it in `requirements-voice.txt` because it's several hundred MB and only helps NVIDIA users.
+  - **Question for the user:** add an optional `requirements-gpu.txt`? Default: no, CPU int8. Also, with 6 GB of VRAM shared with the 7B model, `RED_WHISPER_DEVICE=cpu` may be the better default even with the GPU libraries installed.
+- **Question for the user:** train a custom "Hey Red" wake word now? Default (section 10): keep `hey_jarvis` for v0.1. A custom model drops in as `RED_WAKEWORD=D:\RED\models\wakeword\hey_red.onnx`.
+- **Test helpers:** `tests/voice_fakes.py` holds the shared fakes (microphone, Whisper, Piper voice, player, hotkeys, detector). `tests/test_voice_models.py` needs the voice models downloaded.
 
-Manual checks for the user:
+Manual checks for the user (in PowerShell, from `D:\RED\worktrees\b`; after integration, use `D:\RED\red` and the shared venv):
+
+```powershell
+cd D:\RED\worktrees\b
+$env:RED_HOME = "D:\RED"
+.\.venv\Scripts\Activate.ps1
+python -m red.voice_demo --setup      # already done; only re-checks the files
+```
+
+1. **Speakers:** `python -m red.voice_demo --say "Hello, I am Red."`. You should hear a clear voice say it once.
+2. **Microphone level:** `python -m red.voice_demo --levels`. Talk normally for a few seconds, then stay quiet. Speech should read above about 0.02 and silence below 0.008. If your speech stays under 0.01, note it: the speech threshold needs lowering. If the wrong microphone is used, set `$env:RED_MIC_DEVICE` to part of the right device's name.
+3. **Hotkey:** `python -m red.voice_demo --no-wakeword`. Wait for `Ready.`, then click into another window, for example your browser.
+   - Press Ctrl+Alt+R. You hear a beep. Say "open my downloads folder".
+   - Recording should stop by itself about a second after you finish. Within a few seconds the terminal shows `You said: 'Open my downloads folder.'` and Red reads it back.
+   - Press Ctrl+Alt+R and say nothing. After 8 s it prints `(heard nothing)` and says "I didn't hear anything."
+   - Press Ctrl+Alt+R twice quickly. Only one recording should start.
+4. **Wake word:** `python -m red.voice_demo`. Say "Hey Jarvis", wait for the beep, then say a command. You should get the transcript and the read-back.
+   - It shouldn't trigger on itself while it's reading back.
+   - Leave it running for a few minutes of normal talk or a video. It shouldn't trigger by itself.
+   - If it misses "Hey Jarvis" or fires too often, try `$env:RED_WAKEWORD_THRESHOLD = "0.35"` (more sensitive) or `"0.65"` (less sensitive) and report the value that works.
+5. **Spoken yes/no:** `python -m red.voice_demo --confirm --no-wakeword`. After each read-back, Red asks "Do you want to confirm? Say yes to confirm."
+   - Say "yes". It prints `-> confirmed`.
+   - Next time, say "no". It prints `-> cancelled`.
+   - Next time, stay silent. After 30 s it prints `Answer: None -> cancelled`.
+6. **Quitting:** press Ctrl+C. It prints `Bye.` and returns to the prompt. Task Manager should show no leftover `python.exe` from the demo.
+7. **GPU fallback (optional; run it while the shared Ollama isn't holding the model):** `python -m red.voice_demo --device cuda --no-wakeword`. On this machine, expect a warning that Whisper couldn't start on the GPU, then `on cpu (int8)`, and the demo still works. With `nvidia-cublas-cu12` installed, it should say `on cuda (float16)` instead.
+8. **Antivirus:** check that no antivirus warning about the keyboard hook appeared while the demo ran.
 
 ### 8.8 Track C: overlay, music, repo sync
 

@@ -1,0 +1,14 @@
+# Voice: recording, speech to text, text to speech, hotkey and wake word.
+# Every version was checked to install from wheels on Windows with Python 3.11.
+numpy==2.4.6
+sounddevice==0.5.6          # microphone and speakers (bundles PortAudio)
+faster-whisper==1.2.1       # speech to text
+ctranslate2==4.8.5          # Whisper runtime; CUDA 12 / cuDNN 9 for the GPU
+av==18.1.0
+tokenizers==0.23.3
+piper-tts==1.8.0            # text to speech (bundles espeak-ng)
+onnxruntime==1.31.1         # Piper and openWakeWord
+openwakeword==0.6.0         # wake word, ONNX models only (no tflite on Windows)
+scipy==1.17.1               # openWakeWord dependency
+scikit-learn==1.9.1         # openWakeWord dependency
+pynput==1.8.2               # global hotkey
