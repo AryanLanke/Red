@@ -79,3 +79,27 @@ def test_repos_file_uses_settings(tmp_path, monkeypatch):
     from red.tools import git_sync
     monkeypatch.setenv("RED_HOME", str(tmp_path))
     assert git_sync.repos_file() == tmp_path / "config" / "repos.toml"
+
+
+def test_search_engine_and_contacts_settings(tmp_path, monkeypatch):
+    monkeypatch.delenv("RED_SEARCH_ENGINE", raising=False)
+    s = load_settings(tmp_path)
+    assert s.search_engine == "google"
+    assert s.contacts_path == tmp_path / "config" / "contacts.toml"
+    monkeypatch.setenv("RED_SEARCH_ENGINE", "DuckDuckGo")
+    assert load_settings(tmp_path).search_engine == "duckduckgo"
+    monkeypatch.setenv("RED_SEARCH_ENGINE", "altavista")
+    assert load_settings(tmp_path).search_engine == "google"
+
+
+def test_contacts_example_parses():
+    from red.tools.mail import load_contacts
+    example = Path(__file__).resolve().parent.parent / "contacts.example.toml"
+    assert load_contacts(example) == {"mom": "mom@example.com"}
+
+
+def test_tools_with_details_expose_last_details():
+    from red.tools import default_registry
+    registry = default_registry()
+    for name in ("find_file", "check_repos"):
+        assert getattr(registry.get(name), "last_details", None) == ""

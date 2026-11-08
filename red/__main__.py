@@ -35,6 +35,7 @@ log = logging.getLogger("red")
 REPO_ROOT = Path(__file__).resolve().parent.parent
 EXAMPLE_ALLOWLIST = REPO_ROOT / "allowlist.example.toml"
 EXAMPLE_REPOS = REPO_ROOT / "repos.example.toml"
+EXAMPLE_CONTACTS = REPO_ROOT / "contacts.example.toml"
 
 MUSIC_TOOLS = {"play_music", "stop_music", "pause_music", "resume_music", "next_song"}
 VOICE_HELP = ("Voice needs the voice packages. Install them with "
@@ -247,6 +248,10 @@ class VoiceApp:
             tool = route.tool
             if tool == "check_repos":
                 self._state("thinking", "Checking your repos...")
+            if tool == "pause_music" and player is not None:
+                # Red paused the music only to listen. Let the tool pause it for
+                # real, so it says "Paused." and not "already paused".
+                player.resume()
             last = self.executor.execute(text, route)
             self._say(last, self.executor.last_details)
         except Exception as e:  # noqa: BLE001 - one bad command must not stop Red
@@ -348,7 +353,8 @@ def _voice_mode(settings: Settings, router: Router, registry) -> int:
 
 def _install_examples(settings: Settings) -> None:
     for example, target in ((EXAMPLE_ALLOWLIST, settings.allowlist_path),
-                            (EXAMPLE_REPOS, settings.repos_path)):
+                            (EXAMPLE_REPOS, settings.repos_path),
+                            (EXAMPLE_CONTACTS, settings.contacts_path)):
         if not target.exists() and example.is_file():
             shutil.copyfile(example, target)
             print(f"Created {target}; edit it to add your own entries.")

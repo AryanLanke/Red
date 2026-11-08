@@ -25,6 +25,7 @@ DEFAULT_WHISPER_MODEL = "small"
 # CPU by default: on a 6 GB GPU, Whisper and the 7B model don't fit together.
 DEFAULT_WHISPER_DEVICE = "cpu"
 DEFAULT_PIPER_VOICE = "en_US-lessac-medium"
+SEARCH_ENGINE_CHOICES = ("google", "bing", "duckduckgo")
 
 # Values that turn the hotkey or the wake word off.
 _OFF = {"0", "off", "none", "no", "false", "disabled"}
@@ -59,6 +60,7 @@ class Settings:
     piper_voice: str = DEFAULT_PIPER_VOICE
     mic_device: str | None = None
     music_dir: Path | None = None
+    search_engine: str = "google"
 
     @property
     def bin_dir(self) -> Path:
@@ -91,6 +93,10 @@ class Settings:
     @property
     def repos_path(self) -> Path:
         return self.config_dir / "repos.toml"
+
+    @property
+    def contacts_path(self) -> Path:
+        return self.config_dir / "contacts.toml"
 
     def ensure_dirs(self) -> None:
         for d in (
@@ -144,6 +150,10 @@ def load_settings(home: Path | None = None) -> Settings:
     if not 0.0 < threshold < 1.0:
         raise ValueError(f"RED_WAKEWORD_THRESHOLD must be between 0 and 1, got {threshold_text!r}")
     music_dir = _env("RED_MUSIC_DIR")
+    # Like web_search itself: an unknown engine means Google, not an error.
+    engine = (_env("RED_SEARCH_ENGINE") or "google").lower()
+    if engine not in SEARCH_ENGINE_CHOICES:
+        engine = "google"
 
     # Keep model caches under RED_HOME for this process only.
     # This doesn't change any system or user environment variables.
@@ -165,4 +175,5 @@ def load_settings(home: Path | None = None) -> Settings:
         piper_voice=_env("RED_PIPER_VOICE") or DEFAULT_PIPER_VOICE,
         mic_device=_env("RED_MIC_DEVICE"),
         music_dir=Path(os.path.expandvars(music_dir)).expanduser() if music_dir else None,
+        search_engine=engine,
     )

@@ -386,3 +386,27 @@ def test_pretty_hotkey(hotkey, text):
 def test_pretty_wakeword():
     assert cli.pretty_wakeword("hey_red") == "Hey Red"
     assert cli.pretty_wakeword("D:\\models\\hey_red_v0.1.onnx") == "Hey Red"
+
+
+class FakePauseMusic(Tool):
+    name = "pause_music"
+    description = "Pause music"
+    args_schema = {"type": "object", "properties": {}, "additionalProperties": False}
+
+    def __init__(self, player):
+        self.player = player
+
+    def run(self):
+        if self.player.pause():
+            return "Paused."
+        return "The music is already paused."
+
+
+def test_pause_music_command_pauses_for_real(world):
+    player = FakePlayer()
+    world["registry"].add(FakePauseMusic(player))
+    world["llm"].replies["Pause the music."] = {"tool": "pause_music", "args": {}}
+    app, speaker, *_ = make_app(world, "Pause the music.", player=player)
+    app.handle("hotkey")
+    assert speaker.said == ["Paused."]
+    assert player.calls == ["pause", "resume", "pause"] and player.paused

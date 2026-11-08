@@ -1,0 +1,10 @@
+# Contacts for "compose a mail to ...".
+#
+# Copy this file to %RED_HOME%\config\contacts.toml and add your own.
+# The name is what you say ("write an email to mom"); the value is the address.
+# Red only fills in the draft; it never sends anything. You check the draft
+# in your mail app and press Send yourself.
+
+[contacts]
+mom = "mom@example.com"
+# "alex kim" = "alex.kim@example.com"

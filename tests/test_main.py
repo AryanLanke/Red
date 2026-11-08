@@ -108,7 +108,8 @@ def test_setup_installs_examples_and_voice_models(env, monkeypatch):
     assert cli.main(["setup"]) == 0
     assert fetched == [home]
     for name, example in (("allowlist.toml", cli.EXAMPLE_ALLOWLIST),
-                          ("repos.toml", cli.EXAMPLE_REPOS)):
+                          ("repos.toml", cli.EXAMPLE_REPOS),
+                          ("contacts.toml", cli.EXAMPLE_CONTACTS)):
         assert (home / "config" / name).read_text(encoding="utf-8") == \
             example.read_text(encoding="utf-8")
 
