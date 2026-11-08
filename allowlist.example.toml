@@ -1,0 +1,21 @@
+# Folders and apps Red may open, besides the built-ins.
+# Copy this file to %RED_HOME%\config\allowlist.toml and edit it.
+#
+# Built-in folders (found through Windows, even if moved to OneDrive):
+#   Downloads, Documents, Desktop, Pictures, Music, Videos
+# Built-in apps: Notepad, Calculator, File Explorer, Task Manager
+#
+# Names are what you say ("open projects"). Red only looks names up here;
+# it never runs a path or a command it wasn't given in this file.
+# Entries here win over the built-ins with the same name.
+# Use single quotes for Windows paths so backslashes stay as they are.
+# %VARIABLES% such as %LOCALAPPDATA% are expanded.
+
+[folders]
+projects = 'D:\Projects'
+
+[apps]
+# A program name on PATH, or a full path to the program.
+"vs code" = '%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe'
+# A list gives the program and its arguments.
+# "notes" = ['notepad.exe', 'D:\notes.txt']

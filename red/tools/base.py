@@ -6,6 +6,10 @@ from abc import ABC, abstractmethod
 from typing import ClassVar, Iterable
 
 
+class ToolError(Exception):
+    """A failure whose message is short and fit to say to the user."""
+
+
 class Tool(ABC):
     name: ClassVar[str]          # "shutdown"
     description: ClassVar[str]   # shown to the LLM so it knows when to use it
@@ -15,6 +19,18 @@ class Tool(ABC):
     @abstractmethod
     def run(self, **kwargs) -> str:
         """Do the action and return a short reply for the user."""
+
+    def describe(self, **kwargs) -> str:
+        """The action in plain words, used for the confirmation question.
+
+        Destructive tools should override this, for example
+        "Shut down in 2 hours (at 11:40 PM)". It must not have side effects.
+        """
+        words = self.name.replace("_", " ")
+        if not kwargs:
+            return words.capitalize()
+        details = ", ".join(f"{k} {v}" for k, v in kwargs.items())
+        return f"{words.capitalize()} ({details})"
 
 
 class ToolRegistry:

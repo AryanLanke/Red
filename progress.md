@@ -373,22 +373,46 @@ def run_with_overlay(worker: Callable[[Overlay], None]) -> int: ...  # Qt owns t
 
 Spec: 7.1. Done when every tool works from typed input, every destructive action asks first, cancelling always works, and all tests pass.
 
-- [ ] `known_folders.py`: Known Folder API through ctypes
-- [ ] `allowlist.py` and `allowlist.example.toml`: load with `tomllib`; a missing file means only the built-in defaults
-- [ ] `open_folder`, `open_app`, `open_url` actions, with side effects passed in through the constructor
-- [ ] `shutdown`, `restart`, `cancel_shutdown`, plus `describe()` with the exact time
-- [ ] `confirm.py`: typed, 30-second timeout, `is_yes`
-- [ ] `executor.py`: confirm, run, write to `commands.jsonl`; errors become a short reply and a log line, never a crash
-- [ ] `__main__.py`: run actions by default; `--dry-run` keeps the Day 1 behaviour
-- [ ] Unit tests with fakes; real-model tests still pass
-- [ ] Section updated, committed on `track-a-actions`
+- [x] `known_folders.py`: Known Folder API through ctypes
+- [x] `allowlist.py` and `allowlist.example.toml`: load with `tomllib`; a missing file means only the built-in defaults
+- [x] `open_folder`, `open_app`, `open_url` actions, with side effects passed in through the constructor
+- [x] `shutdown`, `restart`, `cancel_shutdown`, plus `describe()` with the exact time
+- [x] `confirm.py`: typed, 30-second timeout, `is_yes`
+- [x] `executor.py`: confirm, run, write to `commands.jsonl`; errors become a short reply and a log line, never a crash
+- [x] `__main__.py`: run actions by default; `--dry-run` keeps the Day 1 behaviour
+- [x] Unit tests with fakes; real-model tests still pass (150 unit tests pass; 13 real-model tests pass with `RED_INTEGRATION=1`)
+- [x] Section updated, committed on `track-a-actions`
 
 Decisions:
+- **Allowlist is reloaded on every command,** so edits to `allowlist.toml` apply without restarting Red. Entries there win over built-ins with the same name. Values are a program (string) or `[program, arg, ...]` (list). `%VARS%` and `~` are expanded in allowlist values only, never in LLM text. Folder paths must be absolute. A broken file gives a warning at startup and a short error reply when used; it never crashes Red.
+- **Folder lookup order:** allowlist, then the six known folders, with aliases (`download`, `docs`, `photos`, `movies`, ...) and filler words dropped ("my documents folder" -> documents). A full path from the model is only accepted if it equals a known or allowlisted folder. The target must be a directory (`is_dir()`), so a file or a program can never reach `os.startfile`. The `open_folder` description (including "or a full path") is unchanged to keep routing stable.
+- **Apps:** the program is resolved with `shutil.which` and started with `subprocess.Popen(list, shell=False)`. `.cmd`/`.bat` launchers get `CREATE_NO_WINDOW` (no console flash for VS Code's `code.cmd`); other programs get `CREATE_NEW_CONSOLE`. If Windows says the program needs elevation (WinError 740, which is likely for Task Manager), Red falls back to `os.startfile` on that same allowlisted program.
+- **Shutdown:** Red runs `%SystemRoot%\System32\shutdown.exe` by full path, with `/a` first (its result is ignored), then `/s` or `/r` `/t <seconds>`, with a 15 s timeout and no window. `minutes = 0` means now. `run()` checks the 0 to 1440 range again. Note: Windows implies `/f` when `/t > 0`, so open apps are closed without asking. The README safety section should say so at integration.
+- **Time wording:** `describe()` gives "Shut down in 2 hours (at 11:40 PM)", "in 1 hour and 30 minutes", "(at 1:00 AM tomorrow)", "Shut down now". The reply after scheduling repeats the time and says how to cancel.
+- **`is_yes`** strips surrounding whitespace and punctuation on both sides, so "Yes.", " y " and "Yes?" confirm; "yeah", "yes please" and "sure" don't.
+- **Typed input:** on a Windows console, `typed_ask` reads keys with `msvcrt` until Enter or the timeout. It discards keys typed before the question (type-ahead can't confirm), and Ctrl+C at the prompt means no. Piped stdin has no timeout; end of input means no answer. An `ask` that raises cancels.
+- **Command log** records every outcome: `status` is `ok`, `cancelled`, `error` or `none`. Fields: `time` (local ISO with offset), `command`, `tool`, `args`, `status`, `confirmed` (true/false, or null when nothing was asked), `result`, plus `answer` on a cancel and `error` (exception type and text) for unexpected failures. `Executor(log_path=None)` writes no log. If the log can't be written, the error goes to `red.log` and the command still runs.
+- **CLI:** `--dry-run` is a top-level flag. `route` always only shows the call. There's a new `run "<command>"` that runs one command. `setup` copies `allowlist.example.toml` to `RED_HOME\config\allowlist.toml` if that file is missing.
+- No new dependencies and no new `RED_*` settings.
 
 Integration notes:
+- Contract differences from 8.5: `Executor.__init__` takes an extra `confirm_timeout: float = 30.0`. `log_path=None` means no log (the CLI passes `settings.command_log_path`).
+- New in `tools/base.py`: `ToolError`. Raise it for failures whose message is fit to say to the user; the Executor speaks it as the reply. Any other exception becomes "Sorry, <tool> failed: ..." and is logged. Track C tools can use `ToolError`, but nothing breaks if they don't. `Tool.describe()` has a generic default, so C's tools only need it if they are destructive.
+- New `Settings` properties: `allowlist_path`, `command_log_path`.
+- The Executor passes `ask` the question without `[y/N]`, for example "Shut down in 2 hours (at 11:40 PM)?"; `typed_ask` adds `[y/N]` itself. `spoken_ask` should speak the question as given. To show the `confirm` overlay state, wrap `ask` before passing it to `Executor`.
+- The tools in `default_registry()` need no constructor arguments: `OpenFolder` and `OpenApp` load `red_home()\config\allowlist.toml` themselves, so Track C's `tools/__init__.py` needs no change for Track A.
+- For the music tool's default folder: `red.known_folders.known_folder("music")` returns a `Path` or `None`.
+- Tests share fakes in `tests/fakes.py` (`FakeRunner`, `FakeStartfile`, `FakePopen`, `FakeAsk`). `tests/test_integration_llm.py` now imports it.
 
 Manual checks for the user:
 - Schedule a shutdown in 60 minutes, see the Windows notice, type "cancel the shutdown", and check that it's gone.
+- In a real PowerShell window, run `python -m red`, type "restart in 10 minutes" and don't answer. After 30 seconds Red should say "No answer, so I cancelled it.", and no Windows notice should appear. Then try again and answer `n`: it's cancelled too.
+- With nothing scheduled, type "cancel the shutdown". Red should say "Nothing was scheduled". This checks that `shutdown /a` returns 1116 on your machine.
+- "open Downloads", "open Documents" and "open Pictures" open Explorer in the right folders, including the OneDrive ones.
+- "open notepad", "open calculator", "open file explorer" and "open task manager" each start. Task Manager may show a UAC prompt; check that it opens.
+- "open youtube" opens your default browser.
+- Run `python -m red setup` (or copy `allowlist.example.toml` to `D:\RED\config\allowlist.toml`), set `projects` to a real folder, then check "open projects" and "open vs code".
+- Check `D:\RED\logs\commands.jsonl` has one line for each command you ran.
 
 ### 8.7 Track B: voice
 
