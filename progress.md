@@ -35,10 +35,11 @@ Last updated: 2026-11-08.
 |---|---|---|
 | "Shut down" | Shuts down, after a yes | v0.1, Track A (`shutdown`) |
 | "Open YouTube" | Opens it in the browser | v0.1, Track A (`open_url`) |
-| "Open PowerPoint" | Starts the app | v0.1, Track A (`open_app`). Add Word, Excel and PowerPoint to the built-in apps when they're installed |
-| "Find my resume" / "where is file X" | Finds the file or folder and offers to open it | **New, v0.2:** `find_file`. Read-only search of known folders and allowlisted folders (or the Windows Search index), never the whole disk unasked |
-| "Search the web for X" | Opens a web search in the browser | **New, v0.2:** `web_search`, building a search URL. Reading results aloud and summarising them comes later |
-| "Compose a mail to X about Y" | Opens a new draft with the recipient, subject and body filled in | **New, v0.2:** `compose_mail` through a `mailto:` link (works with any mail app, no account access). Sending through Gmail stays with the Gmail work, and always asks first |
+| "Open PowerPoint" | Starts the app | ✅ Track F: `open_app` finds PowerPoint, Word, Excel, Outlook, OneNote, Teams, Chrome, Edge and more through the registry's App Paths when they're installed |
+| "Find my resume" / "where is file X" | Finds the file or folder and offers to open it | ✅ Track F: `find_file` plus `open_found_file` ("open it"). Read-only name search of the known folders and allowlisted folders, with a 4-second limit and 5 results at most. Programs and scripts are never run: Red opens their folder instead |
+| "Search the web for X" | Opens a web search in the browser | ✅ Track F: `web_search` on Google (or `RED_SEARCH_ENGINE`), YouTube, images, maps, news or Wikipedia. Reading results aloud comes later |
+| "Compose a mail to X about Y" | Opens a new draft with the recipient, subject and body filled in | ✅ Track F: `compose_mail` through a `mailto:` link. Names come from `contacts.toml`, and Red never sends. Sending through Gmail stays with the Gmail work, and always asks first |
+| "Lock my PC", "volume up", "pause", "open Bluetooth settings", "what time is it", "take a screenshot", "sleep", "empty the Recycle Bin" | Does it at once; sleep and emptying the Recycle Bin ask first | ✅ Track F: `lock_pc`, `volume`, media keys in `pause_music`, `resume_music`, `next_song` and `previous_track`, `open_settings`, `tell_status`, `take_screenshot`, `sleep_pc` and `empty_recycle_bin` |
 | Anything else | Says it can't do that yet | New abilities arrive as tools (section 4), and the plugin system (v0.4) makes adding them easy |
 
 The safety model doesn't change as Red grows: every ability is a tool with a fixed schema, nothing the model says is run as a command, and destructive actions ask first.
@@ -747,11 +748,11 @@ Manual checks for the user:
 
 Done when each new tool works from `Tool.run()` with fakes, routes correctly with the real model (in its own `tests/test_integration_f_tools.py`), the existing commands still route correctly, and all tests pass. Do them in this order and push after each:
 
-- [ ] **Office apps:** "open PowerPoint / Word / Excel / Outlook" as built-in apps when installed. Find them through App Paths in the registry, not by guessing paths
-- [ ] **`web_search`:** "search the web for X" opens a search in the default browser, using a fixed URL template with the query properly encoded
-- [ ] **`find_file`:** "find my resume", "where is X". Searches known and allowlisted folders, or the Windows Search index, by name. Read-only, with a time limit and a cap on results. It replies with the best match and offers to open it
-- [ ] **`compose_mail`:** "compose a mail to X about Y" opens a new draft through a `mailto:` link, with the recipient, subject and body properly encoded. It never sends
-- [ ] **Quick system actions:**
+- [x] **Office apps:** "open PowerPoint / Word / Excel / Outlook" as built-in apps when installed. Find them through App Paths in the registry, not by guessing paths
+- [x] **`web_search`:** "search the web for X" opens a search in the default browser, using a fixed URL template with the query properly encoded
+- [x] **`find_file`:** "find my resume", "where is X". Searches known and allowlisted folders, or the Windows Search index, by name. Read-only, with a time limit and a cap on results. It replies with the best match and offers to open it
+- [x] **`compose_mail`:** "compose a mail to X about Y" opens a new draft through a `mailto:` link, with the recipient, subject and body properly encoded. It never sends
+- [x] **Quick system actions:**
   - lock the PC
   - volume up, down and mute
   - media play/pause and next
@@ -760,14 +761,85 @@ Done when each new tool works from `Tool.run()` with fakes, routes correctly wit
   - take a screenshot into Pictures
 
   Sleep and empty Recycle Bin are destructive, so they need `destructive = True` and `describe()`
-- [ ] **Router at scale:** with about 20 tools, check the prompt still fits `num_ctx`, and that routing accuracy and speed stay good. Tune descriptions, the prompt or `num_ctx` if needed, and record the before and after numbers
-- [ ] Update the "Jarvis" table in section 2 (the status column)
+- [x] **Router at scale:** with about 20 tools, check the prompt still fits `num_ctx`, and that routing accuracy and speed stay good. Tune descriptions, the prompt or `num_ctx` if needed, and record the before and after numbers
+- [x] Update the "Jarvis" table in section 2 (the status column)
+
+Result (2026-11-08, finished about 11:30, branch `track-f-jarvis-tools`, pushed after each item):
+- 496 unit tests pass and 92 are skipped, run in the worktree venv with the UI and voice requirements installed and `QT_QPA_PLATFORM=offscreen`.
+- With `RED_INTEGRATION=1`, all 85 real-model tests pass: 43 in the new `tests/test_integration_f_tools.py`, 29 in `tests/test_integration_c_tools.py` and 13 in `tests/test_integration_llm.py`.
+
+**Router numbers** (Qwen2.5 7B Q4_K_M, `num_ctx` 4096, temperature 0, the same 71 commands, measured with Ollama's `prompt_eval_count`; timings are noisy because Tracks D and E shared the GPU):
+
+| Registry | Tools | Prompt tokens | Correct | Median | p90 |
+|---|---|---|---|---|---|
+| Before: Phase 1 (only its 28 commands) | 12 | 924 | 28/28 | 1.13 s | 1.37 s |
+| All tools, untuned | 24 | 1,946 | 69/71 | 1.21 s | 1.68 s |
+| All tools, tuned (final) | 24 | 2,090 | 71/71 | 0.80 s | 1.08 s |
+| Phase 1 tools with the final prompt | 12 | 1,023 | 28/28 | 0.73 s | 0.83 s |
+
+The prompt uses about half of `num_ctx` 4096, so `num_ctx` stays at 4096 (no extra VRAM). Before and after tuning, the model was given the 24-tool JSON schema as Ollama's `format`; the schema isn't counted in the prompt tokens.
 
 Decisions:
+- **Office and other well-known apps:** `red/tools/apps.py` maps a fixed list of spoken names to App Paths keys, for example PowerPoint, "ppt" and "power point" to `powerpnt.exe`. The list also covers Word, Excel, Outlook (falling back to the new `olk.exe`), OneNote, Access, Publisher, Teams, Chrome, Edge, Firefox, VS Code, Paint, Snipping Tool, Terminal, VLC, Windows Media Player and WinRAR.
+  - Red reads HKCU, then HKLM in both registry views, and the file must exist.
+  - Lookup order in `open_app`: allowlist, then the built-in apps, then App Paths.
+  - Store apps (under `WindowsApps`) are started by their App Paths name through the shell, because they can't be started by path. Everything else is started by full path.
+  - A known app that isn't installed gets "X doesn't seem to be installed." `apps.py` has its own name normalizer, because importing `allowlist.normalize_app` causes a circular import.
+- **`web_search`:** fixed URL templates. The query goes through `quote_plus`, and `site` is a closed enum (`web`, `youtube`, `images`, `maps`, `news`, `wikipedia`). The web engine is `RED_SEARCH_ENGINE` (`google`, `bing` or `duckduckgo`), default Google; anything else falls back to Google.
+- **`find_file`:**
+  - Breadth-first name search of Desktop, Documents, Downloads, Pictures, Videos and Music (in that order), then the allowlist's folders.
+  - Skips hidden and system folders and big tool folders (`node_modules`, `.git`, `.venv`, `AppData`, `dist`, ...).
+  - Stops after 4 seconds or 300,000 entries, and keeps the best 5.
+  - Ranking, best first: exact name, every word, every word inside the name, close (misheard) match. Ties go to files over folders, then newer over older.
+  - On this PC, a full search of the known folders took 1.5 s over 13,000 entries.
+  - **The Windows Search index wasn't used:** it needs pywin32 or ADO through COM, and the folder walk is fast enough.
+  - `open_found_file` ("open it", "open the second one") opens a match from the last search. Programs, scripts and shortcuts (`.exe`, `.bat`, `.ps1`, `.py`, `.lnk`, ...) are never opened: Red opens their folder and says so.
+- **`compose_mail`:**
+  - Builds an RFC 6068 `mailto:` link with every part percent-encoded and CRLF line breaks, and opens it with `os.startfile`. It never sends, and Red has no access to any mail account.
+  - Only strictly valid addresses go into the link. Names ("mom", "Alex Kim") become addresses only through `RED_HOME\config\contacts.toml`, under `[contacts]`. An unknown name leaves the recipient empty, and the reply says so.
+  - The body is cut at 1,500 characters, because long `mailto:` links can fail to open.
+- **Quick actions** (`red/tools/quick.py`):
+  - Volume and media use the global keys through `keybd_event`. Up and down move 2% per press; the default step is 10%.
+  - "Set to N%" presses volume down 50 times, then up N/2 times.
+  - Mute and unmute are made reliable by pressing up then down first (any volume key unmutes), then mute if needed.
+  - `pause_music`, `resume_music` and `next_song` are now media-aware subclasses with the same names. They use Red's own player when it has a song, and otherwise the play/pause or next media key, so they also work for Spotify or a YouTube tab. This avoids a second, competing set of pause and next tools. `previous_track` is media-key only.
+  - `open_settings` takes a closed enum of 26 `ms-settings:` pages.
+  - `tell_status` answers time, date or battery; battery comes from `GetSystemPowerStatus`.
+  - `take_screenshot` presses Windows+Print Screen, so Windows saves the full screen, at the right DPI and on every monitor, to Pictures\Screenshots. Red waits up to 3 seconds for the new file and says its name. This avoids writing a DPI-aware capture without Pillow.
+  - `lock_pc` uses `LockWorkStation` and isn't destructive.
+  - `sleep_pc` (`SetSuspendState(False, False, False)`) and `empty_recycle_bin` (`SHEmptyRecycleBinW`, after a read-only `SHQueryRecycleBinW`) are destructive, with `describe()`, for example "Permanently delete 3 items (5.0 MB) from the Recycle Bin".
+- **Router tuning:**
+  - Two misroutes fixed by descriptions: "skip this song" going to `previous_track`, and "check for windows updates" going to `open_app`.
+  - Three new prompt rules:
+    1. A word with no request in it, like "banana", is unclear: use `none`. Without this rule, "banana" went to `web_search`.
+    2. General questions go to `web_search`. Without it, "what is the meaning of life" went to `tell_status`.
+    3. Pick the most specific tool (`web_search` over `open_url`, `open_settings` over `open_app`).
+  - **Known quirk:** "show me pictures of X" usually goes to `open_url` with a Google Images URL the model builds itself, instead of `web_search` with `site: images`. The same page opens and the URL is still checked as http(s), so the test accepts either. Four wordings of the descriptions didn't change it.
+- **Fixed during tuning:** `open_url`'s description now says to use `web_search` for searches.
 
 Integration notes:
+- **New settings:** `RED_SEARCH_ENGINE`, read in `red/tools/web.py: web_engine()` (default `google`). New config file: `RED_HOME\config\contacts.toml` (`[contacts]` with `name = "address"`), read in `red/tools/mail.py: contacts_file()`. Move them into `Settings` and document them in the README, perhaps with a `contacts.example.toml`. `find_file` uses `known_folders` and the allowlist directly.
+- `FindFile` sets `last_details` (one line per match, with full paths), like `CheckRepos`. Show it in the overlay and the log in the same way.
+- `default_registry()` now has 24 tools. Every constructor has defaults, and building the registry has no side effects.
+- `pause_music`, `resume_music` and `next_song` in `default_registry()` are now the `quick.PauseMedia`, `ResumeMedia` and `NextMedia` subclasses. Track D's music-pausing during recording should keep calling `music.default_player()` directly. It must **not** call these tools, because with Red's player idle they press the media keys.
+- `Volume`, the media keys and `take_screenshot` act on the real desktop, so they belong in the manual checks, not in automated tests.
+- `router.py` changed only in `SYSTEM_PROMPT` (three new rule lines); `Router` itself is unchanged.
+- **Venv:** the worktree venv has `requirements-dev.txt`, `requirements-ui.txt` and `requirements-voice.txt`, and the whole suite runs there. Track D's shared venv needs the same three files.
 
-Manual checks for the user:
+Manual checks for the user (in `D:\RED\worktrees\c`, `.\.venv\Scripts\python.exe`, `$env:RED_HOME = "D:\RED"`). Each one runs a single tool, for example:
+`python -c "from red.tools import default_registry as r; print(r().get('volume').run(action='up'))"`
+
+- **Office:** `get('open_app').run(app='powerpoint')`, then `'word'`, `'excel'`, `'outlook'` and `'paint'` (a Store app). Each should open; close them afterwards.
+- **Search:** `get('web_search').run(query='weather in Pune')`, and `.run(query='lofi', site='youtube')`. Check that the browser opens the right results.
+- **Find:** `t=r(); print(t.get('find_file').run(name='resume')); print(t.get('find_file').last_details); print(t.get('open_found_file').run())`. Check that the result makes sense, and that it finishes in a few seconds.
+- **Mail:** `get('compose_mail').run(to='you@example.com', subject='Test from Red', body='Line one\nLine two')`. A draft should open in your mail app with both lines. Don't send it. If nothing opens, choose a default email app in Windows Settings.
+- **Volume and media:** `volume` with `action='down', percent=20`, then `'up'`, `'mute'`, `'unmute'`, and `action='set', percent=30`. Watch the Windows volume flyout. With Spotify or a YouTube tab playing, `get('pause_music').run()`, then `resume_music`, `next_song` and `previous_track`.
+- **Settings:** `get('open_settings').run(page='bluetooth')`, then `'windows_update'`.
+- **Status:** `get('tell_status').run(what='battery')`, then `'time'` and `'date'`.
+- **Screenshot:** `get('take_screenshot').run()`. A new file should appear in Pictures\Screenshots.
+- **Lock:** `get('lock_pc').run()`, then sign back in.
+- **Sleep (destructive, so try it through Red's confirmation):** in `python -m red --typed` (Track D), say "put the computer to sleep". It should ask first; answer `n` once to check it cancels, then `y`.
+- **Recycle Bin (destructive, deletes for real):** with only junk in the Recycle Bin, in `python -m red --typed`, say "empty the recycle bin". Check that the question gives the item count and size, and that `n` cancels.
 
 ### 8.16 Final merge (planning session, after 13:15)
 
