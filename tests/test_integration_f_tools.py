@@ -79,6 +79,28 @@ CASES = [
     ("draft an email to my boss about taking friday off", "compose_mail",
      contains("subject", "friday")),
     ("send a mail to priya about lunch", "compose_mail", contains("to", "priya")),
+    # quick system actions
+    ("lock my pc", "lock_pc", ANY),
+    ("lock the computer", "lock_pc", ANY),
+    ("put the computer to sleep", "sleep_pc", ANY),
+    ("turn the volume up", "volume", has(action="up")),
+    ("volume down a bit", "volume", has(action="down")),
+    ("mute the sound", "volume", has(action="mute")),
+    ("unmute", "volume", has(action="unmute")),
+    ("set the volume to 40 percent", "volume", has(action="set", percent=40)),
+    ("pause", "pause_music", ANY),
+    ("pause the video", "pause_music", ANY),
+    ("play the next track", "next_song", ANY),
+    ("go back to the previous song", "previous_track", ANY),
+    ("open bluetooth settings", "open_settings", has(page="bluetooth")),
+    ("open display settings", "open_settings", has(page="display")),
+    ("open wifi settings", "open_settings", has(page="wifi")),
+    ("check for windows updates", "open_settings", has(page="windows_update")),
+    ("what time is it", "tell_status", has(what="time")),
+    ("what's the date today", "tell_status", has(what="date")),
+    ("how much battery do I have", "tell_status", has(what="battery")),
+    ("take a screenshot", "take_screenshot", ANY),
+    ("empty the recycle bin", "empty_recycle_bin", ANY),
 ]
 
 
