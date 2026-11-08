@@ -49,7 +49,8 @@ RED_HOME\
 │   └── ollama-home\      # Ollama's settings and key, kept off C:
 ├── logs\                 # logs and command history
 └── config\
-    └── .env              # your settings and secrets (never in the repo)
+    ├── .env              # your settings and secrets (never in the repo)
+    └── allowlist.toml    # folders and apps Red may open
 ```
 
 Pip and Hugging Face cache files on C: by default. Set `PIP_CACHE_DIR=%RED_HOME%\cache\pip` and `HF_HOME=%RED_HOME%\cache\huggingface` to keep them under `RED_HOME`.
@@ -122,6 +123,7 @@ red/
 ├── LICENSE
 ├── .gitignore
 ├── .env.example          # placeholder keys only, never real secrets
+├── allowlist.example.toml # folders and apps Red may open (Day 2)
 ├── requirements.txt
 ├── red/
 │   ├── __main__.py       # entry point
@@ -182,9 +184,9 @@ Claude is used for building Red. The runtime uses a local model, so Red keeps wo
 
 ## 5. Five-day plan
 
-**Day 1: Foundation.** Set up the repo, `.gitignore`, and README. Get the local model running, managed by `llm.py`. Write `config.py`, the `Tool` interface, and the router. Test: typed commands like "open Downloads" produce the right JSON.
+**Day 1: Foundation. ✅ Done.** Set up the repo, `.gitignore`, and README. Got the local model running through a Red-managed Ollama. Wrote `config.py`, the `Tool` interface, and the router. Result: typed commands like "open Downloads" and "shut down in 2 hours" produce the right JSON in under a second once the model is loaded. 38 unit tests and 8 real-model tests pass.
 
-**Day 2: Actions.** Build `system.py` (open folder, open app, shutdown and restart with a delay) and `web.py`. Add the confirmation step for destructive actions. Test: each action works from typed input.
+**Day 2: Actions.** Build `system.py` (open folder, open app, shutdown and restart with a delay) and `web.py`. Add the confirmation step for destructive actions. Test: each action works from typed input. Details below.
 
 **Day 3: Voice.** Add Whisper for speech input, Piper for speech output, and the shortcut trigger. Test: press the shortcut, say a command, hear a reply.
 
@@ -193,6 +195,42 @@ Claude is used for building Red. The runtime uses a local model, so Red keeps wo
 **Day 5: Music, repo sync, and polish.** Build `music.py` and `git_sync.py`. Write setup instructions. Test the full flow end to end, then tag a first release.
 
 **If time runs short:** cut the wake word and keep the shortcut. Cut the overlay and use a simple notification. Keep the shutdown, folder, and repo sync features, since they're the most useful.
+
+### Day 2 in detail: actions and confirmation
+
+**Goal:** every tool from Day 1 really runs from typed input, and nothing destructive runs without a clear yes.
+
+| Tool | How it works | Safety |
+|---|---|---|
+| `open_folder` | Downloads, Documents, Desktop, Pictures, Music, and Videos are found through Windows' Known Folder API, so folders moved to OneDrive still work. Other folders come from the allowlist. Opens with `os.startfile`. | Only known folders or allowlisted ones. If Red can't match the name, it says so instead of guessing. |
+| `open_app` | App names map to commands in the allowlist. Built-in defaults: Notepad, Calculator, File Explorer, and Task Manager. | Only allowlisted apps. The model's text is only used as a lookup key, never as a command line. |
+| `open_url` | Opens in the default browser. | `http` and `https` only, already enforced by the schema. |
+| `shutdown`, `restart` | `shutdown /s` or `/r` with `/t <seconds>`. Red says the exact time it will happen. | Destructive, so it asks first. The delay is capped at 24 hours. A new schedule replaces the old one. |
+| `cancel_shutdown` | `shutdown /a`. | Runs at once, with no confirmation. Says so if nothing was scheduled. |
+
+**Confirmation (`confirm.py`):**
+- Red repeats the action in plain words: `Shut down in 2 hours (at 11:40 PM)? [y/N]`
+- Only `y` or `yes` confirms. Anything else, or no answer within 30 seconds, cancels.
+- Day 2 confirms by typing. Day 3 adds a spoken yes or no with the same rules.
+
+**Allowlist:** `RED_HOME\config\allowlist.toml`, copied from `allowlist.example.toml` in the repo:
+
+```toml
+[folders]
+projects = 'D:\Projects'
+
+[apps]
+"vs code" = "code"
+```
+
+**Command log:** each action Red runs or cancels is written as one JSON line to `RED_HOME\logs\commands.jsonl`, with the time, the command text, the tool, its arguments, whether you confirmed, and the result.
+
+**Testing:**
+- Unit tests use a fake runner, so they never open windows or schedule a real shutdown.
+- `python -m red --dry-run` keeps the Day 1 behavior: it shows tool calls without running them.
+- Manual check: schedule a shutdown in 60 minutes, see the Windows notice, then type "cancel the shutdown" and check that it's gone.
+
+**Done when:** each tool works from typed input, every destructive action asks first, cancel always works, and all tests pass.
 
 ---
 
@@ -212,7 +250,7 @@ Red reports each repo as clean, ahead, behind, or dirty. It also reports a repo 
 ## 7. Setup and safety
 
 - **Secrets:** Store API tokens and credentials in `RED_HOME\config\.env`, and never commit them. The repo only contains `.env.example` with placeholder values.
-- **Permissions:** Red can only open folders and apps on an allowlist in your config. It never runs an arbitrary path the LLM suggests.
+- **Permissions:** Red can only open known Windows folders and the folders and apps listed in `RED_HOME\config\allowlist.toml`. It never runs an arbitrary path the LLM suggests.
 - **Confirmations:** Shutdown, restart, and anything that changes files ask "Are you sure?" first. Red repeats the action back ("Shutting down in 3 hours. Confirm?") so a misheard number is caught.
 - **Shutdown limits:** Delays are bounded, Red always announces a scheduled shutdown, and "cancel shutdown" works at any time.
 - **Logs:** Red keeps a local log of the commands it ran under `RED_HOME\logs`. Logs contain your transcribed speech, stay on your machine, and are never committed.
