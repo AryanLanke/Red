@@ -4,6 +4,7 @@
     python -m red --typed                  type commands instead of speaking
     python -m red --dry-run                type commands, only show the tool calls
     python -m red setup                    download the LLM backend, the model and the voice models
+    python -m red doctor                   check that everything Red needs is in place
     python -m red route "open Downloads"   show the tool call for one command (never runs it)
     python -m red run "open Downloads"     run one typed command
 
@@ -456,11 +457,16 @@ def main(argv: list[str] | None = None) -> int:
                       help="type commands and only show the tool call for each, never run it")
     sub = parser.add_subparsers(dest="cmd")
     sub.add_parser("setup", help="download the LLM backend, the model and the voice models")
+    sub.add_parser("doctor", help="check that everything Red needs is in place")
     p_route = sub.add_parser("route", help="show the tool call for one command")
     p_route.add_argument("text", nargs="+")
     p_run = sub.add_parser("run", help="run one typed command")
     p_run.add_argument("text", nargs="+")
     args = parser.parse_args(argv)
+
+    if args.cmd == "doctor":
+        from .doctor import main as doctor_main
+        return doctor_main()        # only looks: starts nothing, records nothing
 
     settings = load_settings()
     settings.ensure_dirs()
