@@ -305,6 +305,19 @@ def _key(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", name.lower())
 
 
+# Values that mean "every repo". The model tends to fill the optional repo
+# with one of these instead of leaving it out.
+_ALL_REPOS = frozenset(_key(v) for v in (
+    "all", "any", "every", "everything", "none", "null", "nil", "undefined", "n/a", "*",
+    "repos", "repo", "my repos", "all repos", "all my repos", "repositories",
+    "all repositories", "my repositories", "git", "github",
+))
+
+
+def means_all_repos(repo: str | None) -> bool:
+    return not repo or _key(repo) in _ALL_REPOS or not _key(repo)
+
+
 # --------------------------------------------------------------------------
 # Tool
 # --------------------------------------------------------------------------
@@ -312,11 +325,12 @@ def _key(name: str) -> str:
 class CheckRepos(Tool):
     name = "check_repos"
     description = ("Check the user's local Git repos against GitHub and report which have "
-                   "unpushed commits, are behind, or have uncommitted changes. Read-only. "
-                   "Set repo only if the user names one repo.")
+                   "unpushed commits, are behind, or have uncommitted changes. Read-only.")
     args_schema = {
         "type": "object",
-        "properties": {"repo": {"type": "string", "minLength": 1, "maxLength": 100}},
+        "properties": {"repo": {
+            "type": "string", "minLength": 1, "maxLength": 100,
+            "description": "The repo name the user said, or \"all\" to check every repo."}},
         "additionalProperties": False,
     }
 
@@ -345,7 +359,7 @@ class CheckRepos(Tool):
         if not repos:
             return f"Your repo list is empty. Add repos to {path}."
 
-        if repo:
+        if not means_all_repos(repo):
             wanted = {_key(n): n for n in repos}
             match = wanted.get(_key(repo))
             if match is None:

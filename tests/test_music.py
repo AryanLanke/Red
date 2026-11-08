@@ -374,3 +374,17 @@ print(StopMusic(player).run())
                      "02 - Second.wav",            # moved on by itself
                      "That was the last song.",    # skipped the broken file
                      "No music is playing."]
+
+
+@pytest.mark.parametrize("query", [None, "", "all", "ALL", "null", "none", "shuffled",
+                                   "anything", "some music", "my songs", "n/a"])
+def test_placeholder_queries_shuffle_everything(library, query):
+    assert music.wants_everything(query)
+    player = FakePlayer()
+    PlayMusic(player, library, shuffle=no_shuffle).run(query=query)
+    assert len(player.queue) == 9
+
+
+@pytest.mark.parametrize("query", ["red", "all of me", "yesterday", "daft punk"])
+def test_real_queries_are_searched(query):
+    assert not music.wants_everything(query)

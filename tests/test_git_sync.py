@@ -329,3 +329,17 @@ def test_spoken_lists_three_problems(tmp_path):
 def test_tool_is_not_destructive():
     assert CheckRepos.destructive is False
     assert CheckRepos.args_schema["additionalProperties"] is False
+
+
+@pytest.mark.parametrize("value", [None, "", "all", "All", "none", "null", "my repos",
+                                   "all my repos", "repositories", "*", "GitHub"])
+def test_placeholders_mean_every_repo(tmp_path, value):
+    assert git_sync.means_all_repos(value)
+    cfg = write_config(tmp_path, {"a": tmp_path / "x", "b": tmp_path / "y"})
+    tool = CheckRepos(config=lambda: cfg)
+    tool.run(repo=value)
+    assert len(tool.last_results) == 2
+
+
+def test_real_repo_names_are_looked_up():
+    assert not git_sync.means_all_repos("red")

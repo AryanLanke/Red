@@ -37,6 +37,21 @@ _FILLER = frozenset({
     "song", "songs", "music", "track", "tracks", "tune", "tunes", "album", "playlist",
 })
 
+# Whole queries that mean "no particular song". The model tends to fill the
+# optional query with one of these instead of leaving it out.
+_EVERYTHING = frozenset({
+    "all", "any", "anything", "everything", "none", "null", "nil", "undefined", "n a",
+    "random", "shuffle", "shuffled", "something", "whatever", "my", "all of it",
+})
+
+
+def wants_everything(query: str | None) -> bool:
+    """True when `query` names nothing, so Red should shuffle the whole library."""
+    if not query:
+        return True
+    words = re.sub(r"[^a-z0-9]+", " ", query.lower()).strip()
+    return words in _EVERYTHING or not _tokens(query)
+
 
 def music_dir() -> Path:
     """RED_MUSIC_DIR, otherwise the user's Music folder."""
@@ -280,12 +295,14 @@ class _MusicTool(Tool):
 
 class PlayMusic(_MusicTool):
     name = "play_music"
-    description = ("Play music from the user's music folder. Set query to a song, artist, "
-                   "album or folder name only if the user names one; leave it out to "
-                   "shuffle all songs.")
+    description = ("Play music from the user's music folder: a named song, artist, album "
+                   "or genre, or shuffle all songs.")
     args_schema = {
         "type": "object",
-        "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 100}},
+        "properties": {"query": {
+            "type": "string", "minLength": 1, "maxLength": 100,
+            "description": "The song, artist, album or folder name the user said, "
+                           "or \"all\" to shuffle all songs."}},
         "additionalProperties": False,
     }
 
@@ -305,7 +322,7 @@ class PlayMusic(_MusicTool):
         if not tracks:
             return f"There's no music I can play in {library.root}."
 
-        if query and _tokens(query):
+        if not wants_everything(query):
             tracks = library.find(query, tracks)
             if not tracks:
                 return f"I couldn't find any music matching {query}."
