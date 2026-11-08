@@ -9,12 +9,16 @@ A local voice and action assistant for your Windows laptop. Say "Hey Red" or pre
 ## What Red does
 
 - **Wakes up** when you press **Ctrl+Alt+R** or say **"Hey Red"**
-- **Opens things:** folders like Downloads or Documents, apps like Notepad or VS Code, and websites
-- **Shuts down or restarts** your PC after a delay ("shut down in 2 hours"), and cancels it again
-- **Plays music** from a folder on your PC: play, pause, resume, next song, stop
+- **Opens things:** folders, apps (including Word, Excel, PowerPoint and Outlook), websites and Windows Settings pages
+- **Finds files** by name and opens the one you pick
+- **Searches the web** in your browser: the web, YouTube, images, maps, news or Wikipedia
+- **Writes email drafts** in your mail app, ready for you to check and send
+- **Controls your PC:** volume, media keys, screenshots, lock, sleep, shutdown and restart (with a delay), and emptying the Recycle Bin
+- **Plays music** from a folder on your PC
 - **Checks your Git repos** against GitHub and tells you what's unpushed or behind
+- **Tells you** the time, the date and the battery level
 - **Answers out loud** and shows its status in a small floating window
-- **Asks before anything risky:** shutdown and restart always need a clear "yes"
+- **Asks before anything risky:** shutdown, restart, sleep and emptying the Recycle Bin always need a clear "yes"
 
 ---
 
@@ -55,6 +59,7 @@ New-Item -ItemType Directory -Force "$env:RED_HOME\config"
 Copy-Item .env.example "$env:RED_HOME\config\.env"
 
 python -m red setup    # downloads the model runtime, the language model and the voice models (about 7 GB)
+python -m red doctor   # checks that everything is in place, and says how to fix what isn't
 ```
 
 If you set `RED_HOME`, set it again in every new PowerShell window, or set it once as a user environment variable.
@@ -71,23 +76,47 @@ python -m red --typed     # type commands instead; type 'quit' to stop
 python -m red --dry-run   # type commands and only see what Red would do
 python -m red run "open Downloads"     # run one command
 python -m red route "open Downloads"   # only show what Red would do for one command
+python -m red doctor                   # check the setup
+python -m red startup on               # start Red when you sign in (off to undo)
 ```
 
 **Talking to Red:** press **Ctrl+Alt+R** (or say "Hey Red"), wait for the short beep, then say your command. Red stops listening about a second after you finish, then answers out loud. The small window in the bottom-right corner shows what Red is doing: listening, thinking, asking, or speaking. It never takes the keyboard focus, and it hides itself when Red is idle. Press Ctrl+C in the PowerShell window to quit Red.
 
 **"Hey Red":** if the wake word can't start on your PC, Red says so once when it starts and keeps working with the shortcut.
 
-**Confirming:** for a shutdown or restart, Red repeats the action with the exact time, for example "Shut down in 2 hours (at 11:40 PM)? Say yes to confirm." Only "yes" goes ahead. Anything else, or silence for 30 seconds, cancels. If your microphone fails at that moment, Red asks in the PowerShell window instead. In typed mode, you type `y` or `yes`.
+**Confirming:** for a shutdown, restart, sleep or emptying the Recycle Bin, Red repeats the action with the exact time, for example "Shut down in 2 hours (at 11:40 PM)? Say yes to confirm." Only "yes" goes ahead. Anything else, or silence for 30 seconds, cancels. If your microphone fails at that moment, Red asks in the PowerShell window instead. In typed mode, you type `y` or `yes`.
 
 **Music:** Red pauses the music while it listens and talks, then resumes it.
 
-Examples:
-- "open my Downloads folder", "open Documents"
-- "open notepad", "open calculator", "open task manager"
-- "open YouTube"
-- "shut down the computer in 3 hours", "restart in 10 minutes", "cancel the shutdown"
-- "play some music", "play Daft Punk", "pause the music", "next song", "stop the music"
-- "check my repos", "is red pushed?"
+---
+
+## What you can say
+
+You don't need exact words; these are examples.
+
+| To | Say |
+|---|---|
+| Open a folder | "open my Downloads folder", "open Documents", "open my projects folder" (a folder from `allowlist.toml`) |
+| Start an app | "open notepad", "open calculator", "open the file explorer app", "open task manager", "open PowerPoint", "open Word", "open Excel", "open Outlook", "open VS Code" |
+| Open a website | "open YouTube", "open github.com" |
+| Search the web | "search the web for cheap flights to Goa", "search YouTube for lofi music", "show me pictures of the Eiffel Tower", "find Pune on the map", "latest news about the World Cup", "look up Marie Curie on Wikipedia" |
+| Find a file | "find my resume", "where is the budget spreadsheet" |
+| Open what Red found | "open it", "open the second one" |
+| Write an email | "compose a mail to mom about dinner on Sunday", "write an email to alex@example.com saying I'll be late" |
+| Shut down or restart | "shut down the computer in 3 hours", "restart in 10 minutes", "restart now" |
+| Cancel it | "cancel the shutdown", "cancel the restart" |
+| Sleep | "put the computer to sleep" |
+| Lock | "lock my PC" |
+| Play music | "play some music", "play Daft Punk", "play my jazz folder" |
+| Control playback | "pause the music", "resume", "next song", "previous track", "stop the music" |
+| Change the volume | "volume up", "turn it down", "mute", "unmute", "set the volume to 30 percent" |
+| Open a Windows setting | "open Bluetooth settings", "open display settings", "check for Windows updates" |
+| Ask the time, date or battery | "what time is it", "what's the date today", "how much battery do I have" |
+| Take a screenshot | "take a screenshot" |
+| Empty the Recycle Bin | "empty the recycle bin" |
+| Check your repos | "check my repos", "check the red repo", "is my red repo pushed" |
+
+Pause, resume and next work for Red's own music and also for Spotify or a YouTube tab. Screenshots go to Pictures\Screenshots. Email drafts are never sent by Red: you check them and press Send.
 
 ---
 
@@ -105,6 +134,7 @@ Your settings are in `RED_HOME\config\.env` (copied from `.env.example`). Settin
 | `RED_WHISPER_MODEL` | Speech recognition model | `small` |
 | `RED_PIPER_VOICE` | The voice Red speaks with | `en_US-lessac-medium` |
 | `RED_MUSIC_DIR` | The folder Red plays music from | your Music folder |
+| `RED_SEARCH_ENGINE` | `google`, `bing` or `duckduckgo` for web searches | `google` |
 | `RED_LLM_MODEL` | `qwen2.5-7b-instruct-q4_k_m`, or `qwen2.5-3b-instruct-q4_k_m` for PCs with less video memory | 7B |
 | `RED_LLM_KEEP_ALIVE` | How long the model stays loaded after your last command (`5m`, `30m`, `0`) | `5m` |
 | `RED_LLM_BACKEND` | `auto`, `ollama`, or `llama.cpp` | `auto` |
@@ -141,6 +171,16 @@ website = 'D:\Projects\website'
 
 Red reports each repo as clean, ahead (unpushed commits), behind, diverged, or with uncommitted changes. It says the short version out loud and shows each repo in the status window. It only reads your repos.
 
+### Contacts: `contacts.toml`
+
+To write email by name ("compose a mail to mom"), list the addresses in `RED_HOME\config\contacts.toml`. `python -m red setup` creates it from `contacts.example.toml`. Without an entry, Red opens the draft with the recipient empty and tells you.
+
+```toml
+[contacts]
+mom = "mom@example.com"
+"alex kim" = "alex.kim@example.com"
+```
+
 ### Music
 
 Red plays `mp3`, `ogg`, `opus`, `flac` and `wav` files from your Music folder, or from `RED_MUSIC_DIR`. It doesn't play `m4a`, `aac` or `wma`. Songs are matched by file and folder names, so "play Daft Punk" works if there's a folder or file with that name.
@@ -162,7 +202,8 @@ RED_HOME\
 └── config\
     ├── .env           # your settings and secrets
     ├── allowlist.toml # folders and apps Red may open
-    └── repos.toml     # repos for the repo check
+    ├── repos.toml     # repos for the repo check
+    └── contacts.toml  # names for email drafts
 ```
 
 Disk space, roughly: Python packages 2 to 3 GB, Ollama 2.1 GB, the 7B model 4.7 GB, speech and voice models under 1 GB, and room for logs.
@@ -177,11 +218,15 @@ Disk space, roughly: Python packages 2 to 3 GB, Ollama 2.1 GB, the 7B model 4.7 
 - **Shutdowns are limited and cancellable.** Delays are capped at 24 hours, Red always says when a shutdown is scheduled, and "cancel the shutdown" works at any time. When the time comes, Windows closes open apps without asking, so save your work first.
 - **The repo check only reads.** It never pulls, pushes, or changes your repos.
 - **Secrets** such as `GITHUB_TOKEN` stay in `RED_HOME\config\.env`, which is never part of the repo.
+- **Email is never sent by Red.** It only opens a draft in your mail app. Red has no access to your mail account.
+- **Finding files only reads.** Red never opens programs or scripts it finds; it opens their folder instead.
 - **Downloads are verified.** Ollama, the llama.cpp fallback, and the speech, voice and wake word models are pinned to exact versions and checked against SHA-256 hashes, and Ollama checks the model files itself.
 
 ---
 
 ## Troubleshooting
+
+**Start with `python -m red doctor`.** It checks Python, the packages, `RED_HOME`, the language model, the microphone and speakers, the GPU, the speech and wake word models, and your `allowlist.toml`, `repos.toml` and `contacts.toml`. It shows a ✅, ⚠️ or ❌ for each, with a fix. It only looks: it doesn't record, play sound or change anything.
 
 - **"Smart App Control blocked llama-server" or exit code `0xC0E90002`:** Windows blocks unsigned programs. Use the default Ollama backend (`RED_LLM_BACKEND=ollama`).
 - **The GPU runs out of memory:** switch to the 3B model with `RED_LLM_MODEL=qwen2.5-3b-instruct-q4_k_m`, and close other heavy apps while Red is loaded.
@@ -191,7 +236,7 @@ Disk space, roughly: Python packages 2 to 3 GB, Ollama 2.1 GB, the 7B model 4.7 
 - **The shortcut doesn't work:** some antivirus tools block keyboard hooks, so you may need to allow Red.
 - **Something else went wrong:** check `RED_HOME\logs\red.log` and `RED_HOME\logs\ollama.log`.
 
-**Start Red at login:** put a shortcut to Red in your Startup folder (press Win+R, type `shell:startup`), or use Task Scheduler.
+**Start Red when you sign in:** run `python -m red startup on`. This puts a shortcut in your Startup folder that starts Red in a minimized window. `python -m red startup off` removes it, and `python -m red startup` tells you whether it's on.
 
 ---
 
