@@ -33,6 +33,25 @@ WHISPER_MODELS: dict[str, PinnedFiles] = {
             Asset("vocabulary.txt", "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913"),
         ),
     ),
+    # Small English-only models, used by the "Hey Red" wake word detector.
+    "tiny.en": PinnedFiles(
+        hf_url("Systran/faster-whisper-tiny.en", "0d3d19a32d3338f10357c0889762bd8d64bbdeba"),
+        (
+            Asset("config.json", "14b1b421a90349bc551b881461426b561a874049cb9e4c4864f2ca384f6a7cc5"),
+            Asset("model.bin", "1a5afae06a4db91c975c9a9d78be5cc110ee4ea022ad57d55492e4550e936b2a"),
+            Asset("tokenizer.json", "929c5252409436dce1b38a75d1abbcb5e132d170d8e324e4e04ed915fa2d22df"),
+            Asset("vocabulary.txt", "ff77588746d3a2595d32ab5b69ffd7b95ce2441ac57533cb66fc3eb575a115cf"),
+        ),
+    ),
+    "base.en": PinnedFiles(
+        hf_url("Systran/faster-whisper-base.en", "3d3d5dee26484f91867d81cb899cfcf72b96be6c"),
+        (
+            Asset("config.json", "f3bc3821e9fc76a27bae538e11ae5b677dcdd352b4600429ce7951d398569aeb"),
+            Asset("model.bin", "2a166925539a16005f14ff328359f9b9adb9dc4fb631bb3b227526862e93e2ef"),
+            Asset("tokenizer.json", "929c5252409436dce1b38a75d1abbcb5e132d170d8e324e4e04ed915fa2d22df"),
+            Asset("vocabulary.txt", "ff77588746d3a2595d32ab5b69ffd7b95ce2441ac57533cb66fc3eb575a115cf"),
+        ),
+    ),
 }
 
 COMPUTE_TYPE = {"cuda": "float16", "cpu": "int8"}
@@ -82,6 +101,8 @@ def _faster_whisper_model(path: str, device: str, compute_type: str):
 class Transcriber:
     def __init__(self, model_dir: Path, model: str = "small", device: str = "auto", *,
                  language: str | None = "en", beam_size: int = 5,
+                 vad_filter: bool = True, hotwords: str | None = None,
+                 max_new_tokens: int | None = None,
                  model_factory: ModelFactory = _faster_whisper_model,
                  cuda_check: Callable[[], bool] = cuda_available):
         if model not in WHISPER_MODELS:
@@ -94,6 +115,9 @@ class Transcriber:
         self.requested_device = device
         self.language = language
         self.beam_size = beam_size
+        self.vad_filter = vad_filter
+        self.hotwords = hotwords
+        self.max_new_tokens = max_new_tokens
         self._factory = model_factory
         self._cuda_check = cuda_check
         self._model = None
@@ -152,13 +176,16 @@ class Transcriber:
             self._create("cpu")
 
     def _run(self, audio: np.ndarray) -> str:
+        extra = {"max_new_tokens": self.max_new_tokens} if self.max_new_tokens else {}
         segments, _info = self._model.transcribe(
             audio,
             language=self.language,
             beam_size=self.beam_size,
-            vad_filter=True,
+            vad_filter=self.vad_filter,
+            hotwords=self.hotwords,
             condition_on_previous_text=False,
             without_timestamps=True,
+            **extra,
         )
         # segments is a generator: decoding (and any CUDA error) happens here.
         text = " ".join(s.text.strip() for s in segments)
