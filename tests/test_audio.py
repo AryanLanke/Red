@@ -73,6 +73,16 @@ def test_noisy_room_raises_the_threshold():
     assert ep.started
 
 
+def test_digital_silence_at_mic_start_is_not_calibration():
+    ep = Endpointer()
+    for _ in range(15):                          # 0.45 s of warm-up zeros
+        ep.feed(np.zeros(480, np.float32))
+    assert ep.noise_floor is None
+    for _ in range(10):
+        ep.feed(noise(0.03, amp=0.004))
+    assert ep.noise_floor == pytest.approx(0.004, rel=0.3)
+
+
 def test_noise_floor_is_capped_when_you_talk_straight_away():
     ep = Endpointer()
     loud = tone(1.0, amp=0.3)

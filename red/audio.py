@@ -216,7 +216,9 @@ class Endpointer:
         pos = self.total
         self.total += n
 
-        if self.noise_floor is None:
+        # Microphones often start with a few blocks of exact zeros; they say
+        # nothing about the room, so they don't count towards calibration.
+        if self.noise_floor is None and level > 0.0:
             self._calibration.append(level)
             self._calibration_samples += n
             if self._calibration_samples >= CALIBRATION_SECONDS * self.sr:
