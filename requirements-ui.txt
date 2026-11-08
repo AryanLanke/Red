@@ -1,0 +1,6 @@
+# Overlay and music (Track C). Verified on Windows 11 with Python 3.11.9.
+# PySide6-Essentials has QtCore, QtGui and QtWidgets without the 400 MB of add-ons.
+PySide6-Essentials==6.11.3
+shiboken6==6.11.3
+# Music playback through SDL_mixer: mp3, ogg, opus, flac and wav, with no VLC needed.
+pygame-ce==2.5.8
