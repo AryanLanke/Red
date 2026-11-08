@@ -1,0 +1,13 @@
+# Repos for Red's repo sync check ("check my repos", "is red pushed?").
+#
+# Copy this file to RED_HOME\config\repos.toml and list your local repos below.
+# The name is what you say; the value is the repo's folder. Use single quotes
+# so backslashes in Windows paths are kept as they are.
+#
+# Red only reads these repos: it runs git fetch, git status and git log, and
+# never pulls, pushes, commits or changes files.
+
+[repos]
+red = 'D:\RED\red'
+# website = 'D:\Projects\website'
+# notes = '%USERPROFILE%\Documents\notes'
