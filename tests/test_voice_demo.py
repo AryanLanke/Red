@@ -3,7 +3,9 @@ import wave
 import numpy as np
 import pytest
 
-from red.voice_demo import VoiceConfig, _is_yes, _pretty_hotkey, _read_wav
+import red.voice_demo as voice_demo
+from red.confirm import is_yes
+from red.voice_demo import VoiceConfig, _pretty_hotkey, _read_wav, _spoken_name
 
 VARS = ("RED_HOTKEY", "RED_WAKEWORD", "RED_WAKEWORD_THRESHOLD", "RED_WHISPER_MODEL",
         "RED_WHISPER_DEVICE", "RED_PIPER_VOICE")
@@ -18,7 +20,7 @@ def clean_env(monkeypatch):
 
 def test_defaults(clean_env):
     cfg = VoiceConfig.from_env()
-    assert cfg == VoiceConfig(hotkey="<ctrl>+<alt>+r", wakeword="hey_jarvis", wakeword_threshold=0.5,
+    assert cfg == VoiceConfig(hotkey="<ctrl>+<alt>+r", wakeword="hey_red", wakeword_threshold=0.5,
                               whisper_model="small", whisper_device="auto",
                               piper_voice="en_US-lessac-medium")
 
@@ -35,12 +37,17 @@ def test_env_overrides(clean_env):
     assert cfg.whisper_device == "cpu"
 
 
-@pytest.mark.parametrize("answer, yes", [
-    ("Yes.", True), (" yes ", True), ("Y", True), ("YES!", True),
-    ("Yeah.", False), ("No.", False), ("yes please", False), ("", False), (None, False),
+def test_demo_uses_the_real_yes_check():
+    assert voice_demo.is_yes is is_yes
+
+
+@pytest.mark.parametrize("wakeword, name", [
+    ("hey_red", "Hey Red"),
+    ("hey_mycroft", "Hey Mycroft"),
+    (r"D:\RED\models\wakeword\hey_red_v0.1.onnx", "Hey Red"),
 ])
-def test_is_yes_stand_in(answer, yes):
-    assert _is_yes(answer) is yes
+def test_spoken_name(wakeword, name):
+    assert _spoken_name(wakeword) == name
 
 
 def test_pretty_hotkey():
