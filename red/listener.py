@@ -39,14 +39,15 @@ FEATURE_MODELS = PinnedFiles(_OWW, (
     Asset("embedding_model.onnx", "70d164290c1d095d1d4ee149bc5e00543250a7316b59f31d056cff7bd3075c1f"),
 ))
 
-# Pre-trained phrases. A custom "Hey Red" model can be passed as a path to its .onnx.
+# Other pre-trained openWakeWord phrases, kept as options. A custom model can be
+# passed as a path to its .onnx file.
 WAKEWORDS: dict[str, Asset] = {
-    "hey_jarvis": Asset("hey_jarvis_v0.1.onnx", "94a13cfe60075b132f6a472e7e462e8123ee70861bc3fb58434a73712ee0d2cb"),
     "hey_mycroft": Asset("hey_mycroft_v0.1.onnx", "c2a311e8fa1338de89c31b3b46dc4dffd4af2f9a8d6ddead48893c2d301b1f18"),
     "hey_rhasspy": Asset("hey_rhasspy_v0.1.onnx", "5a9b3ed3be2910e35780e097905aa9f35a9c10038df47914cf2b3ec4d670f6ea"),
     "alexa": Asset("alexa_v0.1.onnx", "6ff566a01d12670e8d9e3c59da32651db1575d17272a601b7f8a39283dfbae3e"),
 }
-DEFAULT_WAKEWORD = "hey_jarvis"
+HEY_RED = "hey_red"            # Red's own wake phrase; see red/wakeword.py
+DEFAULT_WAKEWORD = HEY_RED
 DEFAULT_THRESHOLD = 0.5
 DEFAULT_HOTKEY = "<ctrl>+<alt>+r"
 WAKE_BLOCK_SECONDS = 0.08      # openWakeWord works on 80 ms frames (1280 samples)
@@ -71,20 +72,25 @@ def normalize_hotkey(text: str) -> str:
 
 
 def resolve_wakeword(wakeword: str) -> str:
-    """'Hey Jarvis' -> 'hey_jarvis'. A path to an .onnx file is returned as is."""
+    """'Hey Red' -> 'hey_red'. A path to an .onnx file is returned as is."""
     if wakeword.lower().endswith(".onnx"):
         return wakeword
-    key = "_".join(wakeword.lower().replace("-", " ").split())
-    if key not in WAKEWORDS:
-        raise ValueError(f"Unknown wake word {wakeword!r}; choose from {sorted(WAKEWORDS)} "
-                         "or give the path to a custom .onnx model")
+    key = "_".join(wakeword.lower().replace("-", " ").replace(",", " ").split())
+    if key != HEY_RED and key not in WAKEWORDS:
+        raise ValueError(f"Unknown wake word {wakeword!r}; choose from "
+                         f"{[HEY_RED] + sorted(WAKEWORDS)} or give the path to a custom .onnx model")
     return key
 
 
 def download_wakeword(model_dir: Path, wakeword: str) -> Path:
-    """Fetch the feature models and the phrase model. Returns the phrase model path."""
-    FEATURE_MODELS.ensure(model_dir, label="openWakeWord")
+    """Fetch what the wake word needs. Returns the phrase model's path (a folder for hey_red)."""
     key = resolve_wakeword(wakeword)
+    if key == HEY_RED:
+        from red.stt import WHISPER_MODELS
+        from red.wakeword import WAKE_WHISPER_MODEL
+        folder = Path(model_dir).parent / "whisper" / WAKE_WHISPER_MODEL
+        return WHISPER_MODELS[WAKE_WHISPER_MODEL].ensure(folder, label=f"Whisper {WAKE_WHISPER_MODEL}")
+    FEATURE_MODELS.ensure(model_dir, label="openWakeWord")
     if key.lower().endswith(".onnx"):
         path = Path(key)
         if not path.exists():
@@ -122,6 +128,15 @@ class WakeWordDetector:
         self._model.reset()
 
 
+def make_detector(model_dir: Path, wakeword: str) -> Detector:
+    """The right detector for a wake word: "Hey Red" or an openWakeWord model."""
+    if resolve_wakeword(wakeword) == HEY_RED:
+        from red.wakeword import HeyRedDetector
+        download_wakeword(model_dir, wakeword)
+        return HeyRedDetector.create(model_dir)
+    return WakeWordDetector(model_dir, wakeword)
+
+
 class _HotKeys(Protocol):
     def start(self) -> None: ...
     def stop(self) -> None: ...
@@ -139,7 +154,7 @@ class Listener:
                  threshold: float = DEFAULT_THRESHOLD,
                  hotkey_factory: Callable[[dict], _HotKeys] = _pynput_hotkeys,
                  mic_factory: Callable[[], object] = lambda: Microphone(block_seconds=WAKE_BLOCK_SECONDS),
-                 detector_factory: Callable[[Path, str], Detector] = WakeWordDetector):
+                 detector_factory: Callable[[Path, str], Detector] = make_detector):
         self.on_trigger = on_trigger
         self.hotkey = normalize_hotkey(hotkey) if hotkey else None
         self.wakeword = resolve_wakeword(wakeword) if wakeword else None
