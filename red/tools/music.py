@@ -54,13 +54,15 @@ def wants_everything(query: str | None) -> bool:
 
 
 def music_dir() -> Path:
-    """RED_MUSIC_DIR, otherwise the user's Music folder."""
-    explicit = os.environ.get("RED_MUSIC_DIR", "").strip()
+    """RED_MUSIC_DIR, otherwise the user's Music folder (found through Windows,
+    so a Music folder moved to OneDrive still works)."""
+    from ..config import load_settings
+    from ..known_folders import known_folder
+
+    explicit = load_settings().music_dir
     if explicit:
-        return Path(explicit).expanduser()
-    # Integration: replace with red.known_folders.known_folder("music"), which
-    # also finds a Music folder that was moved to OneDrive.
-    return Path.home() / "Music"
+        return explicit
+    return known_folder("music") or Path.home() / "Music"
 
 
 def _tokens(text: str) -> list[str]:
@@ -266,6 +268,11 @@ class PygamePlayer:
 
 _shared_player: Player | None = None
 _shared_lock = threading.Lock()
+
+
+def active_player() -> Player | None:
+    """The shared player if music was played this session, without creating one."""
+    return _shared_player
 
 
 def default_player() -> Player:

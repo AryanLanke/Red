@@ -59,7 +59,7 @@ def test_loop_runs_actions_and_logs(env, monkeypatch, capsys):
     answers = iter(["no"])
     monkeypatch.setattr(cli, "typed_ask", lambda q, t: next(answers))
     _type(monkeypatch, ["open downloads", "shut down in 1 hour", "banana", "quit"])
-    assert cli.main([]) == 0
+    assert cli.main(["--typed"]) == 0
     out = capsys.readouterr().out
     assert "Red: Opening Downloads." in out
     assert "Red: Cancelled." in out
@@ -101,8 +101,50 @@ def test_bad_allowlist_warns_but_starts(env, capsys):
     assert "syntax error" in capsys.readouterr().err
 
 
-def test_setup_installs_example_allowlist(env):
+def test_setup_installs_examples_and_voice_models(env, monkeypatch):
     home, _, _ = env
+    fetched = []
+    monkeypatch.setattr(cli, "_setup_voice", lambda settings: fetched.append(settings.home) or 0)
     assert cli.main(["setup"]) == 0
-    assert (home / "config" / "allowlist.toml").read_text(encoding="utf-8") == \
-        cli.EXAMPLE_ALLOWLIST.read_text(encoding="utf-8")
+    assert fetched == [home]
+    for name, example in (("allowlist.toml", cli.EXAMPLE_ALLOWLIST),
+                          ("repos.toml", cli.EXAMPLE_REPOS)):
+        assert (home / "config" / name).read_text(encoding="utf-8") == \
+            example.read_text(encoding="utf-8")
+
+
+def test_setup_voice_without_voice_packages(env, monkeypatch, capsys):
+    def missing(settings):
+        raise ImportError("No module named 'numpy'")
+    monkeypatch.setattr(cli, "load_voice", missing)
+    assert cli.main(["setup"]) == 1
+    assert "pip install -r requirements.txt" in capsys.readouterr().out
+
+
+def test_setup_voice_downloads_everything(env, monkeypatch):
+    import sys
+    import types
+
+    from red.config import load_settings
+    home, _, _ = env
+    calls = []
+
+    class Part:
+        def __init__(self, name):
+            self.name = name
+
+        def download(self):
+            calls.append(self.name)
+
+    voice = cli.Voice(transcriber=Part("whisper"), speaker=Part("piper"), record=None,
+                      chime=None, listener_factory=None, make_ask=None)
+    monkeypatch.setattr(cli, "load_voice", lambda settings: voice)
+
+    def download_wakeword(model_dir, wakeword):
+        calls.append(("wakeword", wakeword, model_dir))
+        raise ValueError("unknown wake word")   # not available yet: setup still succeeds
+    fake_listener = types.ModuleType("red.listener")
+    fake_listener.download_wakeword = download_wakeword
+    monkeypatch.setitem(sys.modules, "red.listener", fake_listener)
+    assert cli._setup_voice(load_settings(home)) == 0
+    assert calls == ["whisper", "piper", ("wakeword", "hey_red", home / "models" / "wakeword")]

@@ -1,12 +1,14 @@
 """Entry point.
 
-    python -m red setup                    download the LLM backend and the model
-    python -m red route "open Downloads"   show the tool call for one command (never runs it)
-    python -m red run "open Downloads"     run one command
-    python -m red                          type commands interactively and run them
+    python -m red                          voice: press Ctrl+Alt+R or say "Hey Red", then speak
+    python -m red --typed                  type commands instead of speaking
     python -m red --dry-run                type commands, only show the tool calls
+    python -m red setup                    download the LLM backend, the model and the voice models
+    python -m red route "open Downloads"   show the tool call for one command (never runs it)
+    python -m red run "open Downloads"     run one typed command
 
-Destructive actions (shutdown, restart) always ask first.
+Destructive actions (shutdown, restart) always ask first: aloud in voice
+mode, typed in typed mode.
 """
 
 from __future__ import annotations
@@ -15,18 +17,33 @@ import argparse
 import logging
 import shutil
 import sys
+import threading
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from .allowlist import AllowlistError, load_allowlist
+from .confirm import Ask, typed_ask, with_fallback
 from .config import Settings, load_settings
-from .confirm import typed_ask
 from .executor import Executor
 from .llm import LLMError, connect
 from .router import RouteError, Router
 from .tools import default_registry
 
-EXAMPLE_ALLOWLIST = Path(__file__).resolve().parent.parent / "allowlist.example.toml"
+log = logging.getLogger("red")
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+EXAMPLE_ALLOWLIST = REPO_ROOT / "allowlist.example.toml"
+EXAMPLE_REPOS = REPO_ROOT / "repos.example.toml"
+
+MUSIC_TOOLS = {"play_music", "stop_music", "pause_music", "resume_music", "next_song"}
+VOICE_HELP = ("Voice needs the voice packages. Install them with "
+              "'pip install -r requirements.txt', or use 'python -m red --typed'.")
+
+
+# --------------------------------------------------------------------------
+# Typed mode
+# --------------------------------------------------------------------------
 
 def _show(router: Router, command: str) -> None:
     try:
@@ -50,12 +67,311 @@ def _run(router: Router, executor: Executor, command: str) -> None:
     if not route.is_none:
         print(f"  -> {route.to_json()}")
     print(f"  Red: {executor.execute(command, route)}")
+    if executor.last_details:
+        for line in executor.last_details.splitlines():
+            print(f"       {line}")
 
 
-def _install_example_allowlist(settings: Settings) -> None:
-    if not settings.allowlist_path.exists() and EXAMPLE_ALLOWLIST.is_file():
-        shutil.copyfile(EXAMPLE_ALLOWLIST, settings.allowlist_path)
-        print(f"Created {settings.allowlist_path}; add your folders and apps there.")
+def _typed_loop(handle: Callable[[str], None], banner: str) -> None:
+    print(banner)
+    while True:
+        try:
+            command = input("> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            break
+        if command.lower() in {"quit", "exit"}:
+            break
+        if command:
+            handle(command)
+
+
+# --------------------------------------------------------------------------
+# Voice mode
+# --------------------------------------------------------------------------
+
+@dataclass
+class Voice:
+    """The voice parts, so tests can pass fakes instead of a microphone and models."""
+
+    transcriber: object                        # stt.Transcriber
+    speaker: object                            # tts.Speaker
+    record: Callable[[], object]               # audio.record_command
+    chime: Callable[[], None]                  # audio.chime
+    listener_factory: Callable[..., object]    # listener.Listener
+    make_ask: Callable[..., Ask]               # voice_confirm.spoken_ask
+
+
+def load_voice(settings: Settings) -> Voice:
+    """The real voice parts. Raises ImportError if the voice packages are missing."""
+    from .audio import chime, record_command
+    from .listener import Listener
+    from .stt import Transcriber
+    from .tts import Speaker
+    from .voice_confirm import spoken_ask
+
+    models = settings.models_dir
+    return Voice(
+        transcriber=Transcriber(models / "whisper", settings.whisper_model, settings.whisper_device),
+        speaker=Speaker(models / "piper", settings.piper_voice),
+        record=record_command,
+        chime=chime,
+        listener_factory=Listener,
+        make_ask=spoken_ask,
+    )
+
+
+def pretty_hotkey(hotkey: str) -> str:
+    """"<ctrl>+<alt>+r" -> "Ctrl+Alt+R"."""
+    return "+".join(p.strip("<>").capitalize() if len(p) > 1 else p.upper()
+                    for p in hotkey.split("+"))
+
+
+def pretty_wakeword(wakeword: str) -> str:
+    """"hey_red" -> "Hey Red"; a model path -> its file name."""
+    return Path(wakeword).stem.replace("_", " ").split(" v0")[0].title()
+
+
+class VoiceApp:
+    """Hotkey or wake word -> listen -> transcribe -> route -> confirm aloud -> run -> answer aloud."""
+
+    def __init__(self, settings: Settings, router: Router, registry, voice: Voice, overlay, *,
+                 typed_fallback: Ask = typed_ask, music_player: Callable[[], object] | None = None,
+                 log_path: Path | None = None, out: Callable[[str], None] = print):
+        self.settings = settings
+        self.router = router
+        self.voice = voice
+        self.overlay = overlay
+        self.out = out
+        self._music_player = music_player or _active_music_player
+        spoken = voice.make_ask(voice.speaker, voice.transcriber)
+
+        def ask(question: str, timeout: float) -> str | None:
+            self._state("confirm", question)
+            self.out(f"  Red asks: {question}")
+            return spoken(question, timeout)
+
+        self.executor = Executor(registry, ask=with_fallback(ask, typed_fallback), log_path=log_path)
+        self.listener = None
+        self.notice = ""        # why the wake word is off, if it is
+
+    # --- starting and stopping ------------------------------------------------
+
+    def start_listener(self):
+        """Start the hotkey and the wake word. If the wake word can't start, use the hotkey only."""
+        s = self.settings
+        model_dir = s.models_dir / "wakeword"
+        if s.wakeword:
+            try:
+                listener = self.voice.listener_factory(self.handle, s.hotkey, s.wakeword,
+                                                       model_dir=model_dir,
+                                                       threshold=s.wakeword_threshold)
+                listener.start()
+                self.listener = listener
+                return listener
+            except Exception as e:  # noqa: BLE001 - unknown name, missing model, no microphone
+                log.warning("Wake word %r unavailable: %s", s.wakeword, e)
+                self.notice = (f"The wake word \"{pretty_wakeword(s.wakeword)}\" isn't available "
+                               f"({e}), so only the hotkey works.")
+        if not s.hotkey:
+            raise RuntimeError("The hotkey is off and the wake word isn't available, "
+                               "so nothing can start Red. Set RED_HOTKEY in .env.")
+        listener = self.voice.listener_factory(self.handle, s.hotkey, None, model_dir=model_dir,
+                                               threshold=s.wakeword_threshold)
+        listener.start()
+        self.listener = listener
+        return listener
+
+    def ready_text(self) -> str:
+        ways = []
+        if self.listener is not None and getattr(self.listener, "hotkey", None):
+            ways.append(f"press {pretty_hotkey(self.listener.hotkey)}")
+        if self.listener is not None and getattr(self.listener, "wakeword", None):
+            ways.append(f"say \"{pretty_wakeword(self.listener.wakeword)}\"")
+        text = " or ".join(ways) or "nothing is listening"
+        return f"{text[0].upper()}{text[1:]}, then speak."
+
+    def shutdown(self) -> None:
+        for part in (self.listener, self.voice.speaker):
+            try:
+                if part is not None:
+                    part.stop()
+            except Exception:  # noqa: BLE001 - best effort while quitting
+                log.exception("Error while stopping %r", part)
+
+    def run(self, stop: threading.Event) -> None:
+        """Start listening and block until `stop` is set (or Ctrl+C)."""
+        self.start_listener()
+        if self.notice:
+            self.out(self.notice)
+        ready = self.ready_text()
+        self.out(f"Ready. {ready} Ctrl+C quits.")
+        self._state("idle", f"Red is ready. {ready}")
+        try:
+            while not stop.wait(0.25):
+                pass
+        finally:
+            self.shutdown()
+
+    # --- one command ---------------------------------------------------------
+
+    def handle(self, source: str) -> None:
+        """Called by the listener (on its own thread) for each hotkey press or wake word."""
+        player = self._pause_music()
+        tool = None
+        last = ""
+        try:
+            self._state("listening", "Listening...")
+            self.voice.chime()
+            audio = self.voice.record()
+            if getattr(audio, "size", 0) == 0:
+                last = "I didn't hear anything."
+                self._say(last)
+                return
+            self._state("thinking", "")
+            text = (self.voice.transcriber.transcribe(audio) or "").strip()
+            if not text:
+                last = "Sorry, I didn't catch that."
+                self._say(last)
+                return
+            self.out(f"You said: {text}")
+            self._state("thinking", f"“{text}”")
+            try:
+                route = self.router.route(text)
+            except (RouteError, LLMError) as e:
+                log.warning("Couldn't route %r: %s", text, e)
+                last = "Sorry, I didn't understand that."
+                self._say(last)
+                return
+            logging.getLogger("red.commands").info("%r -> %s", text, route.to_json())
+            tool = route.tool
+            if tool == "check_repos":
+                self._state("thinking", "Checking your repos...")
+            last = self.executor.execute(text, route)
+            self._say(last, self.executor.last_details)
+        except Exception as e:  # noqa: BLE001 - one bad command must not stop Red
+            log.exception("Command failed")
+            last = "Sorry, something went wrong."
+            self._state("error", f"{last} ({e})")
+            self._speak(last)
+        finally:
+            if player is not None and tool not in MUSIC_TOOLS:
+                try:
+                    player.resume()
+                except Exception:  # noqa: BLE001
+                    log.exception("Couldn't resume the music")
+            self._state("idle", last)
+
+    # --- helpers -------------------------------------------------------------
+
+    def _state(self, state: str, text: str = "") -> None:
+        try:
+            self.overlay.set_state(state, text)
+        except Exception:  # noqa: BLE001 - the overlay is only a display
+            log.exception("Overlay update failed")
+
+    def _speak(self, text: str) -> None:
+        try:
+            self.voice.speaker.say(text, block=True)
+        except Exception:  # noqa: BLE001 - no speakers: the text is still shown
+            log.exception("Couldn't speak")
+
+    def _say(self, reply: str, details: str = "") -> None:
+        self.out(f"Red: {reply}")
+        for line in details.splitlines():
+            self.out(f"     {line}")
+        self._state("speaking", f"{reply}\n{details}".strip())
+        self._speak(reply)
+
+    def _pause_music(self):
+        """Pause music while Red listens and talks. Returns the player if it was paused."""
+        try:
+            player = self._music_player()
+            if player is not None and player.current is not None and not player.paused \
+                    and player.pause():
+                return player
+        except Exception:  # noqa: BLE001
+            log.exception("Couldn't pause the music")
+        return None
+
+
+def _active_music_player():
+    try:
+        from .tools.music import active_player
+    except ImportError:
+        return None
+    return active_player()
+
+
+def _voice_mode(settings: Settings, router: Router, registry) -> int:
+    try:
+        voice = load_voice(settings)
+    except ImportError as e:
+        print(f"error: {VOICE_HELP} ({e})", file=sys.stderr)
+        return 2
+    from .overlay import run_with_overlay
+
+    print("Loading speech models...", file=sys.stderr)
+    try:
+        voice.transcriber.load()
+        voice.speaker.load()
+    except Exception as e:  # noqa: BLE001 - missing files, broken download
+        print(f"error: couldn't load the voice models: {e}. Run 'python -m red setup'.",
+              file=sys.stderr)
+        return 2
+    print(f"Whisper is on {voice.transcriber.device} ({voice.transcriber.compute_type}).",
+          file=sys.stderr)
+
+    stop = threading.Event()
+    apps: list[VoiceApp] = []
+
+    def worker(overlay) -> None:
+        app = VoiceApp(settings, router, registry, voice, overlay,
+                       log_path=settings.command_log_path)
+        apps.append(app)
+        app.run(stop)
+
+    try:
+        code = run_with_overlay(worker)
+    except KeyboardInterrupt:
+        code = 130
+    stop.set()
+    for app in apps:
+        app.shutdown()
+    print("\nBye.")
+    return 0 if code in (0, 130) else code
+
+
+# --------------------------------------------------------------------------
+# Setup
+# --------------------------------------------------------------------------
+
+def _install_examples(settings: Settings) -> None:
+    for example, target in ((EXAMPLE_ALLOWLIST, settings.allowlist_path),
+                            (EXAMPLE_REPOS, settings.repos_path)):
+        if not target.exists() and example.is_file():
+            shutil.copyfile(example, target)
+            print(f"Created {target}; edit it to add your own entries.")
+
+
+def _setup_voice(settings: Settings) -> int:
+    """Download and verify the Whisper, Piper and wake word models."""
+    try:
+        from .listener import download_wakeword
+        voice = load_voice(settings)
+    except ImportError as e:
+        print(f"Skipping the voice models: {VOICE_HELP} ({e})")
+        return 1
+    print(f"Voice models go in {settings.models_dir}")
+    voice.transcriber.download()
+    voice.speaker.download()
+    if settings.wakeword:
+        try:
+            download_wakeword(settings.models_dir / "wakeword", settings.wakeword)
+        except Exception as e:  # noqa: BLE001 - e.g. a name this version doesn't know yet
+            print(f"The wake word \"{pretty_wakeword(settings.wakeword)}\" isn't available ({e}). "
+                  "Red will use the hotkey.")
+    print("Voice models are downloaded and verified.")
+    return 0
 
 
 def _check_allowlist(settings: Settings) -> None:
@@ -65,15 +381,21 @@ def _check_allowlist(settings: Settings) -> None:
         print(f"warning: {e}", file=sys.stderr)
 
 
+# --------------------------------------------------------------------------
+# main
+# --------------------------------------------------------------------------
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="red")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="only show the tool call for each command, never run it")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--typed", action="store_true", help="type commands instead of speaking")
+    mode.add_argument("--dry-run", action="store_true",
+                      help="type commands and only show the tool call for each, never run it")
     sub = parser.add_subparsers(dest="cmd")
-    sub.add_parser("setup", help="download the LLM backend and the model")
+    sub.add_parser("setup", help="download the LLM backend, the model and the voice models")
     p_route = sub.add_parser("route", help="show the tool call for one command")
     p_route.add_argument("text", nargs="+")
-    p_run = sub.add_parser("run", help="run one command")
+    p_run = sub.add_parser("run", help="run one typed command")
     p_run.add_argument("text", nargs="+")
     args = parser.parse_args(argv)
 
@@ -82,7 +404,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(filename=settings.logs_dir / "red.log", level=logging.INFO,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
     if args.cmd == "setup":
-        _install_example_allowlist(settings)
+        _install_examples(settings)
     _check_allowlist(settings)
 
     print("Starting the local model...", file=sys.stderr)
@@ -91,34 +413,29 @@ def main(argv: list[str] | None = None) -> int:
     except LLMError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
-    if args.cmd == "setup":
-        print(f"Ready: {type(llm).__name__} with model {settings.llm_model}")
-        if server:
-            server.stop()
-        return 0
-    registry = default_registry()
-    router = Router(registry, llm)
-    executor = Executor(registry, ask=typed_ask, log_path=settings.command_log_path)
-    handle = (lambda c: _show(router, c)) if args.dry_run else (lambda c: _run(router, executor, c))
     try:
+        if args.cmd == "setup":
+            print(f"Ready: {type(llm).__name__} with model {settings.llm_model}")
+            if server:
+                server.stop()
+                server = None
+            return _setup_voice(settings)
+        registry = default_registry()
+        router = Router(registry, llm)
         if args.cmd == "route":
             _show(router, " ".join(args.text))
             return 0
+        executor = Executor(registry, ask=typed_ask, log_path=settings.command_log_path)
         if args.cmd == "run":
-            handle(" ".join(args.text))
+            (_show if args.dry_run else lambda r, c: _run(r, executor, c))(router, " ".join(args.text))
             return 0
-        print("Red (dry run). Type a command, or 'quit'." if args.dry_run
-              else "Red. Type a command, or 'quit'.")
-        while True:
-            try:
-                command = input("> ").strip()
-            except (EOFError, KeyboardInterrupt):
-                break
-            if command.lower() in {"quit", "exit"}:
-                break
-            if command:
-                handle(command)
-        return 0
+        if args.dry_run:
+            _typed_loop(lambda c: _show(router, c), "Red (dry run). Type a command, or 'quit'.")
+            return 0
+        if args.typed:
+            _typed_loop(lambda c: _run(router, executor, c), "Red. Type a command, or 'quit'.")
+            return 0
+        return _voice_mode(settings, router, registry)
     finally:
         if server:
             server.stop()

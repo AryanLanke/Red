@@ -27,7 +27,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from ..config import red_home
 from .base import Tool
 
 log = logging.getLogger(__name__)
@@ -279,7 +278,8 @@ class ReposConfigError(ValueError):
 
 
 def repos_file() -> Path:
-    return red_home() / "config" / "repos.toml"
+    from ..config import load_settings
+    return load_settings().repos_path
 
 
 def load_repos(path: Path) -> dict[str, Path]:
