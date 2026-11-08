@@ -171,14 +171,12 @@ The router sees the list of tool names, descriptions, and schemas. It replies wi
 
 | Job | Model | Why |
 |---|---|---|
-| Planning and architecture (this README, design decisions) | Claude Opus or Sonnet in chat | Strongest reasoning for design trade-offs |
-| Writing code (building Red) | Claude Code | Works inside the repo, runs tests, edits many files |
 | Intent routing at runtime | Qwen2.5 7B Instruct (Q4_K_M) via Ollama; Qwen2.5 3B for low-VRAM machines | Free, private, works offline, good at JSON tool calls |
 | Speech to text | Whisper small via faster-whisper (float16 on GPU, int8 on CPU) | Fast and accurate; CPU fallback for any machine |
 | Wake word | openWakeWord with a custom "Hey Red" model | Free, open source, low CPU |
 | Text to speech | Piper | Free, local, fast |
 
-Claude is used for building Red. The runtime uses a local model, so Red keeps working without a subscription or internet.
+Every model runs locally, so Red keeps working without a subscription or internet.
 
 ---
 
@@ -314,7 +312,7 @@ $env:RED_INTEGRATION = "1"; python -m pytest tests\test_integration_llm.py   # u
 - **Skipped: llama-cpp-python.** Installing its CUDA build on Windows often means compiling with Visual Studio and the CUDA toolkit, which is too much to ask of users.
 - **Skipped: Hugging Face Transformers.** Too much setup on Windows for short command routing.
 - **One data folder (`RED_HOME`).** No hard-coded paths, so Red works on any machine.
-- **Claude is for building, not running.** Red's runtime never calls a cloud model, so it works offline and needs no subscription.
+- **No cloud models.** Red never calls a cloud model, so it works offline and needs no subscription.
 - **Scope discipline.** Trading and financial automation are out of scope.
 
 ---
