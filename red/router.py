@@ -34,7 +34,10 @@ Tools:
 Rules:
 - Use only the tools listed. Never invent tools or arguments.
 - Convert durations to the unit the tool asks for (for example "3 hours" is 180 minutes).
-- If the command is ambiguous or missing a required value, use "none" and ask a short question."""
+- If the command is ambiguous or missing a required value, use "none" and ask a short question.
+- A single word or phrase with no request in it (for example "banana") is unclear: use "none".
+- A general question about facts or the world (who, what, why, how) goes to web_search.
+- Pick the most specific tool: web_search (not open_url) to look something up, including pictures; open_settings (not open_app) for a Windows Settings page."""
 
 
 class RouteError(ValueError):
