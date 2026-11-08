@@ -436,7 +436,7 @@ Manual checks for the user:
 4. Use `known_folders` in the music tool's default folder, and use `spoken_ask` in the `Executor`.
 5. Update `README.md` for users, `AGENTS.md`, and this file's status table.
 6. Run every test, including the real-model ones, and give the user the merged list of manual checks.
-7. Ask the user before merging into `main`, removing the worktrees (`git worktree remove`), or tagging `v0.1.0`.
+7. Ask the user before merging into `main`, removing the worktrees (`git worktree remove`), or tagging `v0.1.0`. Exception: for the 2026-11-08 overnight run, the user approved merging A, C and B into `main` without asking (with `--no-ff`, pushed after each merge, and any merge with an unclear conflict or a real test failure undone and left out). Removing worktrees and tagging still need asking.
 
 ### 8.10 Prompts for the three sessions
 
