@@ -29,7 +29,9 @@ python -m pytest --basetemp="$env:RED_HOME\cache\pytest-tmp"            # unit t
 python -m pytest tests\test_router.py::test_shutdown_is_destructive    # one test
 $env:RED_INTEGRATION = "1"; python -m pytest tests\test_integration_llm.py tests\test_integration_c_tools.py tests\test_voice_models.py   # real models, slow
 
-python -m red setup                   # Ollama, the LLM, Whisper, Piper and the wake word; copies the allowlist and repos examples
+python -m red setup                   # Ollama, the LLM, Whisper, Piper and the wake word; copies the allowlist, repos and contacts examples
+python -m red doctor                  # read-only checks with fixes (red/doctor.py; starts nothing)
+python -m red startup on|off          # sign-in shortcut (red/startup.py); --home sets RED_HOME for one run
 python -m red                         # voice loop with the overlay (Ctrl+C quits)
 python -m red --typed                 # typed loop that runs actions
 python -m red --dry-run               # typed loop that only shows tool calls
@@ -76,6 +78,8 @@ The voice and UI modules are imported lazily, through `load_voice()` and inside 
   - a pynput hotkey, and the wake word on its own thread
 
   The `Listener` calls `on_trigger` on one worker thread and pauses the wake word while it runs. Models are pinned (`PinnedFiles`) under `RED_HOME\models\{whisper,piper,wakeword}`.
+- **Reminders:** `attach_reminders()` in `__main__.py` sets `red.scheduler.default_scheduler().on_due` behind a try-import. In voice mode, `VoiceApp.announce()` waits for the current command (`_turn` lock), pauses the wake word and speaks; typed mode prints.
+- **Doctor** (`red/doctor.py`): each check takes a `System` of injected functions (package lookup, HTTP, subprocess, sounddevice), so `tests/test_doctor.py` needs no hardware.
 - **Overlay** (`red/overlay.py`): PySide6, frameless, click-through and never focused. `set_state()` is safe to call from any thread. If Qt can't start, Red falls back to Windows toast notifications.
 
 ## Rules that come from the design

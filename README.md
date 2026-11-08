@@ -157,7 +157,7 @@ projects = 'D:\Projects'
 notes = ['notepad.exe', 'D:\notes.txt']     # a program with arguments
 ```
 
-Use single quotes around Windows paths. The name is what you say ("open projects").
+Use single quotes around Windows paths. The name is what you say ("open my projects folder").
 
 ### Repos: `repos.toml`
 
