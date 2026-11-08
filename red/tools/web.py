@@ -1,8 +1,12 @@
-"""Web tools. Action built on Day 2."""
+"""Web tools."""
 
 from __future__ import annotations
 
-from .base import Tool
+import webbrowser
+from typing import Callable
+from urllib.parse import urlsplit
+
+from .base import Tool, ToolError
 
 
 class OpenUrl(Tool):
@@ -16,5 +20,17 @@ class OpenUrl(Tool):
         "additionalProperties": False,
     }
 
+    def __init__(self, open_browser: Callable[[str], bool] = webbrowser.open):
+        self._open = open_browser
+
     def run(self, url: str) -> str:
-        raise NotImplementedError("open_url is built on Day 2")
+        url = url.strip()
+        # The schema checks this too; check again so no other scheme ever reaches the shell.
+        parts = urlsplit(url)
+        if (parts.scheme.lower() not in {"http", "https"} or not parts.hostname
+                or any(c.isspace() or ord(c) < 32 for c in url)):
+            raise ToolError("I can only open web addresses that start with http or https.")
+        if not self._open(url):
+            raise ToolError("I couldn't open the browser.")
+        host = parts.hostname.removeprefix("www.")
+        return f"Opening {host}."

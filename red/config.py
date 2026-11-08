@@ -59,6 +59,14 @@ class Settings:
     def config_dir(self) -> Path:
         return self.home / "config"
 
+    @property
+    def allowlist_path(self) -> Path:
+        return self.config_dir / "allowlist.toml"
+
+    @property
+    def command_log_path(self) -> Path:
+        return self.logs_dir / "commands.jsonl"
+
     def ensure_dirs(self) -> None:
         for d in (
             self.bin_dir / "llama.cpp",
