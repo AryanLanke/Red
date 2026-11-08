@@ -4,6 +4,8 @@
     python -m red --typed                  type commands instead of speaking
     python -m red --dry-run                type commands, only show the tool calls
     python -m red setup                    download the LLM backend, the model and the voice models
+    python -m red doctor                   check that everything Red needs is in place
+    python -m red startup on|off           start Red when you sign in, or stop doing that
     python -m red route "open Downloads"   show the tool call for one command (never runs it)
     python -m red run "open Downloads"     run one typed command
 
@@ -15,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import shutil
 import sys
 import threading
@@ -35,6 +38,7 @@ log = logging.getLogger("red")
 REPO_ROOT = Path(__file__).resolve().parent.parent
 EXAMPLE_ALLOWLIST = REPO_ROOT / "allowlist.example.toml"
 EXAMPLE_REPOS = REPO_ROOT / "repos.example.toml"
+EXAMPLE_CONTACTS = REPO_ROOT / "contacts.example.toml"
 
 MUSIC_TOOLS = {"play_music", "stop_music", "pause_music", "resume_music", "next_song"}
 VOICE_HELP = ("Voice needs the voice packages. Install them with "
@@ -136,13 +140,15 @@ class VoiceApp:
 
     def __init__(self, settings: Settings, router: Router, registry, voice: Voice, overlay, *,
                  typed_fallback: Ask = typed_ask, music_player: Callable[[], object] | None = None,
-                 log_path: Path | None = None, out: Callable[[str], None] = print):
+                 log_path: Path | None = None, out: Callable[[str], None] = print,
+                 attach: Callable[[Callable[[str], None]], object] | None = None):
         self.settings = settings
         self.router = router
         self.voice = voice
         self.overlay = overlay
         self.out = out
         self._music_player = music_player or _active_music_player
+        self._attach = attach  # None: attach_reminders, looked up when run() starts
         spoken = voice.make_ask(voice.speaker, voice.transcriber)
 
         def ask(question: str, timeout: float) -> str | None:
@@ -153,6 +159,8 @@ class VoiceApp:
         self.executor = Executor(registry, ask=with_fallback(ask, typed_fallback), log_path=log_path)
         self.listener = None
         self.notice = ""        # why the wake word is off, if it is
+        self.reminders = None   # red.scheduler's Scheduler, when it exists
+        self._turn = threading.RLock()  # one command or reminder at a time
 
     # --- starting and stopping ------------------------------------------------
 
@@ -191,7 +199,34 @@ class VoiceApp:
         text = " or ".join(ways) or "nothing is listening"
         return f"{text[0].upper()}{text[1:]}, then speak."
 
+    def announce(self, text: str) -> None:
+        """Say a due reminder. Called by the scheduler from its own thread.
+
+        Waits for a command in progress to finish, and pauses the wake word
+        while speaking so Red doesn't hear itself.
+        """
+        with self._turn:
+            player = self._pause_music()
+            try:
+                self.out(f"Red (reminder): {text}")
+                self._state("speaking", text)
+                paused = getattr(self.listener, "paused_while", None)
+                if paused is not None:
+                    with paused():
+                        self._speak(text)
+                else:
+                    self._speak(text)
+            finally:
+                if player is not None:
+                    try:
+                        player.resume()
+                    except Exception:  # noqa: BLE001
+                        log.exception("Couldn't resume the music")
+                self._state("idle", text)
+
     def shutdown(self) -> None:
+        if self.reminders is not None and getattr(self.reminders, "on_due", None) == self.announce:
+            self.reminders.on_due = None
         for part in (self.listener, self.voice.speaker):
             try:
                 if part is not None:
@@ -202,6 +237,7 @@ class VoiceApp:
     def run(self, stop: threading.Event) -> None:
         """Start listening and block until `stop` is set (or Ctrl+C)."""
         self.start_listener()
+        self.reminders = (self._attach or attach_reminders)(self.announce)
         if self.notice:
             self.out(self.notice)
         ready = self.ready_text()
@@ -217,6 +253,10 @@ class VoiceApp:
 
     def handle(self, source: str) -> None:
         """Called by the listener (on its own thread) for each hotkey press or wake word."""
+        with self._turn:
+            self._handle(source)
+
+    def _handle(self, source: str) -> None:
         player = self._pause_music()
         tool = None
         last = ""
@@ -247,6 +287,10 @@ class VoiceApp:
             tool = route.tool
             if tool == "check_repos":
                 self._state("thinking", "Checking your repos...")
+            if tool == "pause_music" and player is not None:
+                # Red paused the music only to listen. Let the tool pause it for
+                # real, so it says "Paused." and not "already paused".
+                player.resume()
             last = self.executor.execute(text, route)
             self._say(last, self.executor.last_details)
         except Exception as e:  # noqa: BLE001 - one bad command must not stop Red
@@ -293,6 +337,25 @@ class VoiceApp:
         except Exception:  # noqa: BLE001
             log.exception("Couldn't pause the music")
         return None
+
+
+def attach_reminders(on_due: Callable[[str], None]):
+    """Send due reminders to `on_due`. Returns the scheduler, or None without red.scheduler."""
+    try:
+        from .scheduler import default_scheduler
+    except ImportError:
+        return None
+    try:
+        scheduler = default_scheduler()
+        scheduler.on_due = on_due
+    except Exception:  # noqa: BLE001 - reminders are optional; Red still works
+        log.exception("Couldn't start reminders")
+        return None
+    return scheduler
+
+
+def _print_reminder(text: str) -> None:
+    print(f"\n  Red (reminder): {text}\n> ", end="", flush=True)
 
 
 def _active_music_player():
@@ -348,7 +411,8 @@ def _voice_mode(settings: Settings, router: Router, registry) -> int:
 
 def _install_examples(settings: Settings) -> None:
     for example, target in ((EXAMPLE_ALLOWLIST, settings.allowlist_path),
-                            (EXAMPLE_REPOS, settings.repos_path)):
+                            (EXAMPLE_REPOS, settings.repos_path),
+                            (EXAMPLE_CONTACTS, settings.contacts_path)):
         if not target.exists() and example.is_file():
             shutil.copyfile(example, target)
             print(f"Created {target}; edit it to add your own entries.")
@@ -389,20 +453,34 @@ def _check_allowlist(settings: Settings) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="red")
+    parser.add_argument("--home", metavar="FOLDER",
+                        help="use this RED_HOME for this run (the sign-in shortcut uses it)")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--typed", action="store_true", help="type commands instead of speaking")
     mode.add_argument("--dry-run", action="store_true",
                       help="type commands and only show the tool call for each, never run it")
     sub = parser.add_subparsers(dest="cmd")
     sub.add_parser("setup", help="download the LLM backend, the model and the voice models")
+    sub.add_parser("doctor", help="check that everything Red needs is in place")
+    p_startup = sub.add_parser("startup", help="start Red when you sign in: on, off, or show")
+    p_startup.add_argument("action", nargs="?", choices=("on", "off"))
     p_route = sub.add_parser("route", help="show the tool call for one command")
     p_route.add_argument("text", nargs="+")
     p_run = sub.add_parser("run", help="run one typed command")
     p_run.add_argument("text", nargs="+")
     args = parser.parse_args(argv)
+    if args.home:
+        os.environ["RED_HOME"] = args.home   # this process only
+
+    if args.cmd == "doctor":
+        from .doctor import main as doctor_main
+        return doctor_main()        # only looks: starts nothing, records nothing
 
     settings = load_settings()
     settings.ensure_dirs()
+    if args.cmd == "startup":
+        from .startup import main as startup_main
+        return startup_main(args.action, settings.home)
     logging.basicConfig(filename=settings.logs_dir / "red.log", level=logging.INFO,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
     if args.cmd == "setup":
@@ -435,7 +513,12 @@ def main(argv: list[str] | None = None) -> int:
             _typed_loop(lambda c: _show(router, c), "Red (dry run). Type a command, or 'quit'.")
             return 0
         if args.typed:
-            _typed_loop(lambda c: _run(router, executor, c), "Red. Type a command, or 'quit'.")
+            reminders = attach_reminders(_print_reminder)
+            try:
+                _typed_loop(lambda c: _run(router, executor, c), "Red. Type a command, or 'quit'.")
+            finally:
+                if reminders is not None and reminders.on_due is _print_reminder:
+                    reminders.on_due = None
             return 0
         return _voice_mode(settings, router, registry)
     finally:

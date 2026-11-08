@@ -1,5 +1,6 @@
 """The voice loop in red.__main__ with fakes: no microphone, models, speakers, hotkey hook or Qt."""
 
+import contextlib
 import json
 import threading
 from datetime import datetime
@@ -69,6 +70,11 @@ class FakeListener:
 
     def stop(self):
         self.stopped = True
+
+    @contextlib.contextmanager
+    def paused_while(self):
+        self.pauses = getattr(self, "pauses", 0) + 1
+        yield
 
 
 class FakeOverlay:
@@ -159,7 +165,8 @@ def world(tmp_path, monkeypatch):
 
 
 def make_app(world, *texts, answers=("no",), audio_size=16000, ask_error=None, typed=None,
-             player=None, transcriber=None, fail_wakeword=False, settings=None):
+             player=None, transcriber=None, fail_wakeword=False, settings=None,
+             attach=lambda on_due: None):
     speaker = FakeSpeaker()
     spoken = FakeAsk(*answers)
     asked = []
@@ -186,7 +193,7 @@ def make_app(world, *texts, answers=("no",), audio_size=16000, ask_error=None, t
     app = cli.VoiceApp(settings or world["settings"], Router(world["registry"], world["llm"]),
                        world["registry"], voice, overlay, typed_fallback=typed or FakeAsk(),
                        music_player=lambda: player, log_path=world["home"] / "commands.jsonl",
-                       out=out.append)
+                       out=out.append, attach=attach)
     return app, speaker, overlay, asked, out
 
 
@@ -344,6 +351,7 @@ def test_main_voice_mode_end_to_end(world, monkeypatch, capsys):
                       chime=lambda: None, listener_factory=FakeListener,
                       make_ask=lambda s, t: FakeAsk("no"))
     monkeypatch.setattr(cli, "load_voice", lambda settings: voice)
+    monkeypatch.setattr(cli, "attach_reminders", lambda on_due: None)
     overlay = FakeOverlay()
 
     def fake_run_with_overlay(worker):
@@ -386,3 +394,27 @@ def test_pretty_hotkey(hotkey, text):
 def test_pretty_wakeword():
     assert cli.pretty_wakeword("hey_red") == "Hey Red"
     assert cli.pretty_wakeword("D:\\models\\hey_red_v0.1.onnx") == "Hey Red"
+
+
+class FakePauseMusic(Tool):
+    name = "pause_music"
+    description = "Pause music"
+    args_schema = {"type": "object", "properties": {}, "additionalProperties": False}
+
+    def __init__(self, player):
+        self.player = player
+
+    def run(self):
+        if self.player.pause():
+            return "Paused."
+        return "The music is already paused."
+
+
+def test_pause_music_command_pauses_for_real(world):
+    player = FakePlayer()
+    world["registry"].add(FakePauseMusic(player))
+    world["llm"].replies["Pause the music."] = {"tool": "pause_music", "args": {}}
+    app, speaker, *_ = make_app(world, "Pause the music.", player=player)
+    app.handle("hotkey")
+    assert speaker.said == ["Paused."]
+    assert player.calls == ["pause", "resume", "pause"] and player.paused
