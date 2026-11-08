@@ -1,4 +1,4 @@
-"""Real Whisper, Piper and openWakeWord models, without a microphone or speakers.
+"""Real Whisper, Piper and wake word models, without a microphone or speakers.
 
 Piper's speech is fed straight into Whisper and the wake word detector.
 Whisper runs on the CPU (int8) so it never competes with the LLM for VRAM.
@@ -14,7 +14,6 @@ import pytest
 
 from red.audio import SAMPLE_RATE, Endpointer, record_command, resample, to_int16
 from red.config import red_home
-from red.listener import WakeWordDetector
 from red.stt import Transcriber
 from red.tts import Speaker
 
@@ -87,14 +86,97 @@ def test_record_then_transcribe_like_the_demo(speaker, transcriber):
     assert words(transcriber.transcribe(audio)) == ["play", "some", "music"]
 
 
-def test_wakeword_fires_on_the_phrase_only(speaker):
-    det = WakeWordDetector(MODELS / "wakeword", "hey_jarvis")
+# --- "Hey Red" ------------------------------------------------------------------
 
-    def peak(text):
-        det.reset()
-        audio = to_int16(np.concatenate([speech(speaker, text, pad=1.0),
-                                         np.zeros(SAMPLE_RATE, np.float32)]))
-        return max(det.score(audio[i:i + 1280]) for i in range(0, audio.size - 1279, 1280))
+VOICES = ["en_US-lessac-medium", "en_US-amy-medium", "en_US-ryan-medium", "en_US-joe-medium",
+          "en_GB-alan-medium", "en_GB-jenny_dioco-medium"]
+MANY_SPEAKERS = "en_US-libritts_r-medium"
 
-    assert peak("Hey Jarvis.") > 0.5
-    assert peak("Open my downloads folder.") < 0.5
+# Ordinary speech, including words close to the phrase. Each is said on its
+# own with pauses around it, which is exactly what the detector checks.
+ORDINARY = ["I read the red book.", "He read it yesterday.", "Hey, ready to go?", "They said red.",
+            "Hey, Fred.", "Hey there.", "The red car is fast.", "Red is my favourite colour.",
+            "Hey, how are you?", "Read it again.", "A red light.", "Thank you.", "Hey, Ted!",
+            "Bread.", "Hey Rex.", "Hey, Rick."]
+
+
+@pytest.fixture(scope="module")
+def voice():
+    from piper import PiperVoice, SynthesisConfig
+    loaded = {}
+
+    def say(name, text, speaker_id=None, speed=1.0):
+        if name not in loaded:
+            path = Speaker(MODELS / "piper", name, player=Silent()).download()
+            loaded[name] = PiperVoice.load(path)
+        chunks = list(loaded[name].synthesize(
+            text, SynthesisConfig(speaker_id=speaker_id, length_scale=1.0 / speed)))
+        audio = np.concatenate([c.audio_float_array for c in chunks])
+        return resample(audio, chunks[0].sample_rate) * 0.5
+
+    return say
+
+
+@pytest.fixture(scope="module")
+def hey_red():
+    from red.listener import make_detector
+    return make_detector(MODELS / "wakeword", "hey_red")
+
+
+def room(seconds, rng=np.random.default_rng(0)):
+    return (0.003 * rng.standard_normal(int(seconds * SAMPLE_RATE))).astype(np.float32)
+
+
+def peak(detector, audio):
+    detector.reset()
+    x = to_int16(np.concatenate([room(1.0), audio + room(audio.size / SAMPLE_RATE), room(1.0)]))
+    return max(detector.score(x[i:i + 1280]) for i in range(0, x.size, 1280))
+
+
+@pytest.mark.parametrize("name", VOICES)
+@pytest.mark.parametrize("speed", [0.8, 1.0, 1.25])
+def test_hey_red_triggers(hey_red, voice, name, speed):
+    for text in ("Hey Red.", "Hey, Red!"):
+        assert peak(hey_red, voice(name, text, speed=speed)) >= 0.5, (name, speed, text, hey_red.last_text)
+
+
+@pytest.mark.parametrize("speaker_id", [5, 150, 300, 500, 700, 850])
+def test_hey_red_triggers_for_many_speakers(hey_red, voice, speaker_id):
+    assert peak(hey_red, voice(MANY_SPEAKERS, "Hey Red.", speaker_id)) >= 0.5, hey_red.last_text
+
+
+@pytest.mark.parametrize("name", VOICES)
+def test_ordinary_speech_does_not_trigger(hey_red, voice, name):
+    fired = [(t, hey_red.last_text) for t in ORDINARY if peak(hey_red, voice(name, t)) >= 0.5]
+    assert fired == []
+
+
+def test_conversation_does_not_trigger_and_stays_cheap(hey_red, voice):
+    talk = ("So I was thinking we could go out later. Maybe around six? Sure. The red one looked "
+            "nice, but I read the reviews first. Yeah. Hey, did you see that? It was great. "
+            "Okay, see you then. Red or blue, I don't mind. Bye.")
+    rng = np.random.default_rng(1)
+    parts = []
+    for sentence in talk.split(". "):
+        parts += [voice("en_US-amy-medium", sentence), room(rng.uniform(0.2, 0.7))]
+    audio = np.concatenate(parts)
+    hey_red.reset()
+    before_runs, before_busy = hey_red.evaluations, hey_red.busy_seconds
+    x = to_int16(audio + room(audio.size / SAMPLE_RATE))
+    assert max(hey_red.score(x[i:i + 1280]) for i in range(0, x.size, 1280)) < 0.5
+    seconds = audio.size / SAMPLE_RATE
+    busy = hey_red.busy_seconds - before_busy
+    assert hey_red.evaluations - before_runs <= 6
+    assert busy / seconds < 0.25                 # Whisper busy under a quarter of the time
+
+
+def test_quiet_room_costs_almost_nothing(hey_red):
+    import time
+    hey_red.reset()
+    x = to_int16(room(20.0))
+    runs = hey_red.evaluations
+    t0 = time.process_time()
+    for i in range(0, x.size, 1280):
+        hey_red.score(x[i:i + 1280])
+    assert hey_red.evaluations == runs
+    assert time.process_time() - t0 < 1.0        # under 5% of one core
