@@ -213,8 +213,9 @@ def _default_startfile(path: str) -> None:
 
 class FindFile(Tool):
     name = "find_file"
-    description = ("Find a file or folder on this PC by its name, for example 'find my "
-                   "resume' or 'where is the budget spreadsheet'. Searches the user's folders.")
+    description = ("Find (search for) a file or folder on this PC by its name when the user "
+                   "says find, locate or where is, for example 'find my resume' or 'find the "
+                   "folder called taxes'. Searches the user's folders.")
     args_schema = {
         "type": "object",
         "properties": {

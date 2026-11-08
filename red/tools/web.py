@@ -40,8 +40,9 @@ def search_url(query: str, site: str = "web", engine: str = "google") -> str:
 
 class WebSearch(Tool):
     name = "web_search"
-    description = ("Search the internet for something and show the results in the browser. "
-                   "Use site for YouTube videos, images, maps, news or Wikipedia.")
+    description = ("Search the internet for something and show the results in the browser, "
+                   "including pictures, videos, places and news. Use site for YouTube videos, "
+                   "images, maps, news or Wikipedia.")
     args_schema = {
         "type": "object",
         "properties": {
@@ -73,8 +74,9 @@ class WebSearch(Tool):
 
 class OpenUrl(Tool):
     name = "open_url"
-    description = ("Open a website in the default browser. Give a full URL starting with "
-                   "https://, for example https://www.youtube.com for 'open YouTube'.")
+    description = ("Open a website the user names in the default browser. Give a full URL "
+                   "starting with https://, for example https://www.youtube.com for 'open "
+                   "YouTube'. Never build a search URL; use web_search to look things up.")
     args_schema = {
         "type": "object",
         "properties": {"url": {"type": "string", "pattern": "^https?://[^ ]+$", "maxLength": 2000}},

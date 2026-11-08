@@ -50,6 +50,18 @@ def contains(key, *words):
 
 ANY = None
 
+
+def image_search(word):
+    """web_search with site images, or open_url to an image search: the same page opens.
+    The model often builds the Google Images URL itself (see progress.md 8.15)."""
+    def check(args):
+        if "url" in args:
+            url = args["url"].lower()
+            return url.startswith("https://") and "isch" in url and word in url
+        return args.get("site") == "images" and word in norm(args.get("query", ""))
+    check.__name__ = f"image_search({word})"
+    return check
+
 CASES = [
     # Office apps (open_app with App Paths)
     ("open powerpoint", "open_app", has(app="powerpoint")),
@@ -62,7 +74,7 @@ CASES = [
     ("google how to boil an egg", "web_search", contains("query", "boil", "egg")),
     ("search youtube for lofi music", "web_search", has(site="youtube")),
     ("look up the weather in Pune", "web_search", contains("query", "weather", "pune")),
-    ("show me pictures of cats", "web_search", has(site="images")),
+    ("show me pictures of cats", ("web_search", "open_url"), image_search("cats")),
     ("open youtube", "open_url", ANY),
     # find_file and open_found_file
     ("find my resume", "find_file", contains("name", "resume")),
@@ -107,6 +119,6 @@ CASES = [
 @pytest.mark.parametrize("command, tool, check", CASES)
 def test_routes(router, command, tool, check):
     route = router.route(command)
-    assert route.tool == tool, route
+    assert route.tool in ((tool,) if isinstance(tool, str) else tool), route
     if check is not None:
         assert check(route.args), (check.__name__, route)

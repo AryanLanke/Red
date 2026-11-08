@@ -190,8 +190,8 @@ class ResumeMedia(_music.ResumeMusic):
 
 
 class NextMedia(_music.NextSong):
-    description = ("Skip to the next song or track, in Red's music or in another app like "
-                   "Spotify.")
+    description = ("Skip this song: go forward to the next song or track, in Red's music or "
+                   "in another app like Spotify.")
 
     def __init__(self, player=None, keyboard: Keyboard = _keyboard):
         super().__init__(player)
@@ -206,7 +206,8 @@ class NextMedia(_music.NextSong):
 
 class PreviousTrack(Tool):
     name = "previous_track"
-    description = "Go back to the previous song or track in the app that is playing media."
+    description = ("Go back to the previous song or track (only when the user says previous, "
+                   "back or last).")
     args_schema = _NO_ARGS
 
     def __init__(self, keyboard: Keyboard = _keyboard):
@@ -257,7 +258,8 @@ def _default_startfile(target: str) -> None:
 
 class OpenSettings(Tool):
     name = "open_settings"
-    description = "Open a page of Windows Settings, such as display, sound, Bluetooth or Wi-Fi."
+    description = ("Open a page of Windows Settings, such as display, sound, Bluetooth, Wi-Fi "
+                   "or Windows Update.")
     args_schema = {
         "type": "object",
         "properties": {"page": {"type": "string", "enum": list(SETTINGS_PAGES)}},
@@ -307,7 +309,8 @@ def _clock(t: datetime) -> str:
 
 class TellStatus(Tool):
     name = "tell_status"
-    description = "Say the current time, today's date, or the battery level."
+    description = ("Say the current time, today's date, or the battery level, only when the "
+                   "user asks for one of those.")
     args_schema = {
         "type": "object",
         "properties": {"what": {"type": "string", "enum": ["time", "date", "battery"]}},
