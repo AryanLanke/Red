@@ -40,6 +40,7 @@ def env(monkeypatch, tmp_path):
         "banana": {"tool": "none", "args": {"reply": "What should I do?"}},
     })
     monkeypatch.setattr(cli, "connect", lambda settings: (llm, None))
+    monkeypatch.setattr(cli, "attach_reminders", lambda on_due: None)
     return tmp_path, runner, start
 
 
