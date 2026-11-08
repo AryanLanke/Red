@@ -64,6 +64,14 @@ CASES = [
     ("look up the weather in Pune", "web_search", contains("query", "weather", "pune")),
     ("show me pictures of cats", "web_search", has(site="images")),
     ("open youtube", "open_url", ANY),
+    # find_file and open_found_file
+    ("find my resume", "find_file", contains("name", "resume")),
+    ("where is my budget spreadsheet", "find_file", contains("name", "budget")),
+    ("where did I save the tax return pdf", "find_file", contains("name", "tax")),
+    ("find the folder called holiday photos", "find_file", contains("name", "holiday")),
+    ("open it", "open_found_file", ANY),
+    ("open the second one", "open_found_file", has(number=2)),
+    ("open my downloads folder", "open_folder", ANY),
 ]
 
 
