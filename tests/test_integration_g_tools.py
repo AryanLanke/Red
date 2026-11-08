@@ -71,6 +71,14 @@ CASES = [
     ("cancel my reminder to call mom", "cancel_reminder", contains("which", "call mom")),
     ("cancel the shutdown", "cancel_shutdown", ANY),
     ("shut down in 10 minutes", "shutdown", has(minutes=10)),
+    # offline answers
+    ("what is hugging face", "answer", contains("question", "hugging face")),
+    ("explain recursion", "answer", contains("question", "recursion")),
+    ("who was alan turing", "answer", contains("question", "turing")),
+    ("how tall is mount everest", "answer", contains("question", "everest")),
+    ("search the web for hugging face", "web_search", contains("query", "hugging face")),
+    ("google recursion", "web_search", contains("query", "recursion")),
+    ("banana", "none", ANY),
 ]
 
 
@@ -80,3 +88,10 @@ def test_routes(router, command, tool, check):
     assert route.tool in ((tool,) if isinstance(tool, str) else tool), route
     if check is not None:
         assert check(route.args), (getattr(check, "__name__", "check"), route)
+
+
+def test_answer_end_to_end(router):
+    """The answer tool, bound to the router's model, gives a short spoken answer."""
+    reply = router.registry.get("answer").run(question="what is recursion in programming")
+    assert 20 < len(reply) <= 700
+    assert "function" in reply.lower() or "itself" in reply.lower()

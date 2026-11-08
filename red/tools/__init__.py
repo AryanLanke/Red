@@ -1,5 +1,6 @@
 """Built-in tools."""
 
+from .assistant import Answer
 from .base import Tool, ToolRegistry
 from .files import FindFile, OpenFoundFile
 from .git_sync import CheckRepos
@@ -16,7 +17,7 @@ def default_registry() -> ToolRegistry:
     # The music tools share one player, created on the first play. Pause, resume
     # and next fall back to the media keys when Red's own player is idle.
     return ToolRegistry([
-        OpenFolder(), OpenApp(), OpenUrl(), WebSearch(),
+        OpenFolder(), OpenApp(), OpenUrl(), WebSearch(), Answer(),
         FindFile(), OpenFoundFile(), ComposeMail(),
         Shutdown(), Restart(), CancelShutdown(), SleepPC(), LockPC(),
         PlayMusic(), StopMusic(), PauseMedia(), ResumeMedia(), NextMedia(), PreviousTrack(),
