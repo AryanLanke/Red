@@ -930,7 +930,75 @@ Manual checks for the user (in `D:\RED\worktrees\c`, `.\.venv\Scripts\python.exe
 
 ### 8.16 Final merge (planning session, after 13:15)
 
-Merge in the order D, F, E with `--no-ff`. Test in the shared venv and push after each merge. A merge with an unclear conflict or a real test failure is undone and left for the user. Then write the morning report.
+Merge with `--no-ff`. Test and push after each merge. A merge with an unclear conflict or a real test failure is undone and left for the user. Then write the morning report.
+
+**Done early (11:30):** D (`ab839d3`) and F (`f48c8e9`) are merged and pushed. Tests: 502 pass in Track B's venv and 410 in Track C's venv (non-voice files), and the skipped tests are real-model tests. Left: E, then the Phase 3 branches (8.17).
+
+### 8.17 Phase 3: while there's time (about 11:35 until the 13:15 stop)
+
+D and F finished early, so those two sessions continue. Track E carries on with 8.14. Same rules as 8.12. New branch from `origin/main` in the same worktree, push after each item, and at 13:15 stop, update your section, commit, push, and send `red-a7` a one-line report.
+
+| Track | Session | Worktree | Branch | Work |
+|---|---|---|---|---|
+| G | `red-62` (was F) | `D:\RED\worktrees\c` | `track-g-assistant` | Timers and reminders, offline questions, online answers |
+| H | `red-c3` (was D) | `D:\RED\worktrees\a` | `track-h-release` | Track F's integration notes, a `doctor` command, release readiness |
+
+**File ownership in Phase 3:**
+- **G** owns `red/tools/*` (except `music.py` and `git_sync.py`), `red/router.py`, `red/llm.py`, new `red/scheduler.py`, and its tests.
+- **H** owns `red/__main__.py`, `red/config.py`, `.env.example`, `red/executor.py`, `red/overlay.py`, `red/tools/music.py`, `red/tools/git_sync.py`, `requirements*.txt` (except `requirements-voice.txt` and `requirements-train.txt`), `README.md`, `AGENTS.md`, new `contacts.example.toml`, new `CHANGELOG.md`, and its tests.
+- E keeps its 8.12 files.
+
+**Contract between G and H (reminders):** G provides `red/scheduler.py` with:
+
+```python
+class Scheduler:
+    on_due: Callable[[str], None] | None   # set by the app; called from a background thread with the text to say
+    def add(self, when: datetime, text: str) -> str: ...  # returns an id
+    def cancel(self, id_or_text: str) -> bool: ...
+    def pending(self) -> list[tuple[str, datetime, str]]: ...
+
+def default_scheduler() -> Scheduler: ...                 # one per process
+```
+
+Reminders survive a restart (stored under `RED_HOME`).
+
+H sets `default_scheduler().on_due` in voice mode. It speaks inside `listener.paused_while()` and shows the overlay. In typed mode it prints. If the import fails, because G isn't merged yet, H skips this.
+
+### 8.18 Track G: assistant abilities
+
+Done when each tool works with fakes, routes with the real model in `tests/test_integration_g_tools.py`, the earlier routing tests still pass, and the prompt still fits `num_ctx`.
+
+- [ ] **Timers and reminders:** "set a timer for 10 minutes", "remind me at 3 pm to call mom", "what reminders do I have", "cancel the timer". Built on `red/scheduler.py` (8.17). Times are in the local time zone; reject times in the past and anything more than 7 days ahead
+- [ ] **Offline questions:** an `answer` tool for general questions ("what is Hugging Face", "explain recursion"). It makes a second local-LLM call for a short spoken answer (2 to 4 sentences). There's no cloud model
+- [ ] **Online answers:** for "search the web for X and tell me", "what's the weather in Pune", or "latest news about X", fetch a public, keyless source over HTTPS, such as the Wikipedia REST summary API or Open-Meteo for weather, and summarise it with the local model. Use a time limit and say "I'm offline" when there's no network. Keep `web_search` (which opens the browser) for "open a search for X"
+- [ ] Update the section 2 table
+
+Decisions:
+
+Integration notes:
+
+Manual checks for the user:
+
+### 8.19 Track H: integration notes and release readiness
+
+Done when Track F's integration notes are done, `python -m red doctor` works, the README covers all 24+ tools, and all tests pass.
+
+- [ ] **Track F's integration notes:**
+  - `RED_SEARCH_ENGINE` and `contacts.toml` move into `Settings`, with a new `contacts.example.toml`
+  - `FindFile.last_details` goes into the overlay and the log
+  - music pausing keeps using `music.default_player()`, never the media-key tools
+- [ ] **Reminders wiring** to `red.scheduler`, per the 8.17 contract, behind a try-import
+- [ ] **`python -m red doctor`:** checks Python, the packages, `RED_HOME`, Ollama and the model, the microphone (opens it only, doesn't record), the speakers (lists the device, doesn't play), the GPU, the wake word model, and the allowlist, repos and contacts files. Each check gets a clear ✅/⚠️/❌ with a fix
+- [ ] **Start at login (helper only):** `python -m red startup on|off` creates or removes a shortcut in the user's Startup folder. Test it with a fake folder; don't run it for real
+- [ ] **README** for users: every tool, with an example sentence for each; the troubleshooting section points to `doctor`
+- [ ] **`CHANGELOG.md`** with a v0.1.0 draft (don't tag)
+- [ ] **Merged list of manual checks**, phases 1 to 3, for the user
+
+Decisions:
+
+Integration notes:
+
+Manual checks for the user:
 
 ---
 
