@@ -72,6 +72,13 @@ CASES = [
     ("open it", "open_found_file", ANY),
     ("open the second one", "open_found_file", has(number=2)),
     ("open my downloads folder", "open_folder", ANY),
+    # compose_mail
+    ("compose a mail to bob@example.com about the project deadline", "compose_mail",
+     lambda a: a.get("to") == "bob@example.com" and "deadline" in norm(a.get("subject", ""))),
+    ("write an email to mom saying I will be late", "compose_mail", contains("to", "mom")),
+    ("draft an email to my boss about taking friday off", "compose_mail",
+     contains("subject", "friday")),
+    ("send a mail to priya about lunch", "compose_mail", contains("to", "priya")),
 ]
 
 

@@ -3,6 +3,7 @@
 from .base import Tool, ToolRegistry
 from .files import FindFile, OpenFoundFile
 from .git_sync import CheckRepos
+from .mail import ComposeMail
 from .music import NextSong, PauseMusic, PlayMusic, ResumeMusic, StopMusic
 from .system import CancelShutdown, OpenApp, OpenFolder, Restart, Shutdown
 from .web import OpenUrl, WebSearch
@@ -13,7 +14,7 @@ def default_registry() -> ToolRegistry:
     return ToolRegistry([OpenFolder(), OpenApp(), OpenUrl(), WebSearch(),
                          Shutdown(), Restart(), CancelShutdown(),
                          PlayMusic(), StopMusic(), PauseMusic(), ResumeMusic(), NextSong(),
-                         CheckRepos(), FindFile(), OpenFoundFile()])
+                         CheckRepos(), FindFile(), OpenFoundFile(), ComposeMail()])
 
 
 __all__ = ["Tool", "ToolRegistry", "default_registry"]
