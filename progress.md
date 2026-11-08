@@ -753,7 +753,7 @@ Decisions:
 - **Quitting:** Ctrl+C stops the listener and the speaker, prints "Bye." and exits with code 0. Ollama is stopped in `main()`'s `finally`.
 
 Integration notes:
-- **The shared venv still needs the voice and UI packages.** Claude Code's auto-mode permission check denied `pip install -r requirements-dev.txt` into `D:\RED\.venv`, and Track A's original prompt also said to install nothing there. I didn't try another way. After merging, the user (or the final merge, if it's allowed to) should run:
+- **The shared venv still needs the voice and UI packages.** Claude Code's auto-mode permission check denied `pip install -r requirements-dev.txt` into `D:\RED\.venv`, and Track A's original prompt also said to install nothing there. I didn't try another way. Another session shouldn't do it either: this is the user's decision. After merging, the user should run:
   ```powershell
   $env:PIP_CACHE_DIR = "D:\RED\cache\pip"
   D:\RED\.venv\Scripts\python.exe -m pip install --only-binary=:all: -r D:\RED\red\requirements-dev.txt
