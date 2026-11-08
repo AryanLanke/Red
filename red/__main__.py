@@ -19,6 +19,7 @@ from pathlib import Path
 
 from .allowlist import AllowlistError, load_allowlist
 from .config import Settings, load_settings
+from .confirm import typed_ask
 from .executor import Executor
 from .llm import LLMError, connect
 from .router import RouteError, Router
@@ -97,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     registry = default_registry()
     router = Router(registry, llm)
-    executor = Executor(registry, log_path=settings.command_log_path)
+    executor = Executor(registry, ask=typed_ask, log_path=settings.command_log_path)
     handle = (lambda c: _show(router, c)) if args.dry_run else (lambda c: _run(router, executor, c))
     try:
         if args.cmd == "route":
