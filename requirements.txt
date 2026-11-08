@@ -1,1 +1,2 @@
-# Filled in on Day 1.
+jsonschema==4.26.0
+python-dotenv==1.2.4

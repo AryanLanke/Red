@@ -2,7 +2,7 @@
 
 A local voice and action assistant for your laptop. Say "Hey Red" or press a shortcut, and Red listens, acts, and answers. Red runs on your machine, and its core features work without any cloud model.
 
-Red is open source, so others can run it on their own machines. Users don't need to install a separate model server. Red downloads and manages everything it needs on first run.
+Red is open source, so others can run it on their own machines. Users don't need to install a separate model server. Red downloads a pinned, code-signed Ollama build on first run, starts it only while Red is running, and stops it when Red exits.
 
 ---
 
@@ -34,15 +34,19 @@ Everything Red downloads or writes lives under one folder, `RED_HOME`. The defau
 RED_HOME\
 ├── red\                  # the git repo (developers only)
 ├── .venv\                # Python virtual environment (developers only)
-├── bin\llama.cpp\        # llama-server build, downloaded on first run
+├── bin\
+│   ├── ollama\           # Ollama build, downloaded on first run
+│   └── llama.cpp\        # optional fallback backend
 ├── models\
-│   ├── llm\              # GGUF language models
+│   ├── ollama\           # Ollama's model store
+│   ├── llm\              # GGUF files for the llama.cpp fallback
 │   ├── whisper\          # speech-to-text models
 │   ├── piper\            # voice models
 │   └── wakeword\         # openWakeWord models
 ├── cache\
 │   ├── pip\              # PIP_CACHE_DIR
-│   └── huggingface\      # HF_HOME
+│   ├── huggingface\      # HF_HOME
+│   └── ollama-home\      # Ollama's settings and key, kept off C:
 ├── logs\                 # logs and command history
 └── config\
     └── .env              # your settings and secrets (never in the repo)
@@ -57,8 +61,8 @@ Plan for about **15 GB free**. Rough sizes:
 | Item | Approx. size |
 |---|---|
 | Python packages (faster-whisper with CUDA libraries, PySide6, etc.) | 2 to 3 GB |
-| llama-server build (CUDA) | under 0.5 GB |
-| Qwen2.5 7B Instruct, Q4_K_M GGUF | about 4.7 GB |
+| Ollama build (includes CUDA libraries) | about 2.1 GB unpacked |
+| Qwen2.5 7B Instruct, Q4_K_M | about 4.7 GB |
 | Whisper small model | about 0.5 GB |
 | Piper voice model | 0.1 GB |
 | openWakeWord models | under 0.1 GB |
@@ -69,9 +73,10 @@ Plan for about **15 GB free**. Rough sizes:
 **Developer machine (reference):** Windows 11, AMD Ryzen 7 7735HS, NVIDIA RTX 4050 laptop GPU (6 GB VRAM), 16 GB RAM.
 
 **For users:**
-- **NVIDIA GPU with 6 GB or more:** 7B model on the GPU (CUDA build).
-- **AMD or Intel GPU:** Vulkan build.
+- **NVIDIA GPU with 6 GB or more:** 7B model on the GPU. Ollama picks the GPU automatically.
 - **No GPU, or low VRAM:** smaller 3B model, with Whisper on the CPU (int8).
+
+Red loads the model only while it's in use. After `RED_LLM_KEEP_ALIVE` (default 5 minutes) without a command, the model is unloaded and its GPU memory is freed. When Red exits, its Ollama process exits too, even if Red crashes.
 
 6 GB of VRAM is tight for a 7B model plus Whisper. If the GPU runs out of memory, run Whisper on the CPU or switch to the 3B model. Keep other heavy apps closed while Red's models are loaded.
 
@@ -92,7 +97,7 @@ Plan for about **15 GB free**. Rough sizes:
                    |
                    v
           +-------------------+
-          |  Intent router    |  Local LLM via bundled llama-server
+          |  Intent router    |  Local LLM via Red-managed Ollama
           |  (picks a tool)   |  JSON-schema constrained: {tool, args}
           +--------+----------+
                    |
@@ -121,7 +126,9 @@ red/
 ├── red/
 │   ├── __main__.py       # entry point
 │   ├── config.py         # resolves RED_HOME and loads config\.env
-│   ├── llm.py            # starts llama-server, OpenAI-compatible client
+│   ├── downloads.py      # checksum-verified downloads
+│   ├── llm.py            # LLM backends (Ollama, llama.cpp) and clients
+│   ├── process.py        # child servers that stop when Red stops
 │   ├── listener.py       # wake word + hotkey
 │   ├── stt.py            # Whisper wrapper
 │   ├── router.py         # LLM intent to tool call
@@ -164,7 +171,7 @@ The router sees the list of tool names, descriptions, and schemas. It replies wi
 |---|---|---|
 | Planning and architecture (this README, design decisions) | Claude Opus or Sonnet in chat | Strongest reasoning for design trade-offs |
 | Writing code (building Red) | Claude Code | Works inside the repo, runs tests, edits many files |
-| Intent routing at runtime | Qwen2.5 7B Instruct (Q4_K_M GGUF) via bundled llama-server; Qwen2.5 3B for low-VRAM machines | Free, private, works offline, good at JSON tool calls |
+| Intent routing at runtime | Qwen2.5 7B Instruct (Q4_K_M) via Ollama; Qwen2.5 3B for low-VRAM machines | Free, private, works offline, good at JSON tool calls |
 | Speech to text | Whisper small via faster-whisper (float16 on GPU, int8 on CPU) | Fast and accurate; CPU fallback for any machine |
 | Wake word | openWakeWord with a custom "Hey Red" model | Free, open source, low CPU |
 | Text to speech | Piper | Free, local, fast |
@@ -175,7 +182,7 @@ Claude is used for building Red. The runtime uses a local model, so Red keeps wo
 
 ## 5. Five-day plan
 
-**Day 1: Foundation.** Set up the repo, `.gitignore`, and README. Get llama-server running with one model, managed by `llm.py`. Write `config.py`, the `Tool` interface, and the router. Test: typed commands like "open Downloads" produce the right JSON.
+**Day 1: Foundation.** Set up the repo, `.gitignore`, and README. Get the local model running, managed by `llm.py`. Write `config.py`, the `Tool` interface, and the router. Test: typed commands like "open Downloads" produce the right JSON.
 
 **Day 2: Actions.** Build `system.py` (open folder, open app, shutdown and restart with a delay) and `web.py`. Add the confirmation step for destructive actions. Test: each action works from typed input.
 
@@ -220,7 +227,7 @@ Red reports each repo as clean, ahead, behind, or dirty. It also reports a repo 
 - [x] `.env.example` with placeholder values
 - [x] `.gitignore` covering `.env`, models, and audio files
 - [ ] Safety section explaining what Red can access
-- [ ] Tests for the router's JSON validation
+- [x] Tests for the router's JSON validation
 
 ---
 
@@ -244,16 +251,28 @@ pip install -r requirements.txt
 New-Item -ItemType Directory -Force "$env:RED_HOME\config"
 Copy-Item .env.example "$env:RED_HOME\config\.env"
 
-python -m red    # first run downloads llama-server and the models
+python -m red setup                  # downloads Ollama and the model (about 6.3 GB)
+python -m red route "open Downloads" # shows the tool call for one command
+python -m red                        # type commands interactively
+```
+
+If Ollama is already running on your PC, Red uses it instead of downloading its own. Set `RED_LLM_MODEL=qwen2.5-3b-instruct-q4_k_m` in `config\.env` for a smaller model. The Ollama and llama.cpp downloads are pinned to exact versions and checked against SHA-256 hashes. Ollama checks the model files itself.
+
+### Running tests
+
+```powershell
+pip install -r requirements-dev.txt
+python -m pytest --basetemp="$env:RED_HOME\cache\pytest-tmp"
+$env:RED_INTEGRATION = "1"; python -m pytest tests\test_integration_llm.py   # uses the real model
 ```
 
 ---
 
 ## 10. Decisions
 
-- **Local model runtime: bundled llama.cpp `llama-server` (for v0.1).** Red downloads the right prebuilt build on first run (CUDA for NVIDIA, Vulkan for AMD and Intel, CPU otherwise) and runs it as a subprocess. Users install nothing extra. It supports JSON-schema constrained output, which makes tool calls reliable.
-- **One OpenAI-compatible client in `llm.py`.** If you already run Ollama or LM Studio, set `RED_LLM_URL` and Red uses that server instead of starting its own.
-- **Skipped: Ollama as a requirement.** It works well, but it's a separate installer and background service for every user. It stays supported as an optional backend.
+- **Local model runtime: Red-managed Ollama (for v0.1).** Red downloads Ollama's standalone zip (no installer, no tray app, no autostart), runs `ollama serve` only while Red runs, and passes the JSON schema as Ollama's `format` so tool calls are constrained.
+- **Why not bundle llama.cpp's llama-server?** It was the first choice, but its Windows builds aren't code-signed. Windows 11 Smart App Control, which is on by default on many new PCs, refuses to load them. Ollama's binaries are signed by Ollama Inc. llama-server stays as a fallback (`RED_LLM_BACKEND=llama.cpp`) for PCs that allow it.
+- **Bring your own server.** Set `RED_LLM_URL` to use LM Studio or any OpenAI-compatible server instead.
 - **Skipped: llama-cpp-python.** Installing its CUDA build on Windows often means compiling with Visual Studio and the CUDA toolkit, which is too much to ask of users.
 - **Skipped: Hugging Face Transformers.** Too much setup on Windows for short command routing.
 - **One data folder (`RED_HOME`).** No hard-coded paths, so Red works on any machine.
@@ -284,7 +303,8 @@ Each version should ship with tests for the new tools and an updated safety sect
 
 - **Shutdown:** `shutdown /s /t <seconds>` for shutdown, `/r` for restart, and `shutdown /a` to cancel a pending shutdown. Red should always tell you a shutdown is scheduled and offer to cancel it.
 - **Opening apps and folders:** `os.startfile(path)` opens folders, files, and apps registered with Windows.
-- **llama-server:** The CUDA build uses an NVIDIA GPU when drivers are current. Check GPU use in Task Manager while a prompt runs.
+- **Ollama:** uses an NVIDIA GPU automatically when drivers are current. Check GPU use in Task Manager while a prompt runs. Red's Ollama logs go to `RED_HOME\logs\ollama.log`.
+- **Smart App Control:** blocks unsigned programs and DLLs. If a backend exits with code `0xC0E90002`, that's the cause. Use the Ollama backend.
 - **faster-whisper on GPU:** needs the cuBLAS and cuDNN libraries, installed through pip (`nvidia-cublas-cu12`, `nvidia-cudnn-cu12`).
 - **Global shortcut:** `pynput` works on Windows. Some antivirus tools flag keyboard hooks, so you may need to allow the app.
 - **Autostart:** Put a shortcut to Red in the Startup folder (`shell:startup`) or use Task Scheduler to launch it at login.

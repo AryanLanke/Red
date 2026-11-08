@@ -1,0 +1,13 @@
+[project]
+name = "red"
+version = "0.1.0.dev0"
+description = "A local voice and action assistant"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: needs the real local model (run with RED_INTEGRATION=1)",
+]
