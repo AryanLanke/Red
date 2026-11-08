@@ -438,19 +438,85 @@ Manual checks for the user:
 
 Specs: 7.3, 7.4 and 7.5. Done when `python -m red.overlay` shows every state, the music and repo-sync tools work from `Tool.run()` and route correctly with the real model, and all tests pass (overlay tests use `QT_QPA_PLATFORM=offscreen`).
 
-- [ ] `requirements-ui.txt`, pinned and verified
-- [ ] `overlay.py` with a demo under `__main__`, plus the notification fallback
-- [ ] `tools/music.py`: library scan, name matching, play and stop, injectable player
-- [ ] `tools/git_sync.py` and `repos.example.toml`: all statuses from 7.5, read-only, with timeouts, using an injectable git runner in tests
-- [ ] Registered in `default_registry()`; real-model routing tests for the new tools in their own test file
-- [ ] Check that the new tool descriptions don't break routing for the existing tools
-- [ ] Section updated, committed on `track-c-ui-tools`
+- [x] `requirements-ui.txt`, pinned and verified
+- [x] `overlay.py` with a demo under `__main__`, plus the notification fallback
+- [x] `tools/music.py`: library scan, name matching, play and stop, injectable player
+- [x] `tools/git_sync.py` and `repos.example.toml`: all statuses from 7.5, read-only, with timeouts, using an injectable git runner in tests
+- [x] Registered in `default_registry()`; real-model routing tests for the new tools in their own test file
+- [x] Check that the new tool descriptions don't break routing for the existing tools
+- [x] Section updated, committed on `track-c-ui-tools`
+
+Result (2026-11-08): 178 unit tests pass and 37 are skipped (`QT_QPA_PLATFORM=offscreen`, `--basetemp="D:\RED\cache\pytest-tmp-c"`). With `RED_INTEGRATION=1` and the shared Ollama, all 37 real-model tests pass: 29 in `tests/test_integration_c_tools.py` and the 8 existing ones in `tests/test_integration_llm.py`, with every Track C tool registered. `python -m red.overlay` runs on the real display, shows every state, and exits by itself.
 
 Decisions:
+- **Qt package: `PySide6-Essentials==6.11.3`**, not full `PySide6`. It has QtCore, QtGui and QtWidgets, which is all the overlay needs: about 77 MB instead of more than 400 MB. 6.11.3 is the latest patch of the previous minor version; 6.12.0 had only just come out.
+- **Music backend: `pygame-ce==2.5.8`** (SDL_mixer 2.8.2), playing in-process on a daemon thread. It plays mp3, ogg, opus, flac and wav, and needs no VLC. **It doesn't play m4a, aac or wma.** Files in those formats aren't listed, and a file that won't load is skipped. Rejected options:
+  - `python-vlc` needs VLC installed system-wide.
+  - Qt Multimedia isn't in Essentials and needs a running Qt event loop, so typed mode would break.
+  - Windows Media Player COM needs pywin32 and a message pump.
+- **Music tools:** `play_music` (optional `query`), `stop_music`, `pause_music`, `resume_music` and `next_song`. Pause and next were cheap with pygame. All five share one player, created on the first play, so building the registry never opens the audio device.
+- **Song matching** uses only file and folder names under the music folder, so the query is never treated as a path. Accents, punctuation and words like "the", "songs" or "by" are ignored. Ranking, best first:
+  1. A song title or folder name that equals the query
+  2. Songs whose path contains every word of the query
+  3. Close matches for misheard words (difflib, 0.8)
+
+  A single match plays that song. Several matches are shuffled. The scan stops at 20,000 files and skips hidden folders.
+- **The model fills optional args with placeholders** like `"null"`, `"none"`, `"all"`, `"shuffled"` or `"some music"` instead of leaving them out. Each property now has a description that offers `"all"`, which the model then uses reliably. `wants_everything()` in `music.py` and `means_all_repos()` in `git_sync.py` treat every placeholder as "all".
+- **Overlay:**
+  - 360 px wide, rounded and dark, with a coloured dot for each state. It sits in the bottom-right of the primary screen's available area, so it stays above the taskbar.
+  - It is click-through (`WindowTransparentForInput`) as well as non-focusing.
+  - It hides 3 seconds after `idle`. `idle` with text shows briefly and then hides.
+  - Text is plain text, never rich text, and is cut at 600 characters.
+  - `set_state` emits a queued Qt signal, so it is safe from any thread, and it raises `ValueError` for an unknown state.
+  - `run_with_overlay` returns 0 when the worker finishes, 1 if it raised (and shows an error state), and 130 on Ctrl+C.
+- **Notification fallback:** a Windows toast through `powershell.exe -EncodedCommand` with a fixed script. The title and text travel in environment variables and are added as XML text nodes, so nothing the user or the model says is parsed as script or markup. It shows only `confirm`, `speaking` and `error`, so `listening` and `thinking` don't spam toasts. The demo has `--fallback` to try it. `ConsoleOverlay` is also available for typed mode.
+- **Repo sync (read-only):**
+  - Git runs with `GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never`, `GIT_ASKPASS=echo`, `GIT_OPTIONAL_LOCKS=0` (so `status` doesn't rewrite the index), `credential.interactive=never`, and no gc or maintenance. stdin is closed and no console window appears.
+  - Fetch uses `--no-tags --no-write-fetch-head` and only runs when there's an upstream branch.
+  - Timeouts are 15 seconds for local commands and 45 seconds for fetch. On a timeout, Red ends git's whole process tree with `taskkill /T`.
+  - Up to 4 repos are checked in parallel.
+  - Each repo gets one state: `clean`, `ahead`, `behind`, `diverged`, `dirty`, `detached`, `no_upstream`, `fetch_failed`, `missing`, `not_a_repo` or `error`. Dirty wins over ahead or behind, but the spoken reply names every problem.
+  - A failed fetch still reports ahead and behind from the last fetch.
+  - Tests check that only `rev-parse`, `symbolic-ref`, `fetch`, `status` and `log` ever run (`READ_ONLY_COMMANDS`). They also check that HEAD, refs, the index and the files are unchanged afterwards.
+- **`repos.toml` format:** `[repos]` with `name = 'folder'` entries. `%VARS%` and `~` are expanded, and relative paths are relative to the file. The optional `repo` argument is only a lookup key, ignoring case, spaces and dashes. An unknown name gets "I don't have a repo called X", followed by the list of repos.
+- **Spoken repo reply:** names at most 3 repos that need attention, for example "2 of 4 repos need attention: red has 2 unpushed commits; notes has uncommitted changes."
 
 Integration notes:
+- Add `-r requirements-ui.txt` to `requirements.txt`. Don't install the old `pygame` next to `pygame-ce`, because both use the `pygame` import name.
+- **New setting:** `RED_MUSIC_DIR`, read in `red/tools/music.py: music_dir()`. Move it into `Settings`.
+- **Music default folder:** in `music_dir()`, replace `Path.home() / "Music"` with `known_folders.known_folder("music")`, keeping the old path as a fallback. There's a comment at that line.
+- **repos.toml path:** `git_sync.repos_file()` uses `red_home() / "config" / "repos.toml"`. It could use `Settings.config_dir` instead.
+- **Repo details for the overlay and the log:** after `run()`, `CheckRepos` sets `last_details` (one line per repo) and `last_results` (a list of `RepoStatus`). The Executor or `__main__` should:
+  - show the reply plus `last_details` in the overlay's `speaking` state
+  - add `last_details` to the `commands.jsonl` line, for example as a `details` field
 
-Manual checks for the user:
+  A generic way to do this: `getattr(registry.get(route.tool), "last_details", "")`. Commit subjects are also logged at INFO by the `red.tools.git_sync` logger.
+- A repo check can take up to about 45 seconds when a remote is slow. Set the overlay to `thinking` ("Checking your repos…") before running `check_repos`.
+- **Overlay wiring:** call `run_with_overlay(worker)` from the main thread in `__main__`, and run the whole listen, route, confirm, run, speak loop inside `worker(overlay)`. Use `overlay.set_state(...)` at each step. Call `confirm` before showing the confirmation question. Typed mode can skip Qt and use `ConsoleOverlay`, or no overlay at all.
+- **Music and the microphone:** pause music while Red records or speaks, so Whisper doesn't transcribe the song. For example: `p = music.default_player()`, and if `p.current and not p.paused`, call `p.pause()` on trigger and `p.resume()` afterwards.
+- If Track A adds optional arguments, they may hit the placeholder problem described under Decisions.
+- `tests/test_integration_c_tools.py` repeats the commands from `tests/test_integration_llm.py` and adds 3 more ("open my music folder", "stop the shutdown", "open github"). Args are compared case-insensitively. The original file gives `"Downloads"` in exact case, which the model still matches.
+- README and AGENTS.md need: `repos.toml` setup, `RED_MUSIC_DIR`, the supported music formats (no m4a, aac or wma), and `python -m red.overlay`.
+- Possible later work, not needed for v0.1:
+  - Qt can abort the process (`qFatal`) instead of raising when there's no display at all, for example in a service session. The fallback covers import errors and a missing screen, but not that case.
+  - Music tags (ID3) aren't read; matching uses file and folder names only.
+
+Manual checks for the user (run in `D:\RED\worktrees\c` with `.\.venv\Scripts\python.exe`, after `$env:RED_HOME = "D:\RED"`):
+- **Overlay:** run `python -m red.overlay`. Check that:
+  - a dark card appears in the bottom-right corner, above the taskbar, and goes through Listening, Thinking, Confirm, Red (twice) and Problem
+  - it never takes focus from the window you're typing in, and clicks pass through it
+  - it hides about 3 seconds after the last state, and the program exits by itself
+
+  Also try it on a high-DPI or second monitor.
+- **Notification fallback:** run `python -m red.overlay --fallback`. Check that 4 Windows notifications appear (Confirm, Red, Red, Problem).
+- **Music, which plays sound:** set `$env:RED_MUSIC_DIR` to a folder of mp3 or flac files, or leave it unset to use your Music folder. Then run:
+  `python -c "import time; from red.tools.music import *; p=PlayMusic(); print(p.run()); time.sleep(8); print(PauseMusic().run()); time.sleep(2); print(ResumeMusic().run()); time.sleep(4); print(NextSong().run()); time.sleep(6); print(StopMusic().run())"`
+
+  Check that you hear music, a pause, the song resuming, a different song, and then silence. Try `p.run(query="<an artist folder name>")` too.
+- **Repo sync on your real repos (read-only):** copy `repos.example.toml` to `D:\RED\config\repos.toml` and list a few repos, ideally one with unpushed commits and one with uncommitted changes. Then run:
+  `python -c "from red.tools.git_sync import CheckRepos; t=CheckRepos(); print(t.run()); print(t.last_details)"`
+
+  Check that the statuses are right and that `git status` in each repo looks the same afterwards. Add one private repo whose credentials have expired or been removed. Check that it reports "couldn't fetch" within about 45 seconds and that no login window or prompt appears.
 
 ### 8.9 Integration (one session, after A, B and C are done)
 
