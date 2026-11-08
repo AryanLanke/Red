@@ -79,18 +79,21 @@ def fake_download(calls: list | None = None):
 class FakeWhisper:
     """Looks like faster_whisper.WhisperModel."""
 
-    def __init__(self, path, device, compute_type, text=" Open downloads. ", fail_on_transcribe=None):
+    def __init__(self, path, device, compute_type, text=" Open downloads. ", fail_on_transcribe=None,
+                 fail_after: int = 0):
         self.path, self.device, self.compute_type = path, device, compute_type
         self.text = text
         self.fail_on_transcribe = fail_on_transcribe
+        self.fail_after = fail_after          # successful calls before failing
         self.calls = []
 
     def transcribe(self, audio, **kwargs):
         self.calls.append((audio, kwargs))
+        fail = self.fail_on_transcribe if len(self.calls) > self.fail_after else None
 
         def segments():
-            if self.fail_on_transcribe:
-                raise self.fail_on_transcribe
+            if fail:
+                raise fail
             for part in self.text.split("|"):
                 yield SimpleNamespace(text=part)
 

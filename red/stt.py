@@ -16,7 +16,7 @@ from typing import Callable
 
 import numpy as np
 
-from red.audio import PinnedFiles, hf_url, to_float32
+from red.audio import SAMPLE_RATE, PinnedFiles, hf_url, to_float32
 from red.llm import Asset
 
 log = logging.getLogger(__name__)
@@ -47,6 +47,31 @@ def cuda_available() -> bool:
         return ctranslate2.get_cuda_device_count() > 0
     except Exception:
         return False
+
+
+def add_nvidia_dll_dirs() -> list[str]:
+    """Let CTranslate2 find cuBLAS/cuDNN from the optional nvidia-*-cu12 pip packages.
+
+    Only this process's PATH changes. Returns the folders that were added.
+    """
+    import importlib.util
+    import os
+
+    spec = importlib.util.find_spec("nvidia")
+    if spec is None or not spec.submodule_search_locations:
+        return []
+    added = []
+    path = os.environ.get("PATH", "")
+    for root in spec.submodule_search_locations:
+        for pkg in ("cublas", "cudnn", "cuda_runtime", "cuda_nvrtc"):
+            d = Path(root) / pkg / "bin"
+            if d.is_dir() and str(d) not in path:
+                added.append(str(d))
+    if added:
+        os.environ["PATH"] = os.pathsep.join(added + [path])
+        for d in added:
+            os.add_dll_directory(d)
+    return added
 
 
 def _faster_whisper_model(path: str, device: str, compute_type: str):
@@ -92,7 +117,15 @@ class Transcriber:
         return WHISPER_MODELS[self.model_name].ensure(self.path, label=f"Whisper {self.model_name}")
 
     def _create(self, device: str):
-        self._model = self._factory(str(self.path), device, COMPUTE_TYPE[device])
+        model = self._factory(str(self.path), device, COMPUTE_TYPE[device])
+        if device == "cuda":
+            # CUDA libraries load lazily, so a missing cuBLAS only shows up when
+            # the model first runs. Run it once now, so a failure falls back to
+            # the CPU at startup instead of during your first command.
+            segments, _ = model.transcribe(np.zeros(SAMPLE_RATE, np.float32), language=self.language,
+                                           beam_size=1, vad_filter=False, without_timestamps=True)
+            list(segments)
+        self._model = model
         self.device = device
 
     def load(self) -> None:
@@ -104,6 +137,7 @@ class Transcriber:
             want_gpu = self.requested_device == "cuda" or (
                 self.requested_device == "auto" and self._cuda_check())
             if want_gpu:
+                add_nvidia_dll_dirs()
                 try:
                     self._create("cuda")
                     return

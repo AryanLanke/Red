@@ -13,14 +13,14 @@ def no_network(monkeypatch):
     return calls
 
 
-def make(tmp_path, device="cpu", cuda=False, fail_load_on=(), fail_transcribe_on=(), **kw):
+def make(tmp_path, device="cpu", cuda=False, fail_load_on=(), fail_transcribe_on=(), fail_after=0, **kw):
     created = []
 
     def factory(path, dev, compute):
         if dev in fail_load_on:
             raise RuntimeError(f"CUDA failed with error out of memory ({dev})")
         err = RuntimeError("Library cublas64_12.dll is not found") if dev in fail_transcribe_on else None
-        m = FakeWhisper(path, dev, compute, fail_on_transcribe=err)
+        m = FakeWhisper(path, dev, compute, fail_on_transcribe=err, fail_after=fail_after)
         created.append(m)
         return m
 
@@ -80,8 +80,27 @@ def test_explicit_cuda_still_falls_back(tmp_path):
     assert t.device == "cpu"
 
 
-def test_cuda_error_during_transcription_retries_on_cpu(tmp_path):
+def test_gpu_is_warmed_up_at_load(tmp_path):
+    t, created = make(tmp_path, device="auto", cuda=True)
+    t.load()
+    assert len(created[0].calls) == 1             # one warm-up run on the GPU
+    _, kwargs = created[0].calls[0]
+    assert kwargs["vad_filter"] is False          # so the model really runs
+
+
+def test_missing_cuda_library_is_caught_at_load(tmp_path):
     t, created = make(tmp_path, device="auto", cuda=True, fail_transcribe_on=("cuda",))
+    t.load()                                      # warm-up fails, so the CPU is used from the start
+    assert t.device == "cpu"
+    assert [m.device for m in created] == ["cuda", "cpu"]
+    assert t.transcribe(tone(1.0)) == "Open downloads."
+    assert len(created) == 2
+
+
+def test_cuda_error_during_transcription_retries_on_cpu(tmp_path):
+    t, created = make(tmp_path, device="auto", cuda=True, fail_transcribe_on=("cuda",), fail_after=1)
+    t.load()
+    assert t.device == "cuda"
     assert t.transcribe(tone(1.0)) == "Open downloads."
     assert [m.device for m in created] == ["cuda", "cpu"]
     assert t.device == "cpu"
