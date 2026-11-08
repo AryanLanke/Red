@@ -15,13 +15,13 @@ Last updated: 2026-11-08.
 | LLM backends (Ollama, llama.cpp, your own server) | `red/llm.py`, `red/process.py` | ✅ Done (Day 1) |
 | Tool interface and registry | `red/tools/base.py`, `red/tools/__init__.py` | ✅ Done (Day 1) |
 | Intent router (JSON-schema constrained) | `red/router.py` | ✅ Done (Day 1) |
-| CLI: `setup`, `route`, typed loop (dry run only) | `red/__main__.py` | ✅ Done (Day 1) |
-| Actions: folder, app, URL, shutdown, restart, cancel | `red/tools/system.py`, `red/tools/web.py` | ⏳ Schemas only; `run()` raises `NotImplementedError`. Track A |
-| Confirmation, allowlist, command log | `red/confirm.py`, `red/allowlist.py`, ... | ⏳ Not started. Track A |
-| Speech to text, text to speech, hotkey, wake word | `red/audio.py`, `red/stt.py`, `red/tts.py`, `red/listener.py` | ⏳ Not started. Track B |
-| Floating overlay | `red/overlay.py` | ⏳ Not started. Track C |
-| Music and repo sync tools | `red/tools/music.py`, `red/tools/git_sync.py` | ⏳ Not started. Track C |
-| Wiring it all together, setup docs, v0.1.0 tag | `red/__main__.py`, `README.md` | ⏳ After the three tracks (section 8.9) |
+| CLI: `setup`, `route`, `run`, voice loop, `--typed`, `--dry-run` | `red/__main__.py` | ✅ Done (Track D) |
+| Actions: folder, app, URL, shutdown, restart, cancel | `red/tools/system.py`, `red/tools/web.py` | ✅ Done (Track A) |
+| Confirmation, allowlist, command log, executor | `red/confirm.py`, `red/allowlist.py`, `red/known_folders.py`, `red/executor.py` | ✅ Done (Track A) |
+| Speech to text, text to speech, hotkey, wake word | `red/audio.py`, `red/stt.py`, `red/tts.py`, `red/listener.py`, `red/voice_confirm.py` | ✅ Done (Track B). The "Hey Red" wake word is Track E |
+| Floating overlay | `red/overlay.py` | ✅ Done (Track C) |
+| Music and repo sync tools | `red/tools/music.py`, `red/tools/git_sync.py` | ✅ Done (Track C) |
+| Wiring it all together: settings, setup, voice loop, docs | `red/__main__.py`, `red/config.py`, `README.md`, `AGENTS.md` | ✅ Done (Track D, section 8.13). The shared venv install and the v0.1.0 tag are still to do |
 
 **Day 1 result:** typed commands like "open Downloads" and "shut down in 2 hours" produce the right JSON in under a second once the model is loaded. 38 unit tests and 8 real-model tests pass. Commits: `a44da78` (project setup), `ebae152` (Day 1 code), `727ac5f` and `ffe2ff1` (README).
 
@@ -711,20 +711,107 @@ Done when, on this machine, `python -m red`:
 
 It also needs a typed mode, `--dry-run` still working, `python -m red setup` fetching everything, and every test passing in the shared venv.
 
-- [ ] Shared venv complete: `-r requirements-voice.txt` and `-r requirements-ui.txt` in `requirements.txt`, installed in `D:\RED\.venv`, and the full suite passing there
-- [ ] Every new `RED_*` setting moved into `Settings` and `.env.example`, with `RED_WAKEWORD` defaulting to `hey_red` and `RED_WHISPER_DEVICE` defaulting to `cpu` (Track B's advice for 6 GB GPUs)
-- [ ] `python -m red setup` also downloads the voice models
-- [ ] Voice loop in `__main__.py` with `run_with_overlay`. Overlay states and music pausing as described in Track B's and C's integration notes, and `spoken_ask` in the `Executor` with typed fallback
-- [ ] Modes: voice (default), `--typed`, `--dry-run`, `route`. Hotkey only if the wake word fails to start
-- [ ] `music_dir()` uses `known_folder("music")`; `repos_file()` uses `Settings`; `last_details` goes into the overlay and `commands.jsonl`
-- [ ] README for users (how to talk to Red, `allowlist.toml`, `repos.toml`, music, voice settings, "Hey Red") and AGENTS.md (new commands and layout). Update the status table in section 1
-- [ ] Manual checks merged into one list for the user
+- [ ] Shared venv complete. **Partly done:** `requirements.txt` now has `-r requirements-voice.txt` and `-r requirements-ui.txt`. **Not installed:** Claude Code's permission check blocked `pip install` into `D:\RED\.venv` (see Integration notes), so the user needs to run one command.
+- [x] Every new `RED_*` setting moved into `Settings` and `.env.example`, with `RED_WAKEWORD` defaulting to `hey_red` and `RED_WHISPER_DEVICE` defaulting to `cpu`
+- [x] `python -m red setup` also downloads the voice models
+- [x] Voice loop in `__main__.py` with `run_with_overlay`. Overlay states and music pausing as described in Track B's and C's integration notes, and `spoken_ask` in the `Executor` with typed fallback
+- [x] Modes: voice (default), `--typed`, `--dry-run`, `route` (and `run`). Hotkey only if the wake word fails to start
+- [x] `music_dir()` uses `known_folder("music")`; `repos_file()` uses `Settings`; `last_details` goes into the overlay and `commands.jsonl`
+- [x] README for users (how to talk to Red, `allowlist.toml`, `repos.toml`, music, voice settings, "Hey Red") and AGENTS.md (new commands and layout). Status table in section 1 updated
+- [x] Manual checks merged into one list for the user (below)
+
+**Result (2026-11-08, about 11:10):**
+- Unit tests:
+  - Shared venv, without the 7 voice test files it can't import yet: 296 passed, 44 skipped.
+  - Track B's venv, every test file: 384 passed, 51 skipped.
+  - Track C's venv, with `QT_QPA_PLATFORM=offscreen`: 323 passed, 42 skipped.
+- Real models: 42 routing tests (`test_integration_llm.py` and `test_integration_c_tools.py`) and 7 voice-model tests pass.
+- A real start of `python -m red` (Track B's venv, so no PySide6 and notifications instead of the overlay): it connected to the shared Ollama, loaded Whisper on the CPU (int8), reported once that "Hey Red" isn't available yet, and waited for Ctrl+Alt+R.
 
 Decisions:
+- **The voice loop is `VoiceApp` in `red/__main__.py`.** Every part is passed in: a `Voice` bundle (transcriber, speaker, record, chime, listener factory, `spoken_ask` factory), the overlay, the music player, and the typed fallback. `load_voice()` builds the real parts with lazy imports, so typed mode, `route`, `run` and the core tests don't need numpy or Qt. Without the voice packages, `python -m red` exits with code 2 and suggests `pip install -r requirements.txt` or `--typed`.
+- **Modes:** voice is the default. `--typed` runs typed commands, and `--dry-run` only shows them; the two flags exclude each other. `run "<command>"` respects `--dry-run`, and `route` always only shows.
+- **Wake word fallback:** if the `Listener` raises while it's built or started (an unknown name like `hey_red` before Track E lands, a missing model, or no microphone), Red rebuilds it with the hotkey only. It says so once, in the console and in the overlay's ready text. The error details go to `red.log` only, because B's error message lists the other openWakeWord names, including the one that must not appear. If the hotkey is off too, Red stops with a clear message.
+- **Overlay sequence per command:**
+  1. `listening` ("Listening...")
+  2. `thinking`, then `thinking` again with the transcript in quotes (plus "Checking your repos..." for `check_repos`)
+  3. `confirm` with the question
+  4. `speaking` with the reply, plus `last_details` on the next lines
+  5. `idle` with the reply, so it stays readable for 3 s before hiding
+
+  At startup, Red shows `idle` with "Red is ready. Press Ctrl+Alt+R or say "Hey Red", then speak." Details are shown, not spoken.
+- **Confirmation in voice mode:** `with_fallback(spoken, typed_ask)`. The typed console prompt is used only if the spoken ask raises, for example on a microphone error. A spoken timeout counts as an answer and cancels, so you never wait 30 s twice.
+- **Music pausing** uses the new `music.active_player()`, which never creates a player. Music that's playing is paused for the whole command and resumed afterwards, except after a music command (`play_music`, `stop_music`, `pause_music`, `resume_music`, `next_song`).
+- **One failing command never stops Red.** Any exception in `handle()` shows `error`, says "Sorry, something went wrong.", and Red keeps listening. Silence gives "I didn't hear anything."; an empty transcript gives "Sorry, I didn't catch that."; a routing error gives "Sorry, I didn't understand that."
+- **Settings:**
+  - `RED_HOTKEY` and `RED_WAKEWORD` accept `off`, `none`, `0`, `no`, `false` or `disabled`. An empty value means the default.
+  - `RED_WAKEWORD_THRESHOLD` must be between 0 and 1. `RED_WHISPER_DEVICE` must be `auto`, `cuda` or `cpu`.
+  - `RED_MUSIC_DIR` expands `%VARS%` and `~`.
+  - `Settings` has a new `repos_path` property.
+  - `config.py` holds the voice defaults as plain strings, so it never imports the voice modules.
+- **`setup`** also copies `repos.example.toml` to `config\repos.toml` if it's missing. It stops a Red-started Ollama before the voice downloads. If the wake word can't be fetched yet, Red prints a message and setup still succeeds. Without the voice packages, setup exits with code 1.
+- **Quitting:** Ctrl+C stops the listener and the speaker, prints "Bye." and exits with code 0. Ollama is stopped in `main()`'s `finally`.
 
 Integration notes:
+- **The shared venv still needs the voice and UI packages.** Claude Code's auto-mode permission check denied `pip install -r requirements-dev.txt` into `D:\RED\.venv`, and Track A's original prompt also said to install nothing there. I didn't try another way. After merging, the user (or the final merge, if it's allowed to) should run:
+  ```powershell
+  $env:PIP_CACHE_DIR = "D:\RED\cache\pip"
+  D:\RED\.venv\Scripts\python.exe -m pip install --only-binary=:all: -r D:\RED\red\requirements-dev.txt
+  D:\RED\.venv\Scripts\python.exe -m pip check
+  ```
+  Then run the full suite there with `QT_QPA_PLATFORM=offscreen`.
+- **Track E:**
+  - D calls `Listener(handle, settings.hotkey, settings.wakeword, model_dir=models\wakeword, threshold=settings.wakeword_threshold)`. Once `"hey_red"` is valid there, nothing in D needs to change.
+  - `setup` calls `listener.download_wakeword(models\wakeword, "hey_red")`. It should fetch whatever "Hey Red" needs, or return without error.
+  - `voice_demo.VoiceConfig` could now read `load_settings()` instead of the environment. Its default is still `hey_jarvis` until E changes it.
+- **Track F:**
+  - Any tool can set a `last_details` string. The Executor logs it, and the voice loop shows it in the overlay.
+  - Tools that control Windows media keys aren't in `MUSIC_TOOLS`, so after them Red resumes its own player. Add their names to `MUSIC_TOOLS` in `__main__.py` if that's wrong.
+- **Merge order D, F, E:** D touches `music.py` and `git_sync.py` only in `music_dir()`, `active_player()` and `repos_file()`. Its test files are new: `tests/test_voice_app.py` and `tests/test_settings_voice.py`. `tests/test_main.py` changed so that the typed loop uses `--typed`.
 
-Manual checks for the user:
+Manual checks for the user (all of Phase 1 plus Track D, in one list). First install the packages (the Integration notes above), then in PowerShell:
+
+```powershell
+cd D:\RED\red
+$env:RED_HOME = "D:\RED"
+D:\RED\.venv\Scripts\Activate.ps1
+python -m red setup
+```
+
+**Red as a whole (Track D)**
+1. Run `python -m red`. A dark card appears in the bottom-right corner, above the taskbar, saying Red is ready, and the console prints `Ready. Press Ctrl+Alt+R or say "Hey Red", then speak.` If "Hey Red" isn't merged yet, you see one line saying only the hotkey works.
+2. Press Ctrl+Alt+R. You hear a beep. Say "open my downloads folder". The card goes through Listening, Thinking (with your words), and the reply. Explorer opens Downloads, and Red says "Opening Downloads."
+3. Press Ctrl+Alt+R and say "shut down in 60 minutes". Red asks aloud with the exact time, and the card shows the question. Say "no": Red says "Cancelled." and no Windows notice appears.
+4. Do it again and say "yes". The Windows shutdown notice appears. Then press Ctrl+Alt+R and say "cancel the shutdown". Red confirms it's cancelled.
+5. Press Ctrl+Alt+R and stay silent. Red says "I didn't hear anything."
+6. Play music ("play some music"), then press Ctrl+Alt+R and give any other command. The music pauses while Red listens and talks, then resumes. "stop the music" stops it, and it doesn't come back.
+7. Set up `D:\RED\config\repos.toml` and say "check my repos". The card shows one line per repo, Red speaks a short summary, and `D:\RED\logs\commands.jsonl` has a `details` field.
+8. Once Track E is merged, say "Hey Red", then a command. It should work like the hotkey.
+9. `python -m red --typed` runs typed commands. `python -m red --dry-run` only shows the tool calls.
+10. Press Ctrl+C. Red prints "Bye.", and Task Manager shows no leftover `python.exe` or a Red-started `ollama.exe`.
+
+**Actions and confirmation (Track A)**
+
+11. In `python -m red --typed`, type "restart in 10 minutes" and don't answer. After 30 s you see "No answer, so I cancelled it.", and no Windows notice appears.
+12. With nothing scheduled, "cancel the shutdown" says "Nothing was scheduled". This checks that `shutdown /a` returns 1116 on your PC.
+13. "open Documents" and "open Pictures" open the OneDrive folders. "open notepad", "open calculator", "open file explorer" and "open task manager" each start; Task Manager may show a UAC prompt. "open youtube" opens your default browser.
+14. In `D:\RED\config\allowlist.toml`, set `projects` to a real folder, and check "open projects" and "open vs code".
+
+**Voice (Track B)**
+
+15. Speakers: `python -m red.voice_demo --say "Hello, I am Red."` is spoken clearly, once.
+16. Microphone: `python -m red.voice_demo --levels`. Speech should read above about 0.02 and silence below 0.008. If the wrong microphone is used, set `RED_MIC_DEVICE` to part of its name.
+17. The hotkey only starts one recording on a quick double press. Recording stops about a second after you finish speaking.
+18. Spoken yes/no: "yes" confirms; "no" and silence (after 30 s) cancel.
+19. Optional: `python -m red.voice_demo --device cuda --no-wakeword` falls back to the CPU with a warning, unless `nvidia-cublas-cu12` is installed.
+20. No antivirus warning about the keyboard hook.
+
+**Overlay, music, repo sync (Track C)**
+
+21. `python -m red.overlay`: the card goes through every state, never takes focus, lets clicks through, hides after about 3 s, and the program exits. Also try a high-DPI or second monitor.
+22. `python -m red.overlay --fallback`: 4 Windows notifications appear.
+23. Music: play, pause, resume, next song and stop all work on your Music folder (mp3, ogg, opus, flac or wav; not m4a).
+24. Repo sync on your real repos is read-only. `git status` looks the same afterwards. A repo with expired credentials reports "couldn't fetch" within about 45 s, with no login prompt.
 
 ### 8.14 Track E: "Hey Red"
 
