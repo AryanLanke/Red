@@ -658,6 +658,121 @@ Before doing anything else, read D:\RED\red\progress.md (all of it, especially s
 6. When you finish: make sure all tests pass, update only section 8.8 of progress.md (checkboxes, Decisions, Integration notes, Manual checks for the user), commit, and tell me what's done, anything left, and the checks I need to do by hand.
 ```
 
+### 8.11 Phase 1 result (2026-11-08, about 10:45)
+
+Tracks A, B and C finished early and were merged into `main` with `--no-ff`, in the order A, C, B, and pushed after each merge (head `e2f5b29`):
+- after A: 150 tests pass
+- after C: 290 pass in the UI venv
+- after B: 351 pass in the voice venv
+
+No conflicts. The voice tests can't be collected in the UI venv, and the shared venv lacks both sets of packages. Fixing that is the first job of Track D.
+
+### 8.12 Phase 2: three new tracks, until the 13:15 stop
+
+The same three sessions continue. Each one starts a **new branch from the merged `main`** in its **existing worktree**. Every rule in 8.3 still applies, with the changes below. Work through your checklist in order. Push after each item. At 13:15, stop new work, finish the current step, update your section, commit and push. Then send a one-line report to the planning session `red-a7`.
+
+| Track | Session (Phase 1 track) | Worktree | Branch | Work |
+|---|---|---|---|---|
+| D | `red-c3` (A) | `D:\RED\worktrees\a` | `track-d-integration` | Make Red one app: the full voice loop in `python -m red`, settings, setup, docs (the old 8.9 steps 2 to 6) |
+| E | `red-10` (B) | `D:\RED\worktrees\b` | `track-e-hey-red` | Wake phrase "Hey Red": a working detector today, then a trained model |
+| F | `red-62` (C) | `D:\RED\worktrees\c` | `track-f-jarvis-tools` | More everyday PC abilities (the "Jarvis" list in section 2, and more) |
+
+Start each track with:
+
+```powershell
+git -C D:\RED\worktrees\<a|b|c> fetch origin
+git -C D:\RED\worktrees\<a|b|c> switch -c <branch> origin/main
+```
+
+**Naming:** Red's name and wake phrase is **"Hey Red"**. "Jarvis" is only the user's shorthand for the kind of assistant Red should be. It must not appear as a wake word, default, prompt or user-facing text.
+
+**Changes to 8.3:**
+- Track D is now the only track that installs into the shared `D:\RED\.venv`, with `pip install -r requirements.txt` once that file includes the voice and UI requirements. E and F keep using their worktree venvs.
+- pytest temp folders: `pytest-tmp-d`, `-e`, `-f`.
+- The GPU is shared with the 7B model. Track E may train on the GPU, but must fall back to the CPU (or smaller batches) on out-of-memory errors, and must never stop Ollama.
+
+**File ownership in Phase 2:**
+
+| Owner | Files |
+|---|---|
+| D | `red/__main__.py`, `red/config.py`, `.env.example`, `requirements.txt`, `pyproject.toml`, `red/executor.py`, `red/confirm.py`, `red/overlay.py`, `red/tools/music.py` and `red/tools/git_sync.py` (only the integration-note changes), `README.md`, `AGENTS.md`, new tests for the main loop |
+| E | `red/listener.py`, `red/voice_demo.py`, `red/audio.py`, `red/stt.py`, `red/tts.py`, `red/voice_confirm.py`, `requirements-voice.txt`, new `red/wakeword.py` (or similar), new `scripts/train_hey_red/`, new `requirements-train.txt`, the voice tests |
+| F | `red/tools/__init__.py`, `red/tools/system.py`, `red/tools/web.py`, `red/tools/base.py`, `red/router.py`, `red/llm.py`, new `red/tools/*.py`, `requirements-ui.txt`, the routing tests (`tests/test_integration_*.py`, `tests/test_router.py`), new tool tests |
+| Nobody (only the final merge) | `CLAUDE.md`, `red/downloads.py`, `red/process.py`, `red/allowlist.py`, `red/known_folders.py`, other sections of this file |
+
+**Contracts:** keep every Phase 1 signature in 8.5, plus the additions in the Integration notes. D calls `Listener(..., wakeword=settings.wakeword)` and `default_registry()`, and must not depend on anything E or F add. If the wake word can't start, D keeps going with the hotkey only and says so once. E keeps the `Listener` API and makes `"hey_red"` a valid `wakeword` value. F's tools need no constructor arguments in `default_registry()`, and use `ToolError` for messages meant for the user.
+
+### 8.13 Track D: integration
+
+Done when, on this machine, `python -m red`:
+- waits for Ctrl+Alt+R (and the wake word when it's available)
+- shows the overlay
+- listens, routes, asks "yes?" aloud for anything destructive, acts, and answers aloud
+
+It also needs a typed mode, `--dry-run` still working, `python -m red setup` fetching everything, and every test passing in the shared venv.
+
+- [ ] Shared venv complete: `-r requirements-voice.txt` and `-r requirements-ui.txt` in `requirements.txt`, installed in `D:\RED\.venv`, and the full suite passing there
+- [ ] Every new `RED_*` setting moved into `Settings` and `.env.example`, with `RED_WAKEWORD` defaulting to `hey_red` and `RED_WHISPER_DEVICE` defaulting to `cpu` (Track B's advice for 6 GB GPUs)
+- [ ] `python -m red setup` also downloads the voice models
+- [ ] Voice loop in `__main__.py` with `run_with_overlay`. Overlay states and music pausing as described in Track B's and C's integration notes, and `spoken_ask` in the `Executor` with typed fallback
+- [ ] Modes: voice (default), `--typed`, `--dry-run`, `route`. Hotkey only if the wake word fails to start
+- [ ] `music_dir()` uses `known_folder("music")`; `repos_file()` uses `Settings`; `last_details` goes into the overlay and `commands.jsonl`
+- [ ] README for users (how to talk to Red, `allowlist.toml`, `repos.toml`, music, voice settings, "Hey Red") and AGENTS.md (new commands and layout). Update the status table in section 1
+- [ ] Manual checks merged into one list for the user
+
+Decisions:
+
+Integration notes:
+
+Manual checks for the user:
+
+### 8.14 Track E: "Hey Red"
+
+Done when saying "Hey Red" triggers Red with the default settings, a normal conversation or video doesn't trigger it, "Hey Jarvis" is gone from defaults, docs and tests, and the tests pass.
+
+- [ ] **A "Hey Red" detector that works today, without training.** For example: voice-activity gating plus a small pinned Whisper model (such as `tiny.en` or `base.en`) on short clips, matching "hey red" and close variants ("hey, red", "hay red"). Use the existing `Listener` detector interface. Measure CPU use while idle and while people are talking, and keep it low
+- [ ] `RED_WAKEWORD=hey_red` is the default. `RED_WAKEWORD_THRESHOLD` (or a sensible equivalent) tunes it. Remove `hey_jarvis` as a default and from docs. Other openWakeWord names and `.onnx` paths can stay as options
+- [ ] `voice_demo.py`: use `"Hey Red"` everywhere, and replace `_is_yes` with `red.confirm.is_yes`, which now exists on `main`
+- [ ] Real-model tests: Piper saying "Hey Red" (several voices and speeds) triggers it; a set of ordinary sentences, including ones with "red" in them ("I read the red book"), doesn't
+- [ ] **A custom openWakeWord "hey_red" model,** if it's feasible on this machine before 13:15. Put the scripts in `scripts/train_hey_red/` and the training deps in `requirements-train.txt`. Generate synthetic speech with Piper voices, add noise, and train. Compare false accepts and misses against the detector above, and make whichever is better the default. If training isn't feasible (Windows-only tooling, time, or data size), write down exactly why and what it would take
+- [ ] Manual checks for the user, with exact commands
+
+Decisions:
+
+Integration notes:
+
+Manual checks for the user:
+
+### 8.15 Track F: everyday PC abilities
+
+Done when each new tool works from `Tool.run()` with fakes, routes correctly with the real model (in its own `tests/test_integration_f_tools.py`), the existing commands still route correctly, and all tests pass. Do them in this order and push after each:
+
+- [ ] **Office apps:** "open PowerPoint / Word / Excel / Outlook" as built-in apps when installed. Find them through App Paths in the registry, not by guessing paths
+- [ ] **`web_search`:** "search the web for X" opens a search in the default browser, using a fixed URL template with the query properly encoded
+- [ ] **`find_file`:** "find my resume", "where is X". Searches known and allowlisted folders, or the Windows Search index, by name. Read-only, with a time limit and a cap on results. It replies with the best match and offers to open it
+- [ ] **`compose_mail`:** "compose a mail to X about Y" opens a new draft through a `mailto:` link, with the recipient, subject and body properly encoded. It never sends
+- [ ] **Quick system actions:**
+  - lock the PC
+  - volume up, down and mute
+  - media play/pause and next
+  - open a Windows Settings page from a fixed list of `ms-settings:` pages
+  - tell the time, date and battery level
+  - take a screenshot into Pictures
+
+  Sleep and empty Recycle Bin are destructive, so they need `destructive = True` and `describe()`
+- [ ] **Router at scale:** with about 20 tools, check the prompt still fits `num_ctx`, and that routing accuracy and speed stay good. Tune descriptions, the prompt or `num_ctx` if needed, and record the before and after numbers
+- [ ] Update the "Jarvis" table in section 2 (the status column)
+
+Decisions:
+
+Integration notes:
+
+Manual checks for the user:
+
+### 8.16 Final merge (planning session, after 13:15)
+
+Merge in the order D, F, E with `--no-ff`. Test in the shared venv and push after each merge. A merge with an unclear conflict or a real test failure is undone and left for the user. Then write the morning report.
+
 ---
 
 ## 9. Decisions
@@ -671,6 +786,8 @@ Before doing anything else, read D:\RED\red\progress.md (all of it, especially s
 - **Child processes in a kill-on-close Job Object,** so Ollama never outlives Red or keeps GPU memory after a crash.
 - **No cloud models.** Red works offline and needs no subscription.
 - **Parallel build (2026-11-08):** Days 2 to 5 are split into three tracks with separate worktrees, separate file ownership and fixed contracts, followed by one integration step.
+- **Phase 2 (2026-11-08):** after Phase 1 merged early, the same sessions continue with integration (D), "Hey Red" (E) and more PC abilities (F) until 13:15. They're merged into `main` after that.
+- **Wake phrase: "Hey Red".** "Jarvis" is only the user's description of the kind of assistant Red is.
 
 ---
 
@@ -681,7 +798,7 @@ Before doing anything else, read D:\RED\red\progress.md (all of it, especially s
 | Music source: local folder or Spotify? | Local folder (`RED_MUSIC_DIR`, otherwise the Music folder) |
 | Which repos should the sync check cover? | Whatever you list in `repos.toml`; with no list, Red says how to add one |
 | Which folders and apps go on the allowlist? | Built-in known folders and the four default apps, plus whatever you add to `allowlist.toml` |
-| Train a custom "Hey Red" wake word now, or use a pre-trained phrase? | Pre-trained openWakeWord phrase; the hotkey always works |
+| Train a custom "Hey Red" wake word now, or use a pre-trained phrase? | **Decided (2026-11-08): "Hey Red" only, never "Hey Jarvis".** Track E builds it. The hotkey always works |
 | Hotkey | `Ctrl+Alt+R` |
 
 ---
