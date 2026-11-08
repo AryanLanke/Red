@@ -16,6 +16,7 @@ from typing import Callable, ClassVar
 
 from .. import allowlist as _allowlist
 from .. import known_folders as _known
+from .apps import AppPaths, FoundApp
 from .base import Tool, ToolError
 
 MAX_DELAY_MINUTES = 24 * 60
@@ -115,7 +116,8 @@ class OpenFolder(Tool):
 
 class OpenApp(Tool):
     name = "open_app"
-    description = "Start an application by name, for example Notepad, Calculator, or VS Code."
+    description = ("Start an application by name, for example Notepad, Calculator, VS Code, "
+                   "Word, Excel, PowerPoint, Outlook, or Chrome.")
     args_schema = {
         "type": "object",
         "properties": {"app": {"type": "string", "minLength": 1, "maxLength": 100}},
@@ -124,15 +126,23 @@ class OpenApp(Tool):
     }
 
     def __init__(self, allowlist=None, popen=subprocess.Popen, which=shutil.which,
-                 startfile=_default_startfile):
+                 startfile=_default_startfile, app_paths: AppPaths | None = None):
         self._allowlist = _allowlist_source(allowlist)
         self._popen = popen
         self._which = which
         self._startfile = startfile
+        self._app_paths = app_paths or AppPaths()
 
     def run(self, app: str) -> str:
         argv = self._allowlist().app(app)
         if argv is None:
+            # Well-known apps (Office, browsers) that Windows says are installed.
+            found = self._app_paths.find(app)
+            if found is not None:
+                return self._start_registered(found)
+            known = self._app_paths.known(app)
+            if known:
+                raise ToolError(f"{known} doesn't seem to be installed.")
             raise ToolError(f"I don't know an app called {app}. "
                             "Add it to allowlist.toml to open it.")
         program = self._which(argv[0])
@@ -154,6 +164,16 @@ class OpenApp(Tool):
             # Programs like Task Manager need the shell to start them elevated.
             self._startfile(program, arguments=subprocess.list2cmdline(argv[1:]))
         return f"Opening {app.strip()}."
+
+    def _start_registered(self, found: FoundApp) -> str:
+        # The shell starts the registered program: by its App Paths name for Store
+        # apps (which can't be started by path), by full path for everything else.
+        target = found.exe if found.packaged else str(found.path)
+        try:
+            self._startfile(target)
+        except OSError as e:
+            raise ToolError(f"I couldn't start {found.name}: {e.strerror or e}") from e
+        return f"Opening {found.name}."
 
 
 def _shutdown_exe() -> str:
