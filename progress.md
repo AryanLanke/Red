@@ -983,22 +983,142 @@ Manual checks for the user:
 
 Done when Track F's integration notes are done, `python -m red doctor` works, the README covers all 24+ tools, and all tests pass.
 
-- [ ] **Track F's integration notes:**
+- [x] **Track F's integration notes:**
   - `RED_SEARCH_ENGINE` and `contacts.toml` move into `Settings`, with a new `contacts.example.toml`
   - `FindFile.last_details` goes into the overlay and the log
   - music pausing keeps using `music.default_player()`, never the media-key tools
-- [ ] **Reminders wiring** to `red.scheduler`, per the 8.17 contract, behind a try-import
-- [ ] **`python -m red doctor`:** checks Python, the packages, `RED_HOME`, Ollama and the model, the microphone (opens it only, doesn't record), the speakers (lists the device, doesn't play), the GPU, the wake word model, and the allowlist, repos and contacts files. Each check gets a clear ✅/⚠️/❌ with a fix
-- [ ] **Start at login (helper only):** `python -m red startup on|off` creates or removes a shortcut in the user's Startup folder. Test it with a fake folder; don't run it for real
-- [ ] **README** for users: every tool, with an example sentence for each; the troubleshooting section points to `doctor`
-- [ ] **`CHANGELOG.md`** with a v0.1.0 draft (don't tag)
-- [ ] **Merged list of manual checks**, phases 1 to 3, for the user
+- [x] **Reminders wiring** to `red.scheduler`, per the 8.17 contract, behind a try-import
+- [x] **`python -m red doctor`:** checks Python, the packages, `RED_HOME`, Ollama and the model, the microphone (opens it only, doesn't record), the speakers (lists the device, doesn't play), the GPU, the wake word model, and the allowlist, repos and contacts files. Each check gets a clear ✅/⚠️/❌ with a fix
+- [x] **Start at login (helper only):** `python -m red startup on|off` creates or removes a shortcut in the user's Startup folder. Tested with a fake folder only; never run for real
+- [x] **README** for users: every tool, with an example sentence for each; the troubleshooting section points to `doctor`
+- [x] **`CHANGELOG.md`** with a v0.1.0 draft (not tagged)
+- [x] **Merged list of manual checks**, phases 1 to 3, for the user (below)
+
+**Result (2026-11-08, about 11:50, branch `track-h-release`, pushed after each item):**
+- Unit tests:
+  - Track B's venv, with `QT_QPA_PLATFORM=offscreen`: 537 passed, 94 skipped. The skipped tests are the real-model tests.
+  - The shared venv still lacks the voice and UI packages (8.13).
+- `python -m red doctor` on this PC, in Track B's venv: 0 problems. The 6 warnings are all expected: no PySide6 in that venv, no `.env`, "hey_red" not merged yet, and no allowlist, repos or contacts files yet.
+- Every example sentence in the README's "What you can say" table went through the real model (57 sentences). Three wordings misrouted and were replaced:
+  - "open projects" went to Documents; it's now "open my projects folder".
+  - "open file explorer" went to `open_folder` with `C:\`; it's now "open the file explorer app".
+  - "is red pushed?" became a web search; it's now "is my red repo pushed".
 
 Decisions:
+- **`Settings`:**
+  - `search_engine`: an unknown value means Google, the same as `web_search` itself, so a typo never stops Red.
+  - `contacts_path` is the new path for contacts.
+  - `setup` also creates `contacts.toml` from `contacts.example.toml`.
+  - `web.web_engine()` and `mail.contacts_file()` are Track G's files, so they still read the environment and `red_home()`. The values are the same.
+- **`last_details`** already went to the overlay and the log for any tool (Track D), so `find_file` needed no new code. A test checks that `find_file` and `check_repos` both have it.
+- **Music pausing** uses `music.active_player()`. It's the same shared player as `default_player()`, but never creates one. The media-key tools are never called. One edge case is fixed: for "pause the music" by voice, Red resumes its own player just before the tool runs, so the tool really pauses it and says "Paused." instead of "The music is already paused."
+- **Reminders:**
+  - `attach_reminders(on_due)` sets `default_scheduler().on_due` and returns the scheduler. It returns `None` if `red.scheduler` can't be imported or raises.
+  - In voice mode, `VoiceApp.announce()`:
+    - waits for any command in progress (an `RLock` shared with `handle()`)
+    - pauses Red's music
+    - shows `speaking`, then `idle`
+    - speaks inside `listener.paused_while()`, so the wake word doesn't hear Red
+  - Typed mode prints `Red (reminder): …`.
+  - `on_due` is cleared again when Red quits. `VoiceApp(attach=...)` is injectable, so the tests never touch the real scheduler.
+- **Doctor:**
+  - It lives in its own module, `red/doctor.py`, and runs before `load_settings()` and `connect()`. It never starts Ollama.
+  - **Ollama check:** first `/api/tags` on 127.0.0.1:11434. If that doesn't answer, it looks for Red's Ollama `.installed` marker and the model's manifest under `models\ollama\manifests`.
+  - **Microphone:** it queries the device and opens an `InputStream` without starting it, then closes it. **Speakers:** it only queries the device.
+  - **Wake word:** the details of an unknown name go nowhere, because B's message lists the other openWakeWord names.
+  - Missing config files are warnings, not failures.
+  - It prints ✅/⚠️/❌, or `[ok]`/`[warn]`/`[FAIL]` when the console can't show emoji (the cp1252 pipes). The exit code is 1 only when there's a ❌.
+- **Startup:**
+  - `red/startup.py` writes `Red.lnk` in `shell:startup` (`FOLDERID_Startup`, with `%APPDATA%` as a fallback). It goes through a fixed `-EncodedCommand` PowerShell script with `WScript.Shell`, and the paths travel only in `RED_LNK_*` environment variables.
+  - The target is the venv's `python.exe` (not `pythonw`, so typed confirmations still have a console). The arguments are `-m red --home <RED_HOME>`, in a minimized window, with the repo as the working folder.
+  - The new global `--home` flag sets `RED_HOME` for that process only, because a shortcut can't set environment variables.
+- **README:** a new "What you can say" table covers all 24 tools. It adds sections for `contacts.toml` and `RED_SEARCH_ENGINE`, safety notes (email is never sent, finding files only reads), and `doctor` and `startup on`. Troubleshooting starts with `doctor`.
+- **CHANGELOG:** follows the Keep a Changelog style. v0.1.0 is marked "unreleased (draft)". There's no tag.
 
 Integration notes:
+- **Track G:**
+  - **Reminders:** `__main__` only uses `default_scheduler()` and sets `.on_due`. If the scheduler needs an explicit `start()` or `stop()`, `default_scheduler()` should do it, or tell me and `attach_reminders()` can call it. `on_due(text)` is called from G's thread, and H speaks `text` exactly as given.
+  - **README:** add G's new tools (timers and reminders, answers, online answers) to the "What you can say" table and to `CHANGELOG.md`. G doesn't own those files, so whoever merges G should do it.
+  - **Settings:** `web.web_engine()` could use `load_settings().search_engine`, and `mail.contacts_file()` could use `load_settings().contacts_path`. That's optional, because the values match.
+  - **Routing, for whoever owns `tools/system.py`:**
+    - "open file explorer" and "launch file explorer" go to `open_folder` with `C:\`, which is refused. A line in `open_folder`'s description ("File Explorer itself is an app") or a `This PC` folder would fix it.
+    - Allowlisted folder names aren't in the prompt, so "open projects" without "folder" can go to Documents.
+- **Track E:** if "Hey Red" isn't merged by the final merge, change the CHANGELOG's first bullet under "Talking to Red" to say the wake word is coming, and that the shortcut works now.
+- **Shared venv:** still waiting for the user's `pip install` (8.13). Until then, the voice tests can only run in Track B's venv.
+- **New files:** `red/doctor.py`, `red/startup.py`, `contacts.example.toml`, `CHANGELOG.md`, `tests/test_doctor.py`, `tests/test_startup.py` and `tests/test_reminders_wiring.py`. Changed: `red/__main__.py`, `red/config.py`, `.env.example`, `README.md`, `AGENTS.md`, `tests/test_main.py`, `tests/test_voice_app.py` and `tests/test_settings_voice.py`.
 
-Manual checks for the user:
+Manual checks for the user (phases 1 to 3, one list). This list replaces the ones in 8.6, 8.7, 8.8, 8.13 and 8.15. Track E's "Hey Red" checks (8.14) and Track G's (8.18) are added when those tracks merge.
+
+**0. Install and check the setup** (in PowerShell):
+
+```powershell
+cd D:\RED\red
+$env:RED_HOME = "D:\RED"
+$env:PIP_CACHE_DIR = "D:\RED\cache\pip"
+D:\RED\.venv\Scripts\python.exe -m pip install --only-binary=:all: -r requirements-dev.txt
+D:\RED\.venv\Scripts\Activate.ps1
+python -m red setup
+python -m red doctor
+```
+
+The doctor should show no ❌. Expect a ⚠️ for any of `allowlist.toml`, `repos.toml` or `contacts.toml` you haven't edited, and for "Hey Red" until Track E is merged. Also check that the doctor didn't make a sound or show a microphone-in-use icon for more than a moment.
+
+**1. Voice loop**
+1. Run `python -m red`. A dark card appears in the bottom-right corner, above the taskbar, and the console says `Ready.`
+2. Press Ctrl+Alt+R. After the beep, say "open my downloads folder". The card goes through Listening, Thinking (with your words), and the reply. Explorer opens Downloads, and Red says "Opening Downloads."
+3. Say "shut down in 60 minutes". Red asks aloud, with the time, and the card shows the question.
+   - Say "no": "Cancelled.", and no Windows notice.
+   - Ask again and say "yes": the Windows notice appears. Then "cancel the shutdown" cancels it.
+4. Press Ctrl+Alt+R and stay silent: "I didn't hear anything." Press it twice quickly: only one recording starts.
+5. Play music ("play some music"), then give any command. The music pauses while Red listens and talks, then resumes. Say "pause the music": Red says "Paused." and it stays paused. "resume" plays it again, and "stop the music" stops it.
+6. "check my repos", after you set up `repos.toml`: the card shows one line per repo, and `D:\RED\logs\commands.jsonl` has a `details` field. Your repos look the same in `git status` afterwards. A repo with expired credentials says "couldn't fetch" within about 45 s, with no login prompt.
+7. "find my resume": the card lists the matches. "open it" opens the best one. Programs are never opened; Red opens their folder instead.
+8. Press Ctrl+C: Red prints "Bye.", and Task Manager shows no leftover `python.exe` or Red-started `ollama.exe`.
+
+**2. Typed mode** (`python -m red --typed`)
+
+9. "restart in 10 minutes" with no answer: after 30 s, "No answer, so I cancelled it.", and no Windows notice. With nothing scheduled, "cancel the shutdown" says "Nothing was scheduled".
+10. `python -m red --dry-run` only shows the tool calls.
+
+**3. Opening things**
+
+11. "open Documents" and "open Pictures" open the OneDrive folders.
+12. "open notepad", "open calculator", "open the file explorer app" and "open task manager" each start. Task Manager may show a UAC prompt.
+13. "open PowerPoint", "open Word", "open Excel", "open Outlook" and "open paint" each start. Close them afterwards.
+14. In `allowlist.toml`, set `projects` to a real folder. Check "open my projects folder" and "open vs code".
+15. "open youtube" opens your browser. "search the web for weather in Pune" and "search YouTube for lofi music" show the right results. Set `RED_SEARCH_ENGINE=duckduckgo` in `.env` and check that the next search uses DuckDuckGo.
+16. "open bluetooth settings" and "check for windows updates" open the right Settings pages.
+
+**4. Mail**
+
+17. Add yourself to `contacts.toml`, then say "compose a mail to <your name> about a test". A draft opens with the address, the subject and the body. Don't send it. A name that isn't in the file leaves the recipient empty, and Red says so. If nothing opens, choose a default email app in Windows Settings.
+
+**5. PC controls**
+
+18. Volume: "volume down 20 percent", "volume up", "mute", "unmute" and "set the volume to 30 percent". Watch the Windows volume flyout.
+19. With Spotify or a YouTube tab playing (and no music from Red), "pause the music", "resume", "next song" and "previous track" control it.
+20. "what time is it", "what's the date today" and "how much battery do I have" give the right answers.
+21. "take a screenshot": a new file appears in Pictures\Screenshots.
+22. "lock my PC" locks it. Sign back in.
+23. "put the computer to sleep": it asks first. `n` cancels; then try `y`.
+24. "empty the recycle bin", with only junk in it: the question gives the item count and size, and `n` cancels.
+
+**6. Voice parts on their own**
+
+25. Speakers: `python -m red.voice_demo --say "Hello, I am Red."` is spoken clearly, once.
+26. Microphone: `python -m red.voice_demo --levels`. Speech should read above about 0.02 and silence below 0.008. If the wrong microphone is used, set `RED_MIC_DEVICE` to part of its name.
+27. Spoken yes/no: "yes" confirms; "no" and 30 s of silence cancel.
+28. Optional: `python -m red.voice_demo --device cuda --no-wakeword` falls back to the CPU with a warning, unless `nvidia-cublas-cu12` is installed.
+29. No antivirus warning about the keyboard hook.
+
+**7. Overlay on its own**
+
+30. `python -m red.overlay`: the card goes through every state, never takes focus, lets clicks through, hides after about 3 s, and the program exits. Also try a high-DPI or second monitor.
+31. `python -m red.overlay --fallback`: 4 Windows notifications appear.
+
+**8. Start at sign-in**
+
+32. Run `python -m red startup on`. `Red.lnk` appears in `shell:startup` (press Win+R and type it). Sign out and back in: Red starts in a minimized PowerShell window and says Ready. Then `python -m red startup off` removes the shortcut, and `python -m red startup` says it's off.
 
 ---
 
