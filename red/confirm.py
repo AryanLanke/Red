@@ -76,6 +76,22 @@ def typed_ask(question: str, timeout: float) -> str | None:
     return line.rstrip("\r\n") if line else None
 
 
+def with_fallback(primary: Ask, fallback: Ask = typed_ask) -> Ask:
+    """An Ask that uses `fallback` when `primary` fails (for example, no microphone).
+
+    A timeout (None) from `primary` is an answer, so it doesn't fall back.
+    """
+    import logging
+
+    def ask(question: str, timeout: float) -> str | None:
+        try:
+            return primary(question, timeout)
+        except Exception as e:  # noqa: BLE001 - any failure means "ask another way"
+            logging.getLogger(__name__).warning("Spoken confirmation failed (%s); asking by typing", e)
+            return fallback(question, timeout)
+    return ask
+
+
 def confirm(question: str, ask: Ask = typed_ask, timeout: float = DEFAULT_TIMEOUT) -> bool:
     """Ask a yes/no question. True only for an explicit yes; errors and timeouts cancel."""
     try:

@@ -16,6 +16,18 @@ from dotenv import load_dotenv
 DEFAULT_MODEL = "qwen2.5-7b-instruct-q4_k_m"
 GPU_CHOICES = ("auto", "cuda", "vulkan", "cpu")
 BACKEND_CHOICES = ("auto", "ollama", "llama.cpp")
+WHISPER_DEVICE_CHOICES = ("auto", "cuda", "cpu")
+
+DEFAULT_HOTKEY = "<ctrl>+<alt>+r"
+DEFAULT_WAKEWORD = "hey_red"
+DEFAULT_WAKEWORD_THRESHOLD = 0.5
+DEFAULT_WHISPER_MODEL = "small"
+# CPU by default: on a 6 GB GPU, Whisper and the 7B model don't fit together.
+DEFAULT_WHISPER_DEVICE = "cpu"
+DEFAULT_PIPER_VOICE = "en_US-lessac-medium"
+
+# Values that turn the hotkey or the wake word off.
+_OFF = {"0", "off", "none", "no", "false", "disabled"}
 
 
 def red_home() -> Path:
@@ -38,6 +50,15 @@ class Settings:
     llm_gpu: str
     llm_keep_alive: str
     github_token: str | None
+    # Voice and UI. Defaults match the RED_* variables in .env.example.
+    hotkey: str | None = DEFAULT_HOTKEY
+    wakeword: str | None = DEFAULT_WAKEWORD
+    wakeword_threshold: float = DEFAULT_WAKEWORD_THRESHOLD
+    whisper_model: str = DEFAULT_WHISPER_MODEL
+    whisper_device: str = DEFAULT_WHISPER_DEVICE
+    piper_voice: str = DEFAULT_PIPER_VOICE
+    mic_device: str | None = None
+    music_dir: Path | None = None
 
     @property
     def bin_dir(self) -> Path:
@@ -67,6 +88,10 @@ class Settings:
     def command_log_path(self) -> Path:
         return self.logs_dir / "commands.jsonl"
 
+    @property
+    def repos_path(self) -> Path:
+        return self.config_dir / "repos.toml"
+
     def ensure_dirs(self) -> None:
         for d in (
             self.bin_dir / "llama.cpp",
@@ -87,6 +112,14 @@ def _env(name: str) -> str | None:
     return value or None
 
 
+def _switchable(name: str, default: str) -> str | None:
+    """A setting that "off" (or "none", "0", ...) turns off. Unset means the default."""
+    value = _env(name)
+    if value is None:
+        return default
+    return None if value.lower() in _OFF else value
+
+
 def load_settings(home: Path | None = None) -> Settings:
     """Load settings. Values already in the environment win over the .env file."""
     home = home or red_home()
@@ -98,6 +131,19 @@ def load_settings(home: Path | None = None) -> Settings:
     backend = (_env("RED_LLM_BACKEND") or "auto").lower()
     if backend not in BACKEND_CHOICES:
         raise ValueError(f"RED_LLM_BACKEND must be one of {BACKEND_CHOICES}, got {backend!r}")
+
+    whisper_device = (_env("RED_WHISPER_DEVICE") or DEFAULT_WHISPER_DEVICE).lower()
+    if whisper_device not in WHISPER_DEVICE_CHOICES:
+        raise ValueError(f"RED_WHISPER_DEVICE must be one of {WHISPER_DEVICE_CHOICES}, "
+                         f"got {whisper_device!r}")
+    threshold_text = _env("RED_WAKEWORD_THRESHOLD") or str(DEFAULT_WAKEWORD_THRESHOLD)
+    try:
+        threshold = float(threshold_text)
+    except ValueError:
+        threshold = -1.0
+    if not 0.0 < threshold < 1.0:
+        raise ValueError(f"RED_WAKEWORD_THRESHOLD must be between 0 and 1, got {threshold_text!r}")
+    music_dir = _env("RED_MUSIC_DIR")
 
     # Keep model caches under RED_HOME for this process only.
     # This doesn't change any system or user environment variables.
@@ -111,4 +157,12 @@ def load_settings(home: Path | None = None) -> Settings:
         llm_gpu=gpu,
         llm_keep_alive=_env("RED_LLM_KEEP_ALIVE") or "5m",
         github_token=_env("GITHUB_TOKEN"),
+        hotkey=_switchable("RED_HOTKEY", DEFAULT_HOTKEY),
+        wakeword=_switchable("RED_WAKEWORD", DEFAULT_WAKEWORD),
+        wakeword_threshold=threshold,
+        whisper_model=_env("RED_WHISPER_MODEL") or DEFAULT_WHISPER_MODEL,
+        whisper_device=whisper_device,
+        piper_voice=_env("RED_PIPER_VOICE") or DEFAULT_PIPER_VOICE,
+        mic_device=_env("RED_MIC_DEVICE"),
+        music_dir=Path(os.path.expandvars(music_dir)).expanduser() if music_dir else None,
     )

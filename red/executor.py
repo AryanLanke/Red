@@ -34,9 +34,12 @@ class Executor:
         self.log_path = log_path            # None: don't write a command log
         self.confirm_timeout = confirm_timeout
         self._lock = threading.Lock()
+        # Longer text from the last tool run, for the overlay (e.g. one line per repo).
+        self.last_details = ""
 
     def execute(self, command: str, route: Route) -> str:
         """Run a route and return the reply for the user."""
+        self.last_details = ""
         if route.is_none:
             reply = _short(route.args.get("reply") or "Sorry, I can't do that.")
             self._log(command, route, status="none", confirmed=None, result=reply)
@@ -81,7 +84,10 @@ class Executor:
             self._log(command, route, status="error", confirmed=confirmed, result=reply,
                       error=f"{type(e).__name__}: {e}")
             return reply
-        self._log(command, route, status="ok", confirmed=confirmed, result=reply)
+        details = getattr(tool, "last_details", "")
+        self.last_details = details if isinstance(details, str) else ""
+        extra = {"details": self.last_details} if self.last_details else {}
+        self._log(command, route, status="ok", confirmed=confirmed, result=reply, **extra)
         return reply
 
     def _log(self, command: str, route: Route, **fields) -> None:

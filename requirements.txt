@@ -1,2 +1,6 @@
 jsonschema==4.26.0
 python-dotenv==1.2.4
+
+# Voice (Whisper, Piper, hotkey, wake word) and UI (overlay, music).
+-r requirements-voice.txt
+-r requirements-ui.txt
