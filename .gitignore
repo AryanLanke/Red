@@ -1,0 +1,52 @@
+# --- Secrets: never commit ---
+.env
+.env.*
+!.env.example
+credentials.json
+token.json
+*.pem
+*.key
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Models and binaries (downloaded at runtime, never committed) ---
+models/
+bin/
+*.gguf
+*.onnx
+*.tflite
+*.bin
+*.safetensors
+*.pt
+*.exe
+*.dll
+
+# --- Audio ---
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.m4a
+
+# --- Logs and command history ---
+logs/
+*.log
+
+# --- Editors and OS ---
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
