@@ -5,7 +5,16 @@ Red is a local, offline voice and action assistant for Windows. A local LLM turn
 - [progress.md](progress.md) is the developer document: status, specs, decisions, open questions, and the parallel-sessions plan (section 8). Follow its specs and safety rules when building a feature, and keep its status up to date.
 - [README.md](README.md) is for users. Keep it free of developer planning.
 
-**Status:** Day 1 is done: config, LLM backends, the tool interface and the router. Every tool's `run()` still raises `NotImplementedError`, and `python -m red` only shows tool calls; it never runs them. Days 2 to 5 are planned as three parallel tracks (A, B, C) in separate git worktrees under `D:\RED\worktrees\`. If you are one of those sessions, progress.md section 8 decides which files you may edit.
+**Status:** Days 1 to 5 are merged into one app: the Phase 1 tracks A, B and C, then Track D's integration. `python -m red` runs the full voice loop:
+1. the hotkey or the wake word
+2. recording
+3. Whisper
+4. the router
+5. spoken confirmation for destructive tools
+6. the action
+7. Piper's spoken reply
+
+The overlay shows each step. The Phase 2 tracks (D, E, F) work in worktrees under `D:\RED\worktrees\`, and progress.md section 8.12 decides which files each one may edit.
 
 ## Commands
 
@@ -14,21 +23,37 @@ Windows and PowerShell only. Python 3.11 or newer.
 On this machine `RED_HOME` is `D:\RED`, the venv is `D:\RED\.venv`, and the repo is `D:\RED\red`. Set `$env:RED_HOME = "D:\RED"` first; otherwise Red uses `%LOCALAPPDATA%\Red` and downloads a second copy of Ollama and the model (about 6 GB).
 
 ```powershell
-pip install -r requirements-dev.txt
+pip install -r requirements-dev.txt   # core + requirements-voice.txt + requirements-ui.txt + pytest
+$env:QT_QPA_PLATFORM = "offscreen"     # overlay tests without a window
 python -m pytest --basetemp="$env:RED_HOME\cache\pytest-tmp"            # unit tests (integration tests are skipped)
 python -m pytest tests\test_router.py::test_shutdown_is_destructive    # one test
-$env:RED_INTEGRATION = "1"; python -m pytest tests\test_integration_llm.py   # real model, slow
+$env:RED_INTEGRATION = "1"; python -m pytest tests\test_integration_llm.py tests\test_integration_c_tools.py tests\test_voice_models.py   # real models, slow
 
-python -m red setup                   # download and start the Ollama backend and the model
+python -m red setup                   # Ollama, the LLM, Whisper, Piper and the wake word; copies the allowlist and repos examples
+python -m red                         # voice loop with the overlay (Ctrl+C quits)
+python -m red --typed                 # typed loop that runs actions
+python -m red --dry-run               # typed loop that only shows tool calls
+python -m red run "open Downloads"    # run one command
 python -m red route "open Downloads"  # print the tool call for one command
-python -m red                         # interactive loop (dry run)
+python -m red.overlay                 # overlay demo through every state
+python -m red.voice_demo              # voice only: transcript and read-back, no routing
 ```
 
 There is no build step, linter or formatter set up. Dependencies are pinned exactly in `requirements*.txt`.
 
 ## Architecture
 
-The flow in `red/__main__.py`: `load_settings()` → `llm.connect(settings)` → `Router(default_registry(), llm)` → `router.route(text)` → `Route(tool, args, destructive)`.
+The flow in `red/__main__.py`: `load_settings()` → `llm.connect(settings)` → `Router(default_registry(), llm)`. Then, by mode:
+- **Voice (the default):** `run_with_overlay(worker)` gives Qt the main thread. The worker builds a `VoiceApp`, which starts a `Listener`: the hotkey plus the wake word, or the hotkey only if the wake word fails. Each trigger runs `VoiceApp.handle()` on the listener's thread, with `overlay.set_state()` at each step:
+  1. pause the music
+  2. `chime()` and `record_command()`
+  3. `Transcriber.transcribe()`
+  4. `router.route()`
+  5. `Executor.execute()`
+  6. `Speaker.say()`
+- **Typed, `run`, `--dry-run` and `route`** need no voice packages and no Qt.
+
+The voice and UI modules are imported lazily, through `load_voice()` and inside functions, so the core and its tests work without them. `VoiceApp` takes every part in its constructor (`Voice`, the overlay, the music player, the typed fallback), and `tests/test_voice_app.py` drives it with fakes.
 
 - **Tools** (`red/tools/`): each one subclasses `Tool` and has `name`, `description`, `args_schema` and `destructive`. Register it in `default_registry()` in `tools/__init__.py`. The `description` and `args_schema` are inserted directly into the LLM's system prompt, so their wording changes routing. The schema bounds are also the safety limits; for example, `MAX_DELAY_MINUTES` caps shutdown delays. `none` is a reserved pseudo-tool for "no tool fits" (its args are `{"reply": ...}`), and the registry rejects a tool with that name.
 - **Router** (`red/router.py`): builds an `anyOf` JSON schema from the registry. The backend uses it to constrain generation, and `Router.parse()` checks it again with `jsonschema`, because a server may ignore the schema. `parse()` needs no LLM, so most router tests call it directly.
@@ -41,15 +66,27 @@ The flow in `red/__main__.py`: `load_settings()` → `llm.connect(settings)` →
   Ollama receives the schema as `format`. OpenAI-compatible servers receive it as `response_format` json_schema. Model names map to an Ollama tag and Hugging Face GGUF files in `MODELS`.
 - **Pinned downloads** (`red/llm.py` and `red/downloads.py`): every binary and GGUF is pinned to a version and a SHA-256. If you change a version, update its hash. A download is written to `.part` and moved to its final path only after the checksum matches, so an existing file there is always verified. Installs write an `.installed` marker. Zips go through `safe_extract`, which blocks paths that would escape the target folder.
 - **Child servers** (`red/process.py`): `ManagedServer` starts a backend inside a Windows Job Object set to kill on close, so Ollama and its model runner die with Red, even after a crash. Whoever calls `connect()` owns the returned server and must `stop()` it in a `finally` block.
-- **Config** (`red/config.py`): all paths come from `Settings`, which is built on `RED_HOME`. Never hard-code a path. Environment variables win over `RED_HOME\config\.env`. `RED_HOME` itself is only read from the environment.
+- **Config** (`red/config.py`): all paths come from `Settings`, which is built on `RED_HOME`. Never hard-code a path. Environment variables win over `RED_HOME\config\.env`. `RED_HOME` itself is only read from the environment. Every `RED_*` setting is a `Settings` field and is listed in `.env.example`. The paths are `allowlist_path`, `repos_path` and `command_log_path`.
+- **Executor** (`red/executor.py`): asks through `confirm()` before a destructive tool, runs the tool, and writes one line to `logs\commands.jsonl`. A `ToolError` message becomes the reply; any other exception becomes a short apology. A tool's `last_details` (for example, one line per repo) goes into `Executor.last_details`, and from there to the overlay and the log.
+- **Confirmation** (`red/confirm.py`): `Ask = (question, timeout) -> answer | None`. `typed_ask` reads the console with a timeout; `voice_confirm.spoken_ask` speaks the question and transcribes the answer. `with_fallback(spoken, typed_ask)` switches to typing only if the spoken ask raises. `is_yes` is the only yes check.
+- **Voice** (`red/audio.py`, `stt.py`, `tts.py`, `listener.py`, `voice_confirm.py`):
+  - recording with sounddevice, stopping on silence
+  - faster-whisper, loaded once (`RED_WHISPER_DEVICE=cpu` by default)
+  - Piper for speech
+  - a pynput hotkey, and the wake word on its own thread
+
+  The `Listener` calls `on_trigger` on one worker thread and pauses the wake word while it runs. Models are pinned (`PinnedFiles`) under `RED_HOME\models\{whisper,piper,wakeword}`.
+- **Overlay** (`red/overlay.py`): PySide6, frameless, click-through and never focused. `set_state()` is safe to call from any thread. If Qt can't start, Red falls back to Windows toast notifications.
 
 ## Rules that come from the design
 
 - A tool must never pass LLM text to a shell or command line. App and folder names are only lookup keys into Windows' standard folders or `RED_HOME\config\allowlist.toml`. If nothing matches, say so instead of guessing.
-- `destructive = True` tools (shutdown, restart, anything that changes files) must get a typed `y`/`yes` before they run. Anything else, or 30 seconds with no answer, cancels. `cancel_shutdown` never asks.
-- Tests must never open windows or schedule a real shutdown. Inject a fake runner, as the README's Day 2 section describes. Follow the existing test patterns:
+- `destructive = True` tools (shutdown, restart, anything that changes files) must get a `y` or `yes`, typed or spoken, before they run. Anything else, or 30 seconds with no answer, cancels. `cancel_shutdown` never asks.
+- Tests must never open windows, use the microphone or speakers, hook the keyboard, or schedule a real shutdown. Inject fakes through constructors, and follow the existing test patterns:
   - `FakeLLM` in `tests/test_router.py`
+  - `FakeRunner`, `FakeStartfile`, `FakePopen` and `FakeAsk` in `tests/fakes.py`, and the voice fakes in `tests/voice_fakes.py`
   - `monkeypatch` to clear `RED_*` variables, with `load_settings(tmp_path)`
   - `monkeypatch` on `llm.start_ollama` / `llm.start_llama_server`
+- The wake phrase is "Hey Red" (`RED_WAKEWORD=hey_red`). Never use "Jarvis" as a wake word, default, prompt or user-facing text.
 - Red never calls a cloud model. Trading and financial automation are out of scope.
 - Windows Smart App Control blocks unsigned binaries. Exit code `0xC0E90002` from llama-server means it was blocked; Ollama is the default for this reason.

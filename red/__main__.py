@@ -170,8 +170,9 @@ class VoiceApp:
                 return listener
             except Exception as e:  # noqa: BLE001 - unknown name, missing model, no microphone
                 log.warning("Wake word %r unavailable: %s", s.wakeword, e)
-                self.notice = (f"The wake word \"{pretty_wakeword(s.wakeword)}\" isn't available "
-                               f"({e}), so only the hotkey works.")
+                # The details (which can name other models) go to red.log only.
+                self.notice = (f"The wake word \"{pretty_wakeword(s.wakeword)}\" isn't available, "
+                               "so only the hotkey works. Details are in red.log.")
         if not s.hotkey:
             raise RuntimeError("The hotkey is off and the wake word isn't available, "
                                "so nothing can start Red. Set RED_HOTKEY in .env.")
@@ -368,8 +369,9 @@ def _setup_voice(settings: Settings) -> int:
         try:
             download_wakeword(settings.models_dir / "wakeword", settings.wakeword)
         except Exception as e:  # noqa: BLE001 - e.g. a name this version doesn't know yet
-            print(f"The wake word \"{pretty_wakeword(settings.wakeword)}\" isn't available ({e}). "
-                  "Red will use the hotkey.")
+            log.warning("Wake word %r unavailable: %s", settings.wakeword, e)
+            print(f"The wake word \"{pretty_wakeword(settings.wakeword)}\" isn't available yet, "
+                  "so Red will use the hotkey. Details are in red.log.")
     print("Voice models are downloaded and verified.")
     return 0
 
