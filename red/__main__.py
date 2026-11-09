@@ -16,6 +16,7 @@ mode, typed in typed mode.
 from __future__ import annotations
 
 import argparse
+import functools
 import logging
 import os
 import shutil
@@ -31,9 +32,17 @@ from .config import Settings, load_settings
 from .executor import Executor
 from .llm import LLMError, connect
 from .router import RouteError, Router
+from .smalltalk import quick_reply
 from .tools import default_registry
 
 log = logging.getLogger("red")
+
+# How long to wait for you to start talking after the beep.
+START_TIMEOUT_SECONDS = 8.0
+# Ollama unloads an idle model after keep_alive (5 minutes by default), and
+# loading it again takes 10 seconds or more. While Red runs in voice mode it
+# asks Ollama to keep the model loaded a little more often than that.
+KEEP_WARM_SECONDS = 240.0
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 EXAMPLE_ALLOWLIST = REPO_ROOT / "allowlist.example.toml"
@@ -62,6 +71,11 @@ def _show(router: Router, command: str) -> None:
 
 
 def _run(router: Router, executor: Executor, command: str) -> None:
+    quick = quick_reply(command)
+    if quick is not None:
+        logging.getLogger("red.commands").info("%r -> small talk", command)
+        print(f"  Red: {quick}")
+        return
     try:
         route = router.route(command)
     except (RouteError, LLMError) as e:
@@ -117,7 +131,10 @@ def load_voice(settings: Settings) -> Voice:
     return Voice(
         transcriber=Transcriber(models / "whisper", settings.whisper_model, settings.whisper_device),
         speaker=Speaker(models / "piper", settings.piper_voice),
-        record=record_command,
+        record=functools.partial(record_command,
+                                 max_seconds=settings.max_command_seconds,
+                                 silence_seconds=settings.end_silence_seconds,
+                                 start_timeout=START_TIMEOUT_SECONDS),
         chime=chime,
         listener_factory=Listener,
         make_ask=spoken_ask,
@@ -275,6 +292,12 @@ class VoiceApp:
                 self._say(last)
                 return
             self.out(f"You said: {text}")
+            quick = quick_reply(text)
+            if quick is not None:
+                logging.getLogger("red.commands").info("%r -> small talk", text)
+                last = quick
+                self._say(last)
+                return
             self._state("thinking", f"“{text}”")
             try:
                 route = self.router.route(text)
@@ -366,6 +389,43 @@ def _active_music_player():
     return active_player()
 
 
+def _keep_alive_is_zero(keep_alive: str) -> bool:
+    """RED_LLM_KEEP_ALIVE=0 means "unload right away", so don't keep the model warm."""
+    return keep_alive.strip().lower() in {"0", "0s", "0m", "0h"}
+
+
+def keep_model_warm(llm, stop: threading.Event, every: float = KEEP_WARM_SECONDS,
+                    prime: Callable[[], object] | None = None):
+    """Load the model now, then keep it loaded until `stop` is set.
+
+    `prime`, if given, runs once after the first load: routing a throwaway
+    command makes the model read Red's long tool list now, so the first real
+    command doesn't pay for it. Returns the background thread, or None when
+    the client can't do this (your own OpenAI-compatible server manages its
+    own models). If Red crashes, Ollama still unloads the model after keep_alive.
+    """
+    warm = getattr(llm, "warm", None)
+    if warm is None:
+        return None
+
+    def loop() -> None:
+        primed = prime is None
+        while True:
+            try:
+                warm()
+                if not primed:
+                    primed = True
+                    prime()
+            except Exception as e:  # noqa: BLE001 - a slow first command is the only cost
+                log.warning("Couldn't load the model ahead of time: %s", e)
+            if stop.wait(every):
+                return
+
+    thread = threading.Thread(target=loop, name="red-keep-warm", daemon=True)
+    thread.start()
+    return thread
+
+
 def _voice_mode(settings: Settings, router: Router, registry) -> int:
     try:
         voice = load_voice(settings)
@@ -387,6 +447,8 @@ def _voice_mode(settings: Settings, router: Router, registry) -> int:
 
     stop = threading.Event()
     apps: list[VoiceApp] = []
+    if not _keep_alive_is_zero(settings.llm_keep_alive):
+        keep_model_warm(router.llm, stop, prime=lambda: router.route("hello"))
 
     def worker(overlay) -> None:
         app = VoiceApp(settings, router, registry, voice, overlay,
@@ -395,7 +457,7 @@ def _voice_mode(settings: Settings, router: Router, registry) -> int:
         app.run(stop)
 
     try:
-        code = run_with_overlay(worker)
+        code = run_with_overlay(worker, style=settings.overlay)
     except KeyboardInterrupt:
         code = 130
     stop.set()

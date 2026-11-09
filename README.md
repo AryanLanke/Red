@@ -130,6 +130,9 @@ Your settings are in `RED_HOME\config\.env` (copied from `.env.example`). Settin
 | `RED_WAKEWORD` | `hey_red`, a path to a custom `.onnx` wake word model, or `off` for the shortcut only | `hey_red` |
 | `RED_WAKEWORD_THRESHOLD` | How sure the wake word detector must be, from 0 to 1. Lower is more sensitive | `0.5` |
 | `RED_MIC_DEVICE` | Which microphone: a device number or part of its name | Windows default |
+| `RED_END_SILENCE` | Seconds of quiet that mean you've finished talking. Raise it if Red cuts you off | `1.5` |
+| `RED_MAX_COMMAND_SECONDS` | The longest a command can be | `20` |
+| `RED_OVERLAY` | What Red shows while it works: `glow` around the screen edges, a `card` in the corner, `notify` (Windows notifications), or `off` | `glow` |
 | `RED_WHISPER_DEVICE` | Speech recognition on `cpu`, `cuda` (NVIDIA GPU) or `auto` | `cpu` |
 | `RED_WHISPER_MODEL` | Speech recognition model | `small` |
 | `RED_PIPER_VOICE` | The voice Red speaks with | `en_US-lessac-medium` |
