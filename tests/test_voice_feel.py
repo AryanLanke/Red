@@ -13,7 +13,7 @@ from red import __main__ as cli  # noqa: E402
 from red import overlay as ov  # noqa: E402
 from red.config import (DEFAULT_END_SILENCE, DEFAULT_MAX_COMMAND, DEFAULT_OVERLAY,  # noqa: E402
                         load_settings)
-from red.smalltalk import normalize, quick_reply  # noqa: E402
+from red.smalltalk import is_goodbye, normalize, quick_reply  # noqa: E402
 
 MORNING = datetime(2026, 11, 9, 9, 0)
 EVENING = datetime(2026, 11, 9, 20, 0)
@@ -64,11 +64,23 @@ def test_small_talk_never_claims_to_see_the_screen():
     assert "screen" not in reply.lower()
 
 
+@pytest.mark.parametrize("said", ["No.", "Nope", "No, that's all.", "Nothing else, thanks.", "That's it", "I'm good",
+                                  "No thank you!", "Never mind", "Goodbye, Red", "Stop"])
+def test_goodbyes(said):
+    assert is_goodbye(said)
+
+
+@pytest.mark.parametrize("said", ["Open YouTube", "No, open Downloads", "Notepad", "Stop the music", "Cancel the shutdown",
+                                  "", "What's the weather"])
+def test_real_commands_are_not_goodbyes(said):
+    assert not is_goodbye(said)
+
+
 # --- settings -----------------------------------------------------------------
 
 @pytest.fixture
 def clean_env(monkeypatch):
-    for name in ("RED_OVERLAY", "RED_END_SILENCE", "RED_MAX_COMMAND_SECONDS"):
+    for name in ("RED_OVERLAY", "RED_END_SILENCE", "RED_MAX_COMMAND_SECONDS", "RED_FOLLOW_UP_SECONDS"):
         monkeypatch.delenv(name, raising=False)
     return monkeypatch
 
@@ -78,6 +90,7 @@ def test_new_settings_defaults(clean_env, tmp_path):
     assert s.overlay == DEFAULT_OVERLAY == "glow"
     assert s.end_silence_seconds == DEFAULT_END_SILENCE == 1.5
     assert s.max_command_seconds == DEFAULT_MAX_COMMAND == 20.0
+    assert s.follow_up_seconds == 7.0
 
 
 def test_new_settings_from_env(clean_env, tmp_path):

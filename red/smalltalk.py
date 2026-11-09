@@ -71,3 +71,22 @@ def quick_reply(text: str, now: datetime | None = None) -> str | None:
         if pattern.fullmatch(said):
             return reply(now or datetime.now())
     return None
+
+
+# "No", "that's all", "nothing else": the user is done, so Red stops listening.
+_GOODBYES = re.compile(
+    r"(?:no|nope|nah|no thanks|no thank you|nothing|nothing else|nothing more|not now|"
+    r"not right now|that's all|that is all|that's it|that is it|i'm good|i am good|"
+    r"i'm done|i am done|all good|all done|we're good|we are good|never ?mind|"
+    r"stop|stop listening|go to sleep|bye|goodbye|good bye|see you|see you later|"
+    r"that will be all|that'll be all)"
+    r"(?: for now| thanks| thank you| red)*"
+    r"|no(?:,)? (?:that's all|that is all|nothing|thanks|thank you|i'm good|i am good|that's it)"
+)
+_GOODBYE_RE = re.compile(_GOODBYES.pattern)
+
+
+def is_goodbye(text: str) -> bool:
+    """True when `text` just says "no, that's all": nothing more for Red to do."""
+    said = normalize(text)
+    return bool(said) and _GOODBYE_RE.fullmatch(said) is not None

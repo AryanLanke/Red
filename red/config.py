@@ -34,6 +34,9 @@ DEFAULT_OVERLAY = "glow"
 # that before deciding you've finished.
 DEFAULT_END_SILENCE = 1.5      # seconds of quiet that end a command
 DEFAULT_MAX_COMMAND = 20.0     # seconds; a command is cut off after this
+# After an answer, Red asks if you want anything else and listens this long
+# for a reply. 0 turns follow-ups off.
+DEFAULT_FOLLOW_UP = 7.0
 
 # Values that turn the hotkey or the wake word off.
 _OFF = {"0", "off", "none", "no", "false", "disabled"}
@@ -72,6 +75,7 @@ class Settings:
     overlay: str = DEFAULT_OVERLAY
     end_silence_seconds: float = DEFAULT_END_SILENCE
     max_command_seconds: float = DEFAULT_MAX_COMMAND
+    follow_up_seconds: float = DEFAULT_FOLLOW_UP
 
     @property
     def bin_dir(self) -> Path:
@@ -170,6 +174,7 @@ def load_settings(home: Path | None = None) -> Settings:
         raise ValueError(f"RED_OVERLAY must be one of {OVERLAY_CHOICES}, got {overlay!r}")
     end_silence = _seconds("RED_END_SILENCE", DEFAULT_END_SILENCE, 0.3, 5.0)
     max_command = _seconds("RED_MAX_COMMAND_SECONDS", DEFAULT_MAX_COMMAND, 3.0, 120.0)
+    follow_up = _seconds("RED_FOLLOW_UP_SECONDS", DEFAULT_FOLLOW_UP, 0.0, 30.0)
 
     # Keep model caches under RED_HOME for this process only.
     # This doesn't change any system or user environment variables.
@@ -195,6 +200,7 @@ def load_settings(home: Path | None = None) -> Settings:
         overlay=overlay,
         end_silence_seconds=end_silence,
         max_command_seconds=max_command,
+        follow_up_seconds=follow_up,
     )
 
 

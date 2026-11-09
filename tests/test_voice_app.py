@@ -152,6 +152,7 @@ def world(tmp_path, monkeypatch):
                  "RED_WHISPER_MODEL", "RED_PIPER_VOICE", "RED_MIC_DEVICE", "RED_MUSIC_DIR",
                  "RED_LLM_URL", "RED_LLM_BACKEND", "RED_LLM_GPU", "RED_LLM_MODEL"):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("RED_FOLLOW_UP_SECONDS", "0")   # one exchange per trigger, unless a test asks
     FakeListener.instances = []
     downloads = tmp_path / "Downloads"
     downloads.mkdir()
@@ -183,7 +184,7 @@ def make_app(world, *texts, answers=("no",), audio_size=16000, ask_error=None, t
     voice = cli.Voice(
         transcriber=transcriber or FakeTranscriber(*texts),
         speaker=speaker,
-        record=lambda: Audio(audio_size),
+        record=lambda **kw: Audio(audio_size),
         chime=lambda: None,
         listener_factory=lambda *a, **k: FakeListener(*a, fail_wakeword=fail_wakeword, **k),
         make_ask=make_ask,
@@ -431,3 +432,82 @@ def test_small_talk_is_answered_without_the_model(world):
     # ScriptedLLM has no reply for this sentence and would raise if asked.
     assert "Sorry, something went wrong." not in speaker.said
     assert asked == []
+
+
+# --- follow-up conversation ----------------------------------------------------
+
+class SilentThenWords:
+    """record(): speech for the first n calls, then silence (an empty array)."""
+
+    def __init__(self, speech_calls):
+        self.speech_calls = speech_calls
+        self.calls = []
+
+    def __call__(self, **kw):
+        self.calls.append(kw)
+        return Audio(16000 if len(self.calls) <= self.speech_calls else 0)
+
+
+def follow_app(world, monkeypatch, *texts, speech_calls=None, **kw):
+    monkeypatch.setenv("RED_FOLLOW_UP_SECONDS", "7")
+    app, speaker, overlay, asked, out = make_app(world, *texts,
+                                                 settings=load_settings(world["home"]), **kw)
+    record = SilentThenWords(speech_calls if speech_calls is not None else len(texts))
+    app.voice.record = record
+    return app, speaker, overlay, record, out
+
+
+def test_asks_for_more_and_stops_on_silence(world, monkeypatch):
+    app, speaker, overlay, record, out = follow_app(world, monkeypatch, "Open my downloads.")
+    app.handle("wakeword")
+    assert speaker.said == ["Opening Downloads.", cli.ANYTHING_ELSE]
+    assert record.calls == [{}, {"start_timeout": 7.0}]      # the follow-up waits 7 s for you
+    assert overlay.names[-1] == "idle"
+
+
+def test_says_no_and_red_stops(world, monkeypatch):
+    app, speaker, overlay, record, out = follow_app(world, monkeypatch, "Open my downloads.", "No, that's all.")
+    app.handle("wakeword")
+    assert speaker.said == ["Opening Downloads.", cli.ANYTHING_ELSE, "Okay."]
+    assert len(record.calls) == 2
+
+
+def test_a_second_command_is_run_and_asked_again(world, monkeypatch):
+    app, speaker, overlay, record, out = follow_app(
+        world, monkeypatch, "Open my downloads.", "Check my repos.", "Nope.")
+    app.handle("hotkey")
+    assert speaker.said[:2] == ["Opening Downloads.", cli.ANYTHING_ELSE]
+    assert speaker.said[2] != cli.ANYTHING_ELSE            # the repo answer
+    assert speaker.said[-2:] == [cli.ANYTHING_ELSE, "Okay."]
+    assert len(world["start"].calls) == 1
+
+
+def test_a_question_in_the_reply_is_not_followed_by_another(world, monkeypatch):
+    app, speaker, overlay, record, out = follow_app(world, monkeypatch, "Hello.", "No thanks.")
+    app.handle("wakeword")
+    assert speaker.said[0].endswith("What can I do for you?")
+    assert speaker.said[1:] == ["Okay."]                    # no "Anything else?" on top
+
+
+def test_no_follow_up_after_a_failure(world, monkeypatch):
+    from red.llm import LLMError
+    world["llm"].replies["Banana split."] = LLMError("the model is down")
+    app, speaker, overlay, record, out = follow_app(world, monkeypatch, "Banana split.", speech_calls=1)
+    app.handle("wakeword")
+    assert speaker.said == ["Sorry, I didn't understand that."]
+    assert len(record.calls) == 1
+
+
+def test_follow_ups_are_capped(world, monkeypatch):
+    texts = ["Open my downloads."] * (cli.MAX_FOLLOW_UPS + 1)
+    app, speaker, overlay, record, out = follow_app(world, monkeypatch, *texts, speech_calls=99)
+    app.handle("wakeword")
+    assert len(record.calls) == cli.MAX_FOLLOW_UPS + 1
+
+
+def test_goodbye_words_are_only_exits_in_a_follow_up(world, monkeypatch):
+    # As the first thing you say, "no" is not an exit: it goes to the router.
+    world["llm"].replies["No."] = {"tool": "none", "args": {"reply": "Okay, what would you like?"}}
+    app, speaker, overlay, record, out = follow_app(world, monkeypatch, "No.", speech_calls=1)
+    app.handle("wakeword")
+    assert speaker.said == ["Okay, what would you like?"]

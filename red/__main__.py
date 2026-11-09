@@ -5,6 +5,8 @@
     python -m red --dry-run                type commands, only show the tool calls
     python -m red setup                    download the LLM backend, the model and the voice models
     python -m red doctor                   check that everything Red needs is in place
+    python -m red background               run Red with no window (closing PowerShell won't stop it)
+    python -m red stop                     stop the hidden Red; status says whether it runs
     python -m red startup on|off           start Red when you sign in, or stop doing that
     python -m red route "open Downloads"   show the tool call for one command (never runs it)
     python -m red run "open Downloads"     run one typed command
@@ -32,13 +34,17 @@ from .config import Settings, load_settings
 from .executor import Executor
 from .llm import LLMError, connect
 from .router import RouteError, Router
-from .smalltalk import quick_reply
+from .smalltalk import is_goodbye, quick_reply
 from .tools import default_registry
 
 log = logging.getLogger("red")
 
 # How long to wait for you to start talking after the beep.
 START_TIMEOUT_SECONDS = 8.0
+# After an answer Red asks "Anything else?" and keeps listening, up to this
+# many follow-ups in a row, so it can never loop forever.
+MAX_FOLLOW_UPS = 6
+ANYTHING_ELSE = "Anything else you want me to do?"
 # Ollama unloads an idle model after keep_alive (5 minutes by default), and
 # loading it again takes 10 seconds or more. While Red runs in voice mode it
 # asks Ollama to keep the model loaded a little more often than that.
@@ -274,48 +280,20 @@ class VoiceApp:
             self._handle(source)
 
     def _handle(self, source: str) -> None:
+        """One conversation: a command, then follow-ups until you say you're done."""
         player = self._pause_music()
         tool = None
         last = ""
         try:
-            self._state("listening", "Listening...")
-            self.voice.chime()
-            audio = self.voice.record()
-            if getattr(audio, "size", 0) == 0:
-                last = "I didn't hear anything."
-                self._say(last)
-                return
-            self._state("thinking", "")
-            text = (self.voice.transcriber.transcribe(audio) or "").strip()
-            if not text:
-                last = "Sorry, I didn't catch that."
-                self._say(last)
-                return
-            self.out(f"You said: {text}")
-            quick = quick_reply(text)
-            if quick is not None:
-                logging.getLogger("red.commands").info("%r -> small talk", text)
-                last = quick
-                self._say(last)
-                return
-            self._state("thinking", f"“{text}”")
-            try:
-                route = self.router.route(text)
-            except (RouteError, LLMError) as e:
-                log.warning("Couldn't route %r: %s", text, e)
-                last = "Sorry, I didn't understand that."
-                self._say(last)
-                return
-            logging.getLogger("red.commands").info("%r -> %s", text, route.to_json())
-            tool = route.tool
-            if tool == "check_repos":
-                self._state("thinking", "Checking your repos...")
-            if tool == "pause_music" and player is not None:
-                # Red paused the music only to listen. Let the tool pause it for
-                # real, so it says "Paused." and not "already paused".
-                player.resume()
-            last = self.executor.execute(text, route)
-            self._say(last, self.executor.last_details)
+            for turn in range(MAX_FOLLOW_UPS + 1):
+                if turn:
+                    if not last.rstrip().endswith("?"):
+                        self._say(ANYTHING_ELSE)     # a reply that asks a question needs no extra one
+                    last, tool, again = self._exchange(player, tool, follow_up=True)
+                else:
+                    last, tool, again = self._exchange(player, tool, follow_up=False)
+                if not again or self.settings.follow_up_seconds <= 0:
+                    break
         except Exception as e:  # noqa: BLE001 - one bad command must not stop Red
             log.exception("Command failed")
             last = "Sorry, something went wrong."
@@ -328,6 +306,56 @@ class VoiceApp:
                 except Exception:  # noqa: BLE001
                     log.exception("Couldn't resume the music")
             self._state("idle", last)
+
+    def _exchange(self, player, tool, *, follow_up: bool):
+        """Listen once and answer. Returns (last reply, tool, whether to keep listening)."""
+        self._state("listening", "Listening...")
+        self.voice.chime()
+        if follow_up:
+            audio = self.voice.record(start_timeout=self.settings.follow_up_seconds)
+        else:
+            audio = self.voice.record()
+        if getattr(audio, "size", 0) == 0:
+            if follow_up:
+                return "", tool, False       # nothing more to do: just go quiet
+            last = "I didn't hear anything."
+            self._say(last)
+            return last, tool, False
+        self._state("thinking", "")
+        text = (self.voice.transcriber.transcribe(audio) or "").strip()
+        if not text:
+            last = "Sorry, I didn't catch that."
+            self._say(last)
+            return last, tool, False
+        self.out(f"You said: {text}")
+        if follow_up and is_goodbye(text):
+            last = "Okay."
+            self._say(last)
+            return last, tool, False
+        quick = quick_reply(text)
+        if quick is not None:
+            logging.getLogger("red.commands").info("%r -> small talk", text)
+            self._say(quick)
+            return quick, tool, True
+        self._state("thinking", f"“{text}”")
+        try:
+            route = self.router.route(text)
+        except (RouteError, LLMError) as e:
+            log.warning("Couldn't route %r: %s", text, e)
+            last = "Sorry, I didn't understand that."
+            self._say(last)
+            return last, tool, False
+        logging.getLogger("red.commands").info("%r -> %s", text, route.to_json())
+        tool = route.tool
+        if tool == "check_repos":
+            self._state("thinking", "Checking your repos...")
+        if tool == "pause_music" and player is not None:
+            # Red paused the music only to listen. Let the tool pause it for
+            # real, so it says "Paused." and not "already paused".
+            player.resume()
+        last = self.executor.execute(text, route)
+        self._say(last, self.executor.last_details)
+        return last, tool, True
 
     # --- helpers -------------------------------------------------------------
 
@@ -524,6 +552,9 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd")
     sub.add_parser("setup", help="download the LLM backend, the model and the voice models")
     sub.add_parser("doctor", help="check that everything Red needs is in place")
+    for name, text in (("background", "run Red with no window"),
+                       ("stop", "stop the hidden Red"), ("status", "is the hidden Red running?")):
+        sub.add_parser(name, help=text)
     p_startup = sub.add_parser("startup", help="start Red when you sign in: on, off, or show")
     p_startup.add_argument("action", nargs="?", choices=("on", "off"))
     p_route = sub.add_parser("route", help="show the tool call for one command")
@@ -540,6 +571,9 @@ def main(argv: list[str] | None = None) -> int:
 
     settings = load_settings()
     settings.ensure_dirs()
+    if args.cmd in ("background", "stop", "status"):
+        from .background import main as background_main
+        return background_main(args.cmd, settings.home)
     if args.cmd == "startup":
         from .startup import main as startup_main
         return startup_main(args.action, settings.home)
