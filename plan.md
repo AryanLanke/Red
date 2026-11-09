@@ -83,7 +83,8 @@ the whole job**, otherwise the user does it themselves.
 - Check: replay the Punisher conversation from the log through `Chat`, `answer` and `look_up` against
   the real model.
 
-### 7. Ignore filler
+### 7. ✅ Ignore filler
+**Done:** `smalltalk.is_filler()`. Filler said first: Red stays quiet and listens once more; in a follow-up it just goes quiet. "Yeah", "okay", "what" and "hey" are not filler.
 - "You know", "hmm" and "okay so" on their own shouldn't run a tool. In `Router` or `VoiceApp`, very short
   sentences with no request go to chat or are ignored, not to `answer`. Seen in the log: `'you know'`
   went to `answer`.
