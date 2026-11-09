@@ -660,3 +660,107 @@ def test_filler_in_a_follow_up_just_ends(world, monkeypatch):
     app.handle("wakeword")
     assert len(speaker.said) == 1 and len(record.calls) == 2
     assert world["start"].calls == []
+
+
+# --- after an answer, ask if they want more (plan.md task 2a) -------------------------
+
+class FakeAnswer(Tool):
+    """Stands in for answer: says a fact (or a question back, or fails)."""
+    name = "answer"
+    description = "Answer a question"
+    args_schema = {"type": "object", "properties": {"question": {"type": "string"}},
+                   "additionalProperties": False}
+
+    def __init__(self, reply="Mount Everest is 8,849 metres tall."):
+        self.reply = reply
+
+    def run(self, question):
+        if self.reply is None:
+            from red.tools.base import ToolError
+            raise ToolError("I couldn't find that.")
+        return self.reply
+
+
+def answer_world(world, reply="Mount Everest is 8,849 metres tall."):
+    world["registry"].add(FakeAnswer(reply))
+    for said in ("How tall is Everest?", "And K2?", "What about Kangchenjunga?"):
+        world["llm"].replies[said] = {"tool": "answer", "args": {"question": said}}
+
+
+def test_an_answer_asks_if_you_want_more_and_keeps_listening(world, monkeypatch):
+    answer_world(world)
+    app, speaker, overlay, record, out = follow_app(world, monkeypatch, "How tall is Everest?")
+    app.handle("wakeword")
+    assert speaker.said == ["Mount Everest is 8,849 metres tall. Anything more you want to know about it?"]
+    assert record.timeouts == [{}, {"start_timeout": 7.0}]     # listened for the answer, then silence
+    assert overlay.names[-1] == "idle"
+
+
+def test_the_follow_up_question_is_never_the_same_twice_in_a_row(world, monkeypatch):
+    answer_world(world)
+    app, speaker, overlay, record, out = follow_app(
+        world, monkeypatch, "How tall is Everest?", "And K2?", "What about Kangchenjunga?")
+    app.handle("wakeword")
+    questions = [s.removeprefix("Mount Everest is 8,849 metres tall. ") for s in speaker.said]
+    assert len(questions) == 3 and all(q in cli.FOLLOW_UP_QUESTIONS for q in questions)
+    assert questions[0] == "Anything more you want to know about it?"
+    assert all(a != b for a, b in zip(questions, questions[1:]))
+
+
+def test_an_answer_that_already_asks_gets_no_second_question(world, monkeypatch):
+    answer_world(world, reply="Do you mean the mountain or the film?")
+    app, speaker, overlay, record, out = follow_app(world, monkeypatch, "How tall is Everest?")
+    app.handle("wakeword")
+    assert speaker.said == ["Do you mean the mountain or the film?"]
+    assert len(record.calls) == 2
+
+
+@pytest.mark.parametrize("bye", ["No.", "That's it.", "Not really.", "Nope, that's all."])
+def test_no_after_the_question_ends_it(world, monkeypatch, bye):
+    answer_world(world)
+    app, speaker, overlay, record, out = follow_app(world, monkeypatch, "How tall is Everest?", bye)
+    app.handle("wakeword")
+    assert speaker.said[-1] == "Okay."
+    assert len(record.calls) == 2
+
+
+def test_a_failed_answer_has_no_follow_up_question(world, monkeypatch):
+    answer_world(world, reply=None)
+    app, speaker, overlay, record, out = follow_app(world, monkeypatch, "How tall is Everest?")
+    app.handle("wakeword")
+    assert speaker.said == ["I couldn't find that."]
+
+
+def test_an_action_still_goes_quiet_after_an_answer(world, monkeypatch):
+    answer_world(world)
+    app, speaker, overlay, record, out = follow_app(
+        world, monkeypatch, "How tall is Everest?", "Open my downloads.", "Check my repos.")
+    app.handle("wakeword")
+    assert speaker.said[1:] == ["Opening Downloads."]
+    assert len(record.calls) == 2                               # "Check my repos." is never heard
+
+
+def test_the_conversation_remembers_the_answer_without_the_question(world, monkeypatch):
+    answer_world(world)
+    app, speaker, overlay, record, out = follow_app(world, monkeypatch, "How tall is Everest?")
+    app.handle("wakeword")
+    assert "Anything more" not in app.chat.history(4)
+
+
+def test_vocabulary_has_apps_and_contacts(world):
+    home = world["home"]
+    (home / "config").mkdir(exist_ok=True)
+    (home / "config" / "allowlist.toml").write_text(
+        '[apps]\nspotify = ["spotify.exe"]\n', encoding="utf-8")
+    (home / "config" / "contacts.toml").write_text(
+        '[contacts]\nrahul = "rahul@example.com"\n', encoding="utf-8")
+    words = cli.vocabulary(load_settings(home))
+    assert words.startswith("Hey Copilot, Hey Siri, Alexa, OK Google, Gemini, YouTube")
+    assert "Spotify" in words and "Rahul" in words
+
+
+def test_a_broken_allowlist_still_gives_a_vocabulary(world):
+    home = world["home"]
+    (home / "config").mkdir(exist_ok=True)
+    (home / "config" / "allowlist.toml").write_text("[apps\n", encoding="utf-8")
+    assert cli.vocabulary(load_settings(home)).startswith("Hey Copilot")

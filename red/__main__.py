@@ -65,6 +65,16 @@ EXAMPLE_CONTACTS = REPO_ROOT / "contacts.example.toml"
 CONTEXT_LINES = 4
 
 MUSIC_TOOLS = {"play_music", "stop_music", "pause_music", "resume_music", "next_song"}
+# Tools that tell you something. After their answer Red asks if you want
+# more and keeps listening; after an action it goes quiet.
+INFO_TOOLS = frozenset({"answer", "look_up", "weather", "news", "describe_screen"})
+# The user's own wording first. Taken in turn, so the same one never comes twice in a row.
+FOLLOW_UP_QUESTIONS = (
+    "Anything more you want to know about it?",
+    "Want to know more?",
+    "Anything else you want to know about it?",
+    "Should I go into more detail?",
+)
 VOICE_HELP = ("Voice needs the voice packages. Install them with "
               "'pip install -r requirements.txt', or use 'python -m red --typed'.")
 
@@ -162,7 +172,8 @@ def load_voice(settings: Settings) -> Voice:
 
     models = settings.models_dir
     return Voice(
-        transcriber=Transcriber(models / "whisper", settings.whisper_model, settings.whisper_device),
+        transcriber=Transcriber(models / "whisper", settings.whisper_model, settings.whisper_device,
+                                hotwords=vocabulary(settings)),
         speaker=Speaker(models / "piper", settings.piper_voice),
         record=functools.partial(record_command,
                                  max_seconds=settings.max_command_seconds,
@@ -173,6 +184,24 @@ def load_voice(settings: Settings) -> Voice:
         listener_factory=Listener,
         make_ask=spoken_ask,
     )
+
+
+def vocabulary(settings: Settings) -> str:
+    """Whisper's hotwords: assistant and browser names, your allowlisted apps and your contacts."""
+    from .stt import command_vocabulary
+
+    names: list[str] = []
+    try:
+        from .allowlist import load_allowlist
+        names += [n.title() for n in load_allowlist(settings.allowlist_path).app_names()]
+    except Exception:  # noqa: BLE001 - a broken allowlist.toml must not stop the voice
+        log.warning("Couldn't read the allowlist for Whisper's vocabulary", exc_info=True)
+    try:
+        from .tools.mail import load_contacts
+        names += [n.title() for n in load_contacts(settings.contacts_path)]
+    except Exception:  # noqa: BLE001
+        log.warning("Couldn't read the contacts for Whisper's vocabulary", exc_info=True)
+    return command_vocabulary(*names)
 
 
 def pretty_hotkey(hotkey: str) -> str:
@@ -214,6 +243,7 @@ class VoiceApp:
         self.notice = ""        # why the wake word is off, if it is
         self.reminders = None   # red.scheduler's Scheduler, when it exists
         self._turn = threading.RLock()  # one command or reminder at a time
+        self._next_question = 0         # which FOLLOW_UP_QUESTIONS comes next
 
     # --- starting and stopping ------------------------------------------------
 
@@ -423,9 +453,14 @@ class VoiceApp:
         else:
             timer.mark("act")
             self.chat.remember(text, last)
-            # Done is done: after an action Red goes quiet. It keeps listening
-            # only if the reply asks you something or the tool failed.
-            again = asks_back(last) or self.executor.last_status == "error"
+            if tool in INFO_TOOLS and self.executor.last_status == "ok":
+                # An answer: ask if they want more, and listen for it.
+                last = self._with_follow_up(last)
+                again = True
+            else:
+                # Done is done: after an action Red goes quiet. It keeps listening
+                # only if the reply asks you something or the tool failed.
+                again = asks_back(last) or self.executor.last_status == "error"
         self._say(last, self.executor.last_details, meanwhile=self.executor.last_later)
         self.executor.last_later = None
         timer.mark("speak")
@@ -433,6 +468,14 @@ class VoiceApp:
         return last, tool, again
 
     # --- helpers -------------------------------------------------------------
+
+    def _with_follow_up(self, answer: str) -> str:
+        """'<answer> Anything more you want to know about it?', unless it already asks something."""
+        if asks_back(answer) or self.settings.follow_up_seconds <= 0:
+            return answer
+        question = FOLLOW_UP_QUESTIONS[self._next_question % len(FOLLOW_UP_QUESTIONS)]
+        self._next_question += 1
+        return f"{answer.rstrip()} {question}"
 
     def _talk(self, said: str, fallback: str) -> str:
         """Not a command: talk like a friend instead of the router's stock line."""

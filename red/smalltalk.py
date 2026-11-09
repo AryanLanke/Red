@@ -72,12 +72,14 @@ def quick_reply(text: str, now: datetime | None = None) -> str | None:
 # "No", "that's all", "nothing else": the user is done, so Red stops listening.
 _GOODBYES = re.compile(
     r"(?:no|nope|nah|no thanks|no thank you|nothing|nothing else|nothing more|not now|"
-    r"not right now|that's all|that is all|that's it|that is it|i'm good|i am good|"
+    r"not right now|not really|no more|i'm fine|i am fine|that's fine|"
+    r"that's all|that is all|that's it|that is it|i'm good|i am good|"
     r"i'm done|i am done|all good|all done|we're good|we are good|never ?mind|"
     r"stop|stop listening|go to sleep|bye|goodbye|good bye|see you|see you later|"
     r"that will be all|that'll be all)"
     r"(?: for now| thanks| thank you| red)*"
-    r"|no(?:,)? (?:that's all|that is all|nothing|thanks|thank you|i'm good|i am good|that's it)"
+    r"|(?:no|nope|nah)(?:,)? (?:that's all|that is all|nothing|thanks|thank you|i'm good|i am good|"
+    r"that's it|i'm fine|not really)"
 )
 _GOODBYE_RE = re.compile(_GOODBYES.pattern)
 
