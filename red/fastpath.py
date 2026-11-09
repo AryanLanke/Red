@@ -1,0 +1,197 @@
+"""Instant common commands: "open YouTube", "volume up", "pause", "lock", "play Believer".
+
+In the 23:37 voice test the model took 1.3 s of the 2.65 s for "open YouTube".
+Clear, common commands don't need it. `match()` turns a sentence into a tool
+call only when the whole sentence is one of the forms below; anything else
+(None) goes to the model as before. Router.route() checks the call with the
+same schema as a model's call, and the Executor asks the same confirmations.
+
+It's plain string matching, well under a millisecond, with or without a GPU.
+The words are only looked up: an app, folder or site name has to be in a
+fixed list (or the allowlist), and a web address has to look like one.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Callable
+
+from . import known_folders as _known
+from .browser import named_in
+
+# Sites people open by name. Only these names (or something.tld) become URLs.
+SITES = {
+    "youtube": "https://www.youtube.com", "you tube": "https://www.youtube.com",
+    "youtube music": "https://music.youtube.com",
+    "github": "https://github.com", "gmail": "https://mail.google.com",
+    "google": "https://www.google.com", "google maps": "https://www.google.com/maps",
+    "google drive": "https://drive.google.com", "google docs": "https://docs.google.com",
+    "netflix": "https://www.netflix.com", "wikipedia": "https://en.wikipedia.org",
+    "facebook": "https://www.facebook.com", "instagram": "https://www.instagram.com",
+    "twitter": "https://x.com", "reddit": "https://www.reddit.com",
+    "amazon": "https://www.amazon.com", "linkedin": "https://www.linkedin.com",
+    "whatsapp web": "https://web.whatsapp.com", "chatgpt": "https://chatgpt.com",
+    "hotstar": "https://www.hotstar.com", "prime video": "https://www.primevideo.com",
+}
+_DOMAIN = re.compile(r"(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|org|net|io|dev|in|co|ai|app|edu|gov|tv|me)")
+
+# Politeness and Red's name, taken off both ends before matching.
+_LEAD = re.compile(r"^(?:(?:hey|ok|okay|yo)\s+)?(?:red\b[,\s]*)?(?:(?:can|could|would|will) you\s+|"
+                   r"please\s+|just\s+|go ahead and\s+|i want you to\s+)*")
+_TAIL = re.compile(r"(?:\s+(?:for me|please|now|right now|red|real quick|quickly))+$")
+
+_BROWSER_SUFFIX = re.compile(r"\s+(?:in|from|on|using|with)\s+(?:the\s+)?(?:google\s+|microsoft\s+|mozilla\s+)?"
+                             r"(chrome|edge|firefox)(?:\s+browser)?$")
+
+
+def normalize(text: str) -> str:
+    text = text.lower().replace("’", "'").strip()
+    text = re.sub(r"[.!?,;:]+$", "", text).strip()
+    text = re.sub(r"\s+", " ", text)
+    text = _LEAD.sub("", text)
+    text = re.sub(r"\s+for me\b", "", text)          # "open YouTube for me from Chrome"
+    text = _TAIL.sub("", text)
+    return text.strip(" ,")
+
+
+def _call(tool: str, **args) -> dict:
+    return {"tool": tool, "args": args}
+
+
+# --- fixed sentences ---------------------------------------------------------------
+
+_FIXED = [
+    (r"(?:turn (?:the )?volume up|volume up|turn (?:it|the sound) up|louder|increase (?:the )?volume|"
+     r"raise (?:the )?volume)", _call("volume", action="up")),
+    (r"(?:turn (?:the )?volume down|volume down|turn (?:it|the sound) down|quieter|lower (?:the )?volume|"
+     r"decrease (?:the )?volume|reduce (?:the )?volume)", _call("volume", action="down")),
+    (r"(?:mute|mute (?:it|the (?:sound|volume|pc|computer|laptop))|be muted)", _call("volume", action="mute")),
+    (r"(?:unmute|unmute (?:it|the (?:sound|volume|pc|computer|laptop)))", _call("volume", action="unmute")),
+    (r"pause(?: (?:it|this|that|the (?:music|song|video|track|podcast)|music|youtube|playback))?",
+     _call("pause_music")),
+    (r"(?:(?:resume|unpause|continue playing|keep playing)(?: (?:it|the (?:music|song|video|podcast)|music|"
+     r"playing|playback))?|play|play it|continue)", _call("resume_music")),
+    (r"(?:next|skip|next (?:song|track|video|one)|skip (?:it|this|this (?:song|track|video|one))|"
+     r"play the next (?:song|track|video|one))", _call("next_song")),
+    (r"(?:previous|previous (?:song|track|video|one)|last (?:song|track)|go back a (?:song|track)|"
+     r"play the previous (?:song|track|video|one))", _call("previous_track")),
+    (r"stop (?:the )?(?:music|song|video|podcast|playing|playback)", _call("stop_music")),
+    (r"lock(?: (?:my|the|this) (?:pc|computer|laptop|screen|windows|system))?|lock (?:it|the pc)",
+     _call("lock_pc")),
+    (r"(?:what time is it|what's the time|what is the time|tell me the time|time(?: now)?|"
+     r"what time is it now)", _call("tell_status", what="time")),
+    (r"(?:what's the date(?: today)?|what is the date(?: today)?|what's today's date|what is today's date|"
+     r"what date is it(?: today)?)", _call("tell_status", what="date")),
+    (r"(?:how much battery (?:do i have|is left|have i got)(?: left)?|battery(?: level)?|"
+     r"what's (?:my|the) battery(?: level)?)", _call("tell_status", what="battery")),
+    (r"(?:take a screenshot|take a screen ?shot|screenshot|capture (?:the|my) screen)", _call("take_screenshot")),
+]
+_FIXED_RE = [(re.compile(p), c) for p, c in _FIXED]
+
+_SET_VOLUME = re.compile(r"(?:set (?:the )?volume to|volume(?: to)?|turn (?:the )?volume to) (\d{1,3})(?: ?(?:percent|%))?")
+_OPEN = re.compile(r"(?:open|launch|start|open up|bring up|go to) (?:the |my )?(.+?)(?: app| application| website| site| folder)?")
+_PLAY = re.compile(r"(?:play|put on) (.+?)(?: on youtube)?")
+_SEARCH_YT = re.compile(r"(?:search (?:on )?youtube for|search youtube|youtube search(?: for)?|find on youtube) (.+)"
+                        r"|(?:search(?: for)?|find|look for) (.+?) on youtube")
+_SEARCH_WEB = re.compile(r"(?:search (?:the web|online|google|the internet) for|google|search for|search) (.+)")
+# A search like these is something else: a file, or a spoken answer (look_up).
+_NOT_A_WEB_SEARCH = re.compile(r"\b(?:my|file|files|folder|document|pdf|tell me|explain|and|what|who|how|why)\b")
+_NOT_PLAYABLE = re.compile(r"^(?:it|this|that|the next.*|next.*|the previous.*|previous.*|again)$")
+
+
+def _browser(text: str) -> tuple[str, str | None]:
+    """'youtube in edge' -> ('youtube', 'edge')."""
+    m = _BROWSER_SUFFIX.search(text)
+    if not m:
+        return text, None
+    return text[:m.start()].strip(), m.group(1)
+
+
+def _open(target: str, apps: Callable[[str], bool], folders: Callable[[str], bool]) -> dict | None:
+    target, browser = _browser(target)
+    site = SITES.get(target)
+    if site is None and _DOMAIN.fullmatch(target):
+        site = "https://" + target
+    if browser:
+        # "open YouTube in Edge": only websites open in a browser.
+        return _call("open_url", url=site, browser=browser) if site else None
+    if apps(target):
+        return _call("open_app", app=target)
+    if folders(target):
+        known = _known.canonical(target)            # "documents" -> "Documents", like the model says it
+        return _call("open_folder", folder=known.capitalize() if known else target)
+    if site:
+        return _call("open_url", url=site)
+    return None
+
+
+def _known_app(name: str) -> bool:
+    from .allowlist import load_allowlist
+    from .tools.apps import AppPaths
+    try:
+        if load_allowlist().app(name) is not None:
+            return True
+    except Exception:  # noqa: BLE001 - a broken allowlist: let the model and the tool say so
+        return False
+    return AppPaths().known(name) is not None
+
+
+def _known_folder(name: str) -> bool:
+    if _known.canonical(name) is not None:
+        return True
+    from .allowlist import load_allowlist
+    try:
+        return load_allowlist().folder(name) is not None
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _with_case(call: dict | None, command: str) -> dict | None:
+    """Names as the user wrote them ("Edge", "Believer"): matching was done in lower case."""
+    if call is None:
+        return None
+    for key in ("app", "folder", "query"):
+        value = call["args"].get(key)
+        if isinstance(value, str):
+            i = command.lower().replace("’", "'").find(value)
+            if i >= 0:
+                call["args"][key] = command[i:i + len(value)]
+    return call
+
+
+def match(command: str, *, apps: Callable[[str], bool] = _known_app,
+          folders: Callable[[str], bool] = _known_folder) -> dict | None:
+    """A tool call for a clear, common command, or None to ask the model."""
+    return _with_case(_match(normalize(command), apps, folders), " ".join(command.split()))
+
+
+def _match(said: str, apps: Callable[[str], bool], folders: Callable[[str], bool]) -> dict | None:
+    if not said or len(said) > 80:
+        return None
+    for pattern, call in _FIXED_RE:
+        if pattern.fullmatch(said):
+            return {"tool": call["tool"], "args": dict(call["args"])}
+    m = _SET_VOLUME.fullmatch(said)
+    if m and int(m.group(1)) <= 100:
+        return _call("volume", action="set", percent=int(m.group(1)))
+    m = _OPEN.fullmatch(said)
+    if m:
+        return _open(m.group(1).strip(), apps, folders)
+    m = _SEARCH_YT.fullmatch(said)
+    if m:
+        query, browser = _browser((m.group(1) or m.group(2)).strip())
+        args = {"query": query, "site": "youtube"}
+        return _call("web_search", **args, **({"browser": browser} if browser else {})) if query else None
+    m = _SEARCH_WEB.fullmatch(said)
+    if m:
+        query, browser = _browser(m.group(1).strip())
+        if not query or _NOT_A_WEB_SEARCH.search(query) or named_in(query):
+            return None
+        return _call("web_search", query=query, **({"browser": browser} if browser else {}))
+    m = _PLAY.fullmatch(said)
+    if m:
+        query = m.group(1).strip()
+        if _NOT_PLAYABLE.fullmatch(query) or _BROWSER_SUFFIX.search(query):
+            return None
+        return _call("play_online", query=query)
+    return None
