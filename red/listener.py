@@ -9,6 +9,10 @@ While a trigger is being handled, the wake word is paused automatically (its
 microphone stream is closed), so Red never hears itself. Call pause() and
 resume() around anything else that records or speaks. Pauses nest.
 
+The one exception is while Red is talking: the voice loop calls
+allow_interrupt(True), the wake word listens again, and "Hey Red" or the
+hotkey calls on_interrupt() (stop talking) instead of being ignored.
+
 The default wake phrase is "Hey Red" (red/wakeword.py: a voice activity
 gate plus a small pinned Whisper model). Other openWakeWord ONNX phrases and
 custom .onnx models also work (tflite has no Windows wheels); they're pinned
@@ -179,6 +183,9 @@ class Listener:
         self._audio_thread: threading.Thread | None = None
         self._worker: threading.Thread | None = None
         self.last_error: Exception | None = None
+        # Called (from the wake word or hotkey thread) for "Hey Red" while Red talks.
+        self.on_interrupt: Callable[[], None] | None = None
+        self._interrupt_open = False
 
     # --- public API ---------------------------------------------------------
 
@@ -237,6 +244,17 @@ class Listener:
             self._pauses = max(0, self._pauses - 1)
             self._cond.notify_all()
 
+    def allow_interrupt(self, on: bool) -> None:
+        """While Red talks: listen for "Hey Red" again, so you can cut in."""
+        with self._cond:
+            if on == self._interrupt_open:
+                return
+            self._interrupt_open = on
+        if on:
+            self.resume()
+        else:
+            self.pause()
+
     @contextmanager
     def paused_while(self):
         self.pause()
@@ -249,7 +267,15 @@ class Listener:
 
     def _fire(self, source: str) -> None:
         """Called from the hotkey or wake word thread. Must return quickly."""
-        if not self._running or self._busy.is_set():
+        if not self._running:
+            return
+        if self._busy.is_set():
+            # Busy: ignored, unless Red is talking and you may cut in.
+            if self._interrupt_open and self.on_interrupt is not None:
+                try:
+                    self.on_interrupt()
+                except Exception:  # noqa: BLE001
+                    log.exception("Interrupt handler failed")
             return
         self._busy.set()
         self._triggers.put(source)
@@ -265,6 +291,8 @@ class Listener:
             except Exception:
                 log.exception("Trigger handler failed")
             finally:
+                if self._interrupt_open:      # the handler forgot to close it
+                    self.allow_interrupt(False)
                 self.resume()
                 self._busy.clear()
 

@@ -303,3 +303,58 @@ def test_detector_load_errors_surface_in_start(tmp_path):
                    hotkey_factory=FakeHotKeys, detector_factory=broken)
     with pytest.raises(RuntimeError, match="bad model"):
         lst.start()
+
+
+# --- cutting in while Red talks (plan.md task 6) ----------------------------------------
+
+def test_hotkey_while_red_talks_interrupts(listener_factory):
+    release = threading.Event()
+    rec = Recorder(block=release)
+    lst, _, _ = listener_factory(rec)
+    cut = []
+    lst.on_interrupt = lambda: cut.append("cut")
+    lst.start()
+    hk = FakeHotKeys.instances[-1]
+    hk.press()
+    assert rec.entered.wait(2)
+    hk.press()                                     # busy, not talking: ignored as before
+    assert cut == []
+    lst.allow_interrupt(True)                      # Red starts talking
+    hk.press()
+    assert cut == ["cut"]
+    lst.allow_interrupt(False)
+    hk.press()
+    assert cut == ["cut"]
+    release.set()
+    assert wait_for(lambda: not lst.busy)
+    assert rec.calls == ["hotkey"]                 # an interrupt never starts a second command
+
+
+def test_wake_word_listens_again_only_while_red_talks(listener_factory):
+    release = threading.Event()
+    rec = Recorder(block=release)
+    det = FakeDetector(fire_at={20})
+    lst, mic, _ = listener_factory(rec, wakeword="hey_red", detector=det)
+    cut = []
+    lst.on_interrupt = lambda: cut.append("cut")
+    lst.start()
+    assert rec.entered.wait(3)
+    assert wait_for(lambda: not mic.is_open)       # recording: the mic is closed to the wake word
+    det.fire_at = {det.frames + 30}
+    lst.allow_interrupt(True)                      # talking: "Hey Red" is heard
+    assert wait_for(lambda: cut == ["cut"] or cut == ["cut", "cut"])
+    lst.allow_interrupt(False)
+    assert wait_for(lambda: not mic.is_open)
+    lst.allow_interrupt(False)                     # twice is harmless
+    release.set()
+    assert wait_for(lambda: not lst.busy and mic.is_open)
+
+
+def test_a_handler_that_leaves_it_open_is_closed(listener_factory):
+    def handler(source):
+        lst.allow_interrupt(True)
+    lst, mic, _ = listener_factory(handler, wakeword="hey_red")
+    lst.start()
+    FakeHotKeys.instances[-1].press()
+    assert wait_for(lambda: not lst.busy)
+    assert lst._interrupt_open is False and lst._pauses == 0
