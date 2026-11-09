@@ -219,23 +219,63 @@ def test_glow_alpha_breathes_within_bounds():
     assert ov.glow_alpha(0.0, "listening", 0.3) == 0.0
 
 
-def test_glow_falloff_is_bright_at_the_edge_and_gone_at_depth():
+def test_rounded_corners_have_no_seam():
     np = pytest.importorskip("numpy")
-    values = ov.edge_falloff(np.array([0, 5, 15, 30, 56, 80]), 56)
-    assert values[0] == pytest.approx(1.0)
-    assert all(a > b for a, b in zip(values[:5], values[1:5]))   # always fading
-    assert values[4] == 0.0 and values[5] == 0.0
+    ys, xs = np.mgrid[0:100, 0:200].astype(np.float32)
+    d = ov.rounded_edge_distance(xs, ys, 200, 100, 20)
+    assert d[50, 0] == 0 and d[0, 100] == 0 and d[50, 7] == 7        # straight edges
+    assert d[0, 0] < 0                                                # the square corner is outside the arc
+    # Moving along the arc keeps the same distance: no diagonal crease.
+    assert d[20 - 14, 20 - 14] == pytest.approx(20 - np.hypot(14, 14), abs=1e-4)
+    # The field is continuous where a corner meets a straight edge.
+    assert abs(float(d[5, 20]) - float(d[5, 21])) < 1e-4
 
 
-def test_glow_mask_corners_blend():
+def test_glow_profile_is_a_bright_line_with_a_soft_halo():
+    np = pytest.importorskip("numpy")
+    halo, line = ov.glow_profile(np.array([0.0, 2.0, 6.0, 20.0, 47.0, 60.0]), 48)
+    assert line[0] == pytest.approx(1.0) and line[2] < 0.01         # the line is narrow
+    assert halo[0] > halo[2] > halo[3] > halo[4] >= 0.0              # the halo fades steadily
+    assert halo[5] == 0.0                                            # and ends at the depth
+    assert halo.max() < line.max()                                   # a soft halo, never louder than the line
+
+
+def test_glow_masks_shapes_and_inset():
     pytest.importorskip("numpy")
-    top = ov.glow_mask(0, 0, 200, 40, 200, 100, 40)       # the top strip of a 200x100 screen
-    assert top.shape == (40, 200)
-    assert top[0, 100] == 255                              # the very edge
-    assert top[39, 100] < 10                               # faded by the strip's inner side
-    # Near the left end of the top strip, the left edge glows too.
-    assert top[30, 0] == 255
-    assert top[30, 0] > top[30, 100]
+    halo, line = ov.glow_masks(0, 0, 400, 48, 400, 300)
+    assert halo.shape == line.shape == (48, 400)
+    assert line[int(ov.GLOW_INSET), 200] == 255                      # the line sits just inside the edge
+    assert line[30, 200] == 0 and halo[30, 200] > 0
+
+
+def test_colours_flow_smoothly_and_wrap_round():
+    pal = ov.GLOW_PALETTES["listening"]
+    many = ov.flow_colours([0.0, 0.25, 0.999], 3.0, pal, 0.05)
+    assert many[0] == ov.flow_colour(0.0, 3.0, pal, 0.05)
+    assert many[1] == ov.flow_colour(0.25, 3.0, pal, 0.05)
+    # 0.999 and 0.0 are neighbours round the screen's edge.
+    assert max(abs(a - b) for a, b in zip(many[0], many[2])) <= 3
+    # Over time the colour at one spot changes, but gently.
+    a, b = ov.flow_colour(0.4, 0.0, pal, 0.05), ov.flow_colour(0.4, 0.1, pal, 0.05)
+    assert a != ov.flow_colour(0.4, 5.0, pal, 0.05)
+    assert max(abs(x - y) for x, y in zip(a, b)) <= 8
+
+
+def test_strip_spans_join_up_round_the_edge():
+    W, H, d = 1920, 1080, 48
+    strips = ov.edge_strips(0, 0, W, H, d)
+    spans = {side: ov.perimeter_span(side, *strips[side], W, H) for side in strips}
+    P = 2 * (W + H)
+    assert spans["top"] == (0.0, W / P)
+    assert spans["right"][0] == pytest.approx((W + d) / P)
+    assert spans["bottom"][0] == pytest.approx((2 * W + H) / P)       # its left end
+    # Each span starts at the strip's own top (or left) end, where its gradient starts.
+    assert spans["left"][0] == pytest.approx((2 * W + 2 * H - d) / P)  # top end, next to the top strip
+    assert spans["left"][1] == pytest.approx((2 * W + H + d) / P)      # bottom end, next to the bottom strip
+
+
+def test_gloss_is_lighter():
+    assert ov.glossy((0, 100, 200), 0.5) == (128, 178, 228)
 
 
 def test_every_active_state_has_a_glow():
