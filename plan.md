@@ -54,7 +54,13 @@ Waiting 5 s or more before anything happens is a failure: the user could have do
 
 ## Tasks, in order
 
-### 1. Fix "open YouTube": it showed an empty browser tab, not YouTube
+### 1. ✅ Fix "open YouTube": it showed an empty browser tab, not YouTube
+**Done (2026-11-09):** `red/browser.py` (`RED_BROWSER`, Chrome by default), the `browser` argument, and a
+new fronting rule in `red/windows.py`. The real cause was different from the "Why" below: this PC's
+default browser is **Chrome**, and only the old, stale `UserChoice` key says Edge (Windows 11 now keeps it
+in `UserChoiceLatest`). So YouTube did open, in Chrome, and Red then covered it with an idle Edge window.
+Details in progress.md 7.1. `python -m red run "Open YouTube."` now fronts "YouTube - Google Chrome" in
+0.6 s. Still worth the spoken check with the hidden Red.
 **What happened (log, 23:37–23:38):**
 - The user said "Open YouTube.", then "Red you just open chrome. I told you to open YouTube", then "Can
   you open YouTube for me from Chrome?".
