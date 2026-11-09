@@ -56,16 +56,24 @@ def _words(text: str) -> list[str]:
     return re.sub(r"[^a-z' ]", " ", text.lower().replace("-", " ")).split()
 
 
-def match_score(text: str) -> float:
+def phrase_key(text: str) -> str:
+    """The first two words of a transcript, the part a wake phrase lives in."""
+    return " ".join(_words(text)[:2])
+
+
+def match_score(text: str, personal: frozenset[str] = frozenset()) -> float:
     """How much a short transcript sounds like "Hey Red": 1.0, partial, or 0.
 
     Only the start of the clip counts, so "I read the red book" or "they said
     red" never match. A clip with more than a couple of extra words isn't a
-    wake phrase either.
+    wake phrase either. `personal` holds how Whisper hears *your* "Hey Red"
+    (from python -m red voice-setup); those count as a strong match.
     """
     words = _words(text)
     if not words or len(words) > 4:
         return 0.0
+    if personal and " ".join(words[:2]) in personal:
+        return 0.9 if len(words) <= 2 else 0.6
     if words[0] in _MERGED:
         return _MERGED[words[0]]
     if len(words) < 2:
@@ -118,6 +126,35 @@ class StreamingVAD:
         return float(np.asarray(out).reshape(-1)[0])
 
 
+PROFILE_NAME = "hey_red_profile.json"
+
+
+def load_profile(model_dir: Path) -> dict:
+    """Your voice profile from voice-setup, or {} if there isn't one (or it's broken)."""
+    import json
+
+    path = Path(model_dir) / PROFILE_NAME
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def make_wake_transcriber(model_dir: Path):
+    """Whisper tiny.en set up exactly as the detector uses it (voice-setup uses it too)."""
+    from red.stt import Transcriber
+
+    def factory(path: str, device: str, compute_type: str):
+        from faster_whisper import WhisperModel
+        return WhisperModel(path, device=device, compute_type=compute_type,
+                            cpu_threads=WAKE_CPU_THREADS)
+
+    return Transcriber(Path(model_dir).parent / "whisper", WAKE_WHISPER_MODEL, device="cpu",
+                       beam_size=1, vad_filter=False, hotwords="Hey Red", max_new_tokens=12,
+                       model_factory=factory)
+
+
 class HeyRedDetector:
     """A Listener detector: score(int16 frame) -> 0..1, and reset().
 
@@ -126,10 +163,13 @@ class HeyRedDetector:
     """
 
     def __init__(self, vad: Callable[[np.ndarray], float], transcribe: Callable[[np.ndarray], str],
-                 clock: Callable[[], float] = time.perf_counter):
+                 clock: Callable[[], float] = time.perf_counter, *,
+                 personal: frozenset[str] = frozenset(), max_clip_seconds: float = MAX_CLIP_SECONDS):
         self._vad = vad
         self._transcribe = transcribe
         self._clock = clock
+        self.personal = frozenset(personal)
+        self.max_clip_seconds = max_clip_seconds
         self.evaluations = 0                 # clips sent to Whisper
         self.busy_seconds = 0.0              # time spent in Whisper
         self.last_text = ""
@@ -137,19 +177,18 @@ class HeyRedDetector:
 
     @classmethod
     def create(cls, model_dir: Path) -> "HeyRedDetector":
-        """The real detector. model_dir is RED_HOME\\models\\wakeword; Whisper goes in models\\whisper."""
-        from red.stt import Transcriber
-
-        def factory(path: str, device: str, compute_type: str):
-            from faster_whisper import WhisperModel
-            return WhisperModel(path, device=device, compute_type=compute_type,
-                                cpu_threads=WAKE_CPU_THREADS)
-
-        whisper = Transcriber(Path(model_dir).parent / "whisper", WAKE_WHISPER_MODEL, device="cpu",
-                              beam_size=1, vad_filter=False, hotwords="Hey Red", max_new_tokens=12,
-                              model_factory=factory)
+        """The real detector. model_dir is RED_HOME\models\wakeword; Whisper goes in models\whisper."""
+        whisper = make_wake_transcriber(model_dir)
         whisper.load()
-        return cls(StreamingVAD(), whisper.transcribe)
+        profile = load_profile(model_dir)
+        personal = frozenset(p for p in profile.get("phrases", []) if isinstance(p, str))
+        max_clip = profile.get("max_clip_seconds", MAX_CLIP_SECONDS)
+        if not isinstance(max_clip, (int, float)) or not 1.0 <= max_clip <= 3.0:
+            max_clip = MAX_CLIP_SECONDS
+        if personal:
+            log.info("Using your voice profile for \"Hey Red\": %s", ", ".join(sorted(personal)))
+        return cls(StreamingVAD(), whisper.transcribe, personal=personal,
+                   max_clip_seconds=float(max_clip))
 
     def reset(self) -> None:
         if hasattr(self._vad, "reset"):
@@ -172,8 +211,9 @@ class HeyRedDetector:
         self.busy_seconds += self._clock() - t0
         self.evaluations += 1
         self.last_text = text
-        score = match_score(text)
-        log.debug("Wake clip %.2f s heard %r (score %.2f)", clip.size / SAMPLE_RATE, text, score)
+        score = match_score(text, self.personal)
+        # Logged so a missed "Hey Red" can be explained (RED_HOME\logs\red.log).
+        log.info("Wake check: heard %r (score %.2f)", text[:60], score)
         return score
 
     def _step(self, chunk: np.ndarray) -> float:
@@ -197,7 +237,7 @@ class HeyRedDetector:
         else:
             self._quiet_run = 0
             self._speech_chunks = len(self._clip) - self._preroll
-        if self._speech_chunks > self._chunks_for(MAX_CLIP_SECONDS):
+        if self._speech_chunks > self._chunks_for(self.max_clip_seconds):
             self._too_long = True
         if self._quiet_run < self._chunks_for(PAUSE_AFTER_SECONDS):
             return 0.0
