@@ -1,9 +1,15 @@
-"""Floating status overlay.
+"""What Red shows on screen while it works.
 
-A small frameless window in the bottom-right corner of the primary screen
-that shows what Red is doing. It stays on top, is see-through, never takes
-keyboard focus, and ignores the mouse. It hides itself a few seconds after
-Red returns to "idle".
+Two looks, picked with RED_OVERLAY:
+
+- "glow" (the default): an animated glow in Red's colours along all four
+  edges of the screen, like a phone assistant. It appears when Red starts
+  listening, changes colour and speed while Red thinks, asks or speaks, and
+  fades away when Red is done. It never covers the middle of the screen.
+- "card": a small frameless card in the bottom-right corner with the state
+  and the text.
+
+Both stay on top, never take keyboard focus, and let mouse clicks through.
 
 Qt must own the main thread, so `run_with_overlay()` starts Qt on the
 calling (main) thread and runs your worker in a background thread. The
@@ -22,6 +28,7 @@ import argparse
 import base64
 import functools
 import logging
+import math
 import os
 import signal
 import subprocess
@@ -224,6 +231,290 @@ class QtOverlay(Overlay):
 
 
 # --------------------------------------------------------------------------
+# Glow around the screen edges
+# --------------------------------------------------------------------------
+
+# Colours that sweep around the edges, per state. Red's own warm colours
+# while it listens and speaks, cooler ones while it thinks or asks.
+GLOW_PALETTES = {
+    "listening": ("#ff3b30", "#ff9500", "#ff2d55", "#bf5af2"),
+    "thinking": ("#bf5af2", "#5e5ce6", "#ff2d55", "#64d2ff"),
+    "confirm": ("#0a84ff", "#64d2ff", "#5e5ce6", "#0a84ff"),
+    "speaking": ("#ff375f", "#ff9f0a", "#ff453a", "#bf5af2"),
+    "error": ("#ff9f0a", "#ff453a", "#ff9f0a", "#ffd60a"),
+}
+GLOW_SPEED = {          # turns of the colour sweep per second
+    "listening": 0.25,
+    "thinking": 0.9,
+    "confirm": 0.2,
+    "speaking": 0.35,
+    "error": 0.15,
+}
+GLOW_PULSE = {          # breaths per second
+    "listening": 0.9,
+    "thinking": 1.6,
+    "confirm": 0.7,
+    "speaking": 1.2,
+    "error": 2.0,
+}
+GLOW_DEPTH = 56         # pixels: how far the glow reaches in from each edge
+GLOW_FPS = 30
+GLOW_FADE_IN = 0.25     # seconds
+GLOW_FADE_OUT = 0.6     # seconds
+# Without numpy (no smooth mask): stacked strokes instead, as (stroke width
+# as a share of 2 x depth, opacity), wide and faint to thin and bright.
+GLOW_LAYERS = tuple((1.0 - i / 12, 0.06 + 0.5 * (i / 12) ** 2) for i in range(12))
+GLOW_SOFTNESS = 0.42    # the glow fades to about a third every 0.42 x depth pixels
+
+
+def edge_falloff(distance, depth: float):
+    """Glow strength (0..1) at `distance` pixels in from the nearest screen edge.
+
+    Bright at the edge, dying away smoothly and reaching exactly 0 at
+    `depth`. Works on numbers and on numpy arrays.
+    """
+    import numpy as np
+
+    d = np.clip(np.asarray(distance, dtype=np.float32) / float(depth), 0.0, 1.0)
+    return np.exp(-d / GLOW_SOFTNESS) * (1.0 - d)
+
+
+def glow_mask(x0: int, y0: int, w: int, h: int, screen_w: int, screen_h: int, depth: int):
+    """Glow strength for every pixel of one strip, as uint8 rows (h, w).
+
+    (x0, y0) is the strip's corner relative to the screen's corner. Each
+    pixel uses its distance to the nearest of the four edges, so the
+    corners blend smoothly where two strips meet.
+    """
+    import numpy as np
+
+    xs = np.arange(w, dtype=np.float32) + x0
+    ys = np.arange(h, dtype=np.float32) + y0
+    dx = np.minimum(xs, screen_w - 1 - xs)[None, :]
+    dy = np.minimum(ys, screen_h - 1 - ys)[:, None]
+    strength = edge_falloff(np.minimum(dx, dy), depth)
+    return np.round(strength * 255).astype(np.uint8)
+
+
+def glow_alpha(level: float, state: str, seconds: float) -> float:
+    """How strong the glow is right now: the fade level times a gentle breath."""
+    pulse = GLOW_PULSE.get(state, 1.0)
+    breath = 0.8 + 0.2 * math.sin(seconds * 2 * math.pi * pulse)
+    return max(0.0, min(1.0, level)) * breath
+
+
+def step_toward(value: float, target: float, dt: float,
+                fade_in: float = GLOW_FADE_IN, fade_out: float = GLOW_FADE_OUT) -> float:
+    """Move a 0..1 fade level toward `target` over the fade time."""
+    if target > value:
+        return min(target, value + dt / fade_in)
+    return max(target, value - dt / fade_out)
+
+
+def edge_strips(x: int, y: int, width: int, height: int, depth: int) -> dict[str, tuple[int, int, int, int]]:
+    """The four thin windows (x, y, w, h) that together frame the screen.
+
+    Four strips instead of one full-screen window: a see-through window is
+    redrawn whole on every frame, and the strips are about a tenth of the
+    pixels.
+    """
+    depth = max(1, min(depth, width // 2, height // 2))
+    return {
+        "top": (x, y, width, depth),
+        "bottom": (x, y + height - depth, width, depth),
+        "left": (x, y + depth, depth, height - 2 * depth),
+        "right": (x + width - depth, y + depth, depth, height - 2 * depth),
+    }
+
+
+@functools.cache
+def _glow_class():
+    """Build the Qt glow classes. Imported lazily so Red runs without PySide6."""
+    from PySide6.QtCore import QElapsedTimer, QObject, QPointF, QRectF, Qt, QTimer, Signal, Slot
+    from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QGuiApplication, QImage,
+                               QPainter, QPen)
+    from PySide6.QtWidgets import QWidget
+
+    def mask_image(x0: int, y0: int, w: int, h: int, screen_w: int, screen_h: int, depth: int):
+        """The strip's fade as a white image whose alpha is the glow strength, or None."""
+        if w <= 0 or h <= 0:
+            return None
+        try:
+            import numpy as np
+        except ImportError:
+            return None
+        a = glow_mask(x0, y0, w, h, screen_w, screen_h, depth).astype(np.uint32)
+        pixels = np.ascontiguousarray((a << 24) | (a << 16) | (a << 8) | a)  # premultiplied white
+        image = QImage(pixels.data, w, h, w * 4, QImage.Format.Format_ARGB32_Premultiplied)
+        return image.copy()     # own the pixels; the numpy array goes away
+
+    class Strip(QWidget):
+        def __init__(self, glow, side: str):
+            flags = (Qt.WindowType.FramelessWindowHint
+                     | Qt.WindowType.WindowStaysOnTopHint
+                     | Qt.WindowType.Tool                     # no taskbar button
+                     | Qt.WindowType.WindowDoesNotAcceptFocus
+                     | Qt.WindowType.WindowTransparentForInput)
+            super().__init__(None, flags)
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+            self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+            self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            self.setWindowTitle("Red")
+            self.glow, self.side = glow, side
+
+        def paintEvent(self, event):  # noqa: N802 (Qt name)
+            self.glow.paint(self)
+
+    class GlowWindow(QObject):
+        # Same signals as the card window, so run_with_overlay treats both alike.
+        requested = Signal(str, str)
+        finished = Signal()
+
+        def __init__(self, depth: int = GLOW_DEPTH, fps: int = GLOW_FPS):
+            super().__init__()
+            self.depth = depth
+            self.state = "idle"
+            self.text = ""
+            self.level = 0.0          # fade, 0 (hidden) .. 1 (full)
+            self.target = 0.0
+            self.phase = 0.0          # degrees the colour sweep has turned
+            self.palette = GLOW_PALETTES["listening"]
+            self.speed = GLOW_SPEED["listening"]
+            self.screen = QRectF()
+            self.masks: dict = {}
+            self.clock = QElapsedTimer()
+            self.clock.start()
+            self.last = 0
+            self.strips = {side: Strip(self, side) for side in ("top", "bottom", "left", "right")}
+            self.timer = QTimer(self)
+            self.timer.setInterval(max(1, int(1000 / fps)))
+            self.timer.timeout.connect(self.tick)
+            self.requested.connect(self.apply, Qt.ConnectionType.QueuedConnection)
+
+        def isVisible(self) -> bool:  # noqa: N802 - matches QWidget, used by tests
+            return any(s.isVisible() for s in self.strips.values())
+
+        def place(self) -> None:
+            screen = QGuiApplication.primaryScreen()
+            if screen is None:
+                return
+            g = screen.geometry()        # the whole screen, taskbar included
+            if QRectF(g) == self.screen and self.masks:
+                return
+            self.screen = QRectF(g)
+            for side, (x, y, w, h) in edge_strips(g.x(), g.y(), g.width(), g.height(),
+                                                  self.depth).items():
+                self.strips[side].setGeometry(x, y, w, h)
+                self.masks[side] = mask_image(x - g.x(), y - g.y(), w, h,
+                                              g.width(), g.height(), self.depth)
+
+        @Slot(str, str)
+        def apply(self, state: str, text: str) -> None:
+            self.state, self.text = state, text
+            if state == "idle":
+                self.target = 0.0
+            else:
+                self.palette = GLOW_PALETTES[state]
+                self.speed = GLOW_SPEED[state]
+                self.target = 1.0
+                if not self.isVisible():
+                    self.place()
+                    for strip in self.strips.values():
+                        strip.show()
+            if self.target > 0 or self.level > 0:
+                if not self.timer.isActive():
+                    self.last = self.clock.elapsed()
+                    self.timer.start()
+
+        def tick(self) -> None:
+            now = self.clock.elapsed()
+            dt = min(0.1, (now - self.last) / 1000)
+            self.last = now
+            self.phase = (self.phase + self.speed * 360 * dt) % 360
+            self.level = step_toward(self.level, self.target, dt)
+            if self.level <= 0.0 and self.target <= 0.0:
+                self.timer.stop()
+                for strip in self.strips.values():
+                    strip.hide()
+                return
+            for strip in self.strips.values():
+                strip.update()
+
+        def paint(self, strip) -> None:
+            alpha = glow_alpha(self.level, self.state if self.state != "idle" else "speaking",
+                               self.clock.elapsed() / 1000)
+            if alpha <= 0.0 or self.screen.isEmpty():
+                return
+            p = QPainter(strip)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            # Paint in screen coordinates, so the four strips join up seamlessly.
+            g = strip.geometry()
+            dx, dy = self.screen.x() - g.x(), self.screen.y() - g.y()
+            p.translate(dx, dy)
+            w, h = self.screen.width(), self.screen.height()
+            sweep = QConicalGradient(QPointF(w / 2, h / 2), self.phase)
+            colours = self.palette + (self.palette[0],)
+            for i, colour in enumerate(colours):
+                sweep.setColorAt(i / (len(colours) - 1), QColor(colour))
+            mask = self.masks.get(strip.side)
+            if mask is not None:
+                # The colours fill the strip; the mask then fades them out
+                # smoothly from the screen edge inwards.
+                p.setOpacity(alpha)
+                p.fillRect(QRectF(-dx, -dy, g.width(), g.height()), QBrush(sweep))
+                p.resetTransform()
+                p.setOpacity(1.0)
+                p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+                p.drawImage(QRectF(0, 0, g.width(), g.height()), mask)
+            else:
+                edge = QRectF(0, 0, w, h)
+                for share, opacity in GLOW_LAYERS:
+                    pen = QPen(QBrush(sweep), max(1.0, 2 * self.depth * share))
+                    pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
+                    p.setPen(pen)
+                    p.setBrush(Qt.BrushStyle.NoBrush)
+                    p.setOpacity(opacity * alpha)
+                    p.drawRect(edge)
+            p.end()
+
+        def close(self) -> None:
+            self.timer.stop()
+            for strip in self.strips.values():
+                strip.close()
+
+    return GlowWindow
+
+
+class GlowOverlay(Overlay):
+    """The glow around the screen edges. Create it on the Qt thread after QApplication."""
+
+    def __init__(self, depth: int = GLOW_DEPTH):
+        self.window = _glow_class()(depth)
+        self._closed = False
+
+    def set_state(self, state: str, text: str = "") -> None:
+        _check_state(state)
+        if self._closed:
+            return
+        try:
+            self.window.requested.emit(state, _clean(text))
+        except RuntimeError:     # already deleted at shutdown
+            self._closed = True
+
+    def close(self) -> None:
+        if not self._closed:
+            self._closed = True
+            self.window.close()
+
+
+class NullOverlay(Overlay):
+    """Shows nothing (RED_OVERLAY=off). Red still prints and speaks."""
+
+    def set_state(self, state: str, text: str = "") -> None:
+        _check_state(state)
+
+
+# --------------------------------------------------------------------------
 # Fallback: Windows notifications
 # --------------------------------------------------------------------------
 
@@ -313,7 +604,7 @@ def _run_worker(worker: Worker, overlay: Overlay) -> int:
         return 1
 
 
-def _start_qt(hide_after: float):
+def _start_qt(hide_after: float, style: str = "card"):
     """Return (app, overlay), or raise if Qt can't be used."""
     from PySide6.QtGui import QGuiApplication
     from PySide6.QtWidgets import QApplication
@@ -322,18 +613,25 @@ def _start_qt(hide_after: float):
     if QGuiApplication.primaryScreen() is None:
         raise RuntimeError("no screen")
     app.setQuitOnLastWindowClosed(False)
-    return app, QtOverlay(hide_after)
+    return app, (GlowOverlay() if style == "glow" else QtOverlay(hide_after))
 
 
 def run_with_overlay(worker: Worker, *, hide_after: float = HIDE_AFTER_IDLE_SECONDS,
-                     fallback: Callable[[], Overlay] = NotificationOverlay) -> int:
+                     fallback: Callable[[], Overlay] = NotificationOverlay,
+                     style: str = "card") -> int:
     """Run Qt on this (main) thread and `worker(overlay)` on a background thread.
 
+    `style` is "glow" (screen edges), "card" (corner card), "notify" (Windows
+    notifications only) or "off" (nothing on screen).
     Returns 0 when the worker finishes, 1 if it raised, and 130 on Ctrl+C.
     If Qt isn't available, runs the worker here with `fallback()` instead.
     """
+    if style == "off":
+        return _run_worker(worker, NullOverlay())
+    if style == "notify":
+        return _run_worker(worker, fallback())
     try:
-        app, overlay = _start_qt(hide_after)
+        app, overlay = _start_qt(hide_after, style)
     except Exception as e:  # noqa: BLE001 - ImportError, missing DLLs, no screen
         log.warning("Overlay unavailable (%s); using Windows notifications instead", e)
         return _run_worker(worker, fallback())
@@ -393,6 +691,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seconds", type=float, default=1.5, help="time per state")
     parser.add_argument("--fallback", action="store_true",
                         help="show the Windows notification fallback instead")
+    parser.add_argument("--style", choices=("glow", "card"), default="glow",
+                        help="the screen-edge glow (default) or the corner card")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -405,7 +705,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.fallback:
         return _run_worker(demo, NotificationOverlay())
-    return run_with_overlay(demo)
+    return run_with_overlay(demo, style=args.style)
 
 
 if __name__ == "__main__":
