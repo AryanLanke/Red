@@ -104,7 +104,13 @@ Details in progress.md 7.1. `python -m red run "Open YouTube."` now fronts "YouT
 - Real-model routing cases: "open YouTube", "open YouTube from Chrome", "search lofi in Edge".
 - Manual check with the hidden Red: "open YouTube" shows YouTube in Chrome, in front.
 
-### 2. After an answer, ask if they want more; hear the names right; don't make things up
+### 2. ✅ After an answer, ask if they want more; hear the names right; don't make things up
+**Done (2026-11-09):** a. answers end with "Anything more you want to know about it?" (or a variation) and
+Red keeps listening. b. Whisper `hotwords`: `base.en` got 97% of the names right on Piper test audio,
+against 87% without, in the same time. c. `7a2d87d` did cover the rewrite (the tool used the user's
+words); the invented facts came from the misheard names and a prompt that never said "don't guess".
+Now it says "I don't know Hey CD.", new products and comparisons go to `look_up`, which reads every
+article compared. Details and numbers in progress.md 7.2.
 **What happened (log, 23:41):** the user asked "compare Hey Copilot with Hey Siri and OK Google, which
 one is better at what". The user was fine with the answer itself, but three things went wrong:
 
