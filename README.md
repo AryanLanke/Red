@@ -193,6 +193,8 @@ Red plays `mp3`, `ogg`, `opus`, `flac` and `wav` files from your Music folder, o
 
 **Teach Red your voice.** Run `python -m red voice-setup` and say "Hey Red" six times after the beeps, like setting up "Hey Siri". Red learns how it hears your voice and accent, so it notices you reliably. Run it again any time, for example with a new microphone. Only the words it heard are saved, never the recordings. It doesn't yet tell your voice apart from other people's.
 
+**Talk to Red like a friend.** Anything that isn't a command ("what's on your mind?", "I had a rough day") gets a real answer, not a stock line, and Red remembers the conversation for a while. Ask "what's on my screen?" and Red tells you what you're looking at. Ask "can you turn off my laptop in 3 hours?" and Red says it can and asks before doing it; say it as an order ("turn off my laptop in 3 hours") and it just does it, still confirming anything risky.
+
 **Keeping Red running.** The microphone is only on while Red runs. `python -m red background` starts Red with no window, so closing PowerShell doesn't stop it, and `python -m red stop` stops it and turns the microphone off. `python -m red startup on` starts it when you sign in. If you'd rather have the microphone open only after you press Ctrl+Alt+R, set `RED_WAKEWORD=off`.
 
 ## Where Red keeps its files
@@ -221,6 +223,8 @@ Disk space, roughly: Python packages 2 to 3 GB, Ollama 2.1 GB, the 7B model 4.7 
 ## Privacy and safety
 
 - **Everything stays on your PC.** Red never sends your voice or commands to a cloud service. Your commands and transcribed speech are logged only under `RED_HOME\logs`.
+- **Reading your screen happens only when you ask** ("what's on my screen?"). Red takes one screenshot, reads its text with the OCR built into Windows, and deletes the screenshot at once. Only the local model sees the text, and the log keeps just the window title.
+- **Conversations are remembered briefly.** Red keeps the last few things you both said so it can follow a conversation, in memory only, and forgets them after 10 quiet minutes.
 - **Red only opens what you allow:** Windows' standard folders, plus the folders and apps in `allowlist.toml`. It never runs a command or path the model makes up.
 - **Risky actions ask first.** Shutdown and restart repeat the action back to you ("Shut down in 2 hours, at 11:40 PM?") and only go ahead on "yes". No answer within 30 seconds cancels.
 - **Shutdowns are limited and cancellable.** Delays are capped at 24 hours, Red always says when a shutdown is scheduled, and "cancel the shutdown" works at any time. When the time comes, Windows closes open apps without asking, so save your work first.
