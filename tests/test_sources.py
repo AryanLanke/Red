@@ -3,6 +3,7 @@
 import io
 import json
 import threading
+import time
 import urllib.error
 
 import pytest
@@ -272,7 +273,7 @@ def test_look_up_says_let_me_check_while_the_web_is_asked(searx_on):
     stream = FakeStream()
     with speaking_to(stream):
         LookUp(FakeLLM("Hugging Face is an AI company."), opener).run(topic="hugging face")
-    assert stream.spoken == ["Let me check."]
+    assert stream.spoken == ["I'm searching."]
 
 
 def test_look_up_without_the_web_says_nothing_extra(monkeypatch):
@@ -396,11 +397,43 @@ def test_look_up_with_nothing_anywhere_still_says_so(searx_on):
         LookUp(FakeLLM("unused"), opener).run(topic="zzqx")
 
 
-def test_look_up_offline_still_raises_offline(searx_on):
+OFFLINE = urllib.error.URLError(OSError("no network"))
+
+
+def test_offline_answers_from_the_models_own_knowledge_at_once(searx_on):
+    from red.speech import speaking_to
+    from red.tools.assistant import ANSWER_SYSTEM
+    opener = FakeOpener({"https://": OFFLINE, f"{LOCAL}/search": HF_SEARX})
+    llm = FakeLLM("Siri is Apple's voice assistant.")
+    stream = FakeStream()
+    start = time.perf_counter()
+    with speaking_to(stream):
+        reply = LookUp(llm, opener).run(topic="Siri")
+    assert reply == "I'm offline, so from what I know: Siri is Apple's voice assistant."
+    assert llm.calls[0][0] == ANSWER_SYSTEM
+    assert stream.spoken == []                       # no "I'm searching." when offline
+    assert time.perf_counter() - start < 1.0         # no waiting for the web
+
+
+def test_offline_without_a_model_still_says_it_is_offline():
     from red.tools.online import Offline
-    opener = FakeOpener({"https://": urllib.error.URLError(OSError("no network"))})
     with pytest.raises(Offline):
-        LookUp(FakeLLM("unused"), opener).run(topic="x")
+        LookUp(None, FakeOpener({"https://": OFFLINE})).run(topic="x")
+
+
+def test_slow_wikipedia_still_answers_from_the_web(searx_on):
+    slow = urllib.error.URLError(TimeoutError("timed out"))
+    opener = FakeOpener({"https://en.wikipedia.org/": slow, f"{LOCAL}/search": HF_SEARX})
+    reply = LookUp(FakeLLM("Hugging Face is an AI company."), opener).run(topic="hugging face")
+    assert reply == "From the web: Hugging Face is an AI company."
+
+
+def test_slow_wikipedia_and_no_web_answers_from_memory(monkeypatch):
+    monkeypatch.delenv("RED_SEARCH_URL", raising=False)
+    slow = urllib.error.URLError(TimeoutError("timed out"))
+    reply = LookUp(FakeLLM("Siri is Apple's assistant."),
+                   FakeOpener({"https://": slow})).run(topic="Siri")
+    assert reply == "I couldn't reach Wikipedia, so from what I know: Siri is Apple's assistant."
 
 
 def test_detail_uses_the_longer_cross_check_instruction():

@@ -26,8 +26,8 @@ from urllib.parse import quote, urlencode
 
 from .. import speech as _speech
 from ..llm import LLMError
-from .assistant import (DETAIL_SENTENCES, MAX_DETAIL_ANSWER, _UsesLLM, ask_model, spoken,
-                        wants_detail, with_history)
+from .assistant import (ANSWER_SYSTEM, DETAIL_SENTENCES, DETAIL_SYSTEM, MAX_DETAIL_ANSWER,
+                        _UsesLLM, ask_model, spoken, wants_detail, with_history)
 from .base import Tool, ToolError
 
 TIMEOUT_SECONDS = 6.0
@@ -359,6 +359,12 @@ class LookUp(_UsesLLM):
         except (ToolError, AttributeError, IndexError, TypeError):
             return ""
 
+    def _from_memory(self, ask: str, history: str, detail: bool, prefix: str) -> str:
+        """The answer from the local model's own knowledge, when the internet isn't there."""
+        answer = ask_model(self._llm, DETAIL_SYSTEM if detail else ANSWER_SYSTEM,
+                           with_history(history, ask), detail=detail, prefix=prefix)
+        return f"{prefix} {answer}"
+
     def run(self, topic: str, question: str = "", others: list | None = None) -> str:
         from .sources import Gather, default_sources   # here: sources.py imports this module
 
@@ -375,22 +381,34 @@ class LookUp(_UsesLLM):
         # alone finds how-to pages. Without a model there is nothing to cross-check
         # with, so the web is not asked.
         query = said or question.strip() or topic
+        ask = said or question.strip() or f"What is {topic}?"
         gather = (Gather(topic, self._open, sources=default_sources(query))
                   if self._llm is not None else None)
-        stream = _speech.current()
-        if gather is not None and gather.asking and stream is not None:
-            stream.say("Let me check.")      # the web takes a few seconds; don't sit silent
+        title, page, extract = None, {}, ""
+        wiki_error: ToolError | None = None
         try:
             title = self._find(topic)
-            page: dict = {}
-            extract = ""
             if title:
                 page = self._summary(title)
                 extract = " ".join(str(page.get("extract", "")).split())[:MAX_EXTRACT]
+        except Offline:
+            # No internet: don't wait for the web. Answer from the model's own
+            # knowledge at once, and say so.
+            if gather is not None:
+                gather.cancel()
+            if self._llm is None:
+                raise
+            return self._from_memory(ask, history, detail, "I'm offline, so from what I know:")
+        except ToolError as e:
+            wiki_error = e                   # slow or failing: the web may still answer
         except BaseException:
             if gather is not None:
                 gather.cancel()
             raise
+        # Wikipedia answered, so the PC is online: now the web search is worth the wait.
+        stream = _speech.current()
+        if gather is not None and gather.asking and stream is not None and wiki_error is None:
+            stream.say("I'm searching.")
         disambiguation = page.get("type") == "disambiguation"
         if disambiguation:
             extract = ""                 # a list of meanings, not an answer
@@ -398,6 +416,11 @@ class LookUp(_UsesLLM):
         if not extract and not evidence:
             if disambiguation:
                 return f"{title} can mean several things. Try saying which one you mean."
+            if wiki_error is not None:
+                if self._llm is None:
+                    raise wiki_error
+                return self._from_memory(ask, history, detail,
+                                         "I couldn't reach Wikipedia, so from what I know:")
             raise ToolError(f"Wikipedia has nothing on {topic}.")
         if extract:
             url = (page.get("content_urls", {}).get("desktop", {}).get("page")
