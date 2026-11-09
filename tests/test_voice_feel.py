@@ -118,6 +118,7 @@ def test_load_voice_uses_the_end_silence_settings(clean_env, tmp_path):
     clean_env.setenv("RED_MAX_COMMAND_SECONDS", "25")
     voice = cli.load_voice(load_settings(tmp_path))
     assert voice.record.keywords == {"max_seconds": 25.0, "silence_seconds": 2.0,
+                                     "quick_silence": 0.8,
                                      "start_timeout": cli.START_TIMEOUT_SECONDS}
 
 

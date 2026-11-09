@@ -12,7 +12,7 @@ import queue
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
 
 import numpy as np
 
@@ -241,6 +241,11 @@ class Endpointer:
             self._quiet_run += n
         return self._quiet_run >= self.silence_samples
 
+    @property
+    def quiet_seconds(self) -> float:
+        """How long it has been quiet since the last speech (0 before speech starts)."""
+        return self._quiet_run / self.sr if self.start is not None else 0.0
+
     def audio(self) -> np.ndarray:
         """The speech, with a little audio before it. Empty if no speech was heard."""
         if self.start is None or not self._blocks:
@@ -253,13 +258,20 @@ class Endpointer:
 def record_command(max_seconds: float = 8.0, silence_seconds: float = 0.8, *,
                    start_timeout: float | None = None,
                    mic: AudioSource | None = None,
-                   stop_event: threading.Event | None = None) -> np.ndarray:
+                   stop_event: threading.Event | None = None,
+                   quick_silence: float = 0.0,
+                   is_complete: Callable[[np.ndarray], bool] | None = None) -> np.ndarray:
     """Record one spoken command from the microphone.
 
     Recording stops `silence_seconds` after you stop talking, or after
     `max_seconds` in total. If no speech starts within `start_timeout`
     (default: `max_seconds`), it returns an empty array, so silence is never
     sent to Whisper (which tends to invent words for silence).
+
+    With `is_complete`, a shorter pause (`quick_silence`) is enough when what
+    was said so far is a finished sentence: "open Edge" ends after 0.8 s,
+    "open Edge and..." still waits the full `silence_seconds`. The check runs
+    once per pause; the microphone keeps buffering meanwhile.
 
     Returns 16 kHz mono float32.
     """
@@ -269,6 +281,8 @@ def record_command(max_seconds: float = 8.0, silence_seconds: float = 0.8, *,
     ep = Endpointer(silence_seconds=silence_seconds)
     max_samples = int(max_seconds * SAMPLE_RATE)
     start_samples = int(start_timeout * SAMPLE_RATE)
+    quick = is_complete is not None and 0 < quick_silence < silence_seconds
+    checked = False         # this pause was already checked
     with mic:
         while ep.total < max_samples:
             if stop_event is not None and stop_event.is_set():
@@ -277,6 +291,14 @@ def record_command(max_seconds: float = 8.0, silence_seconds: float = 0.8, *,
                 break
             if not ep.started and ep.total >= start_samples:
                 break
+            if quick:
+                quiet = ep.quiet_seconds
+                if quiet == 0.0:
+                    checked = False                # talking again: a new pause can be checked
+                elif quiet >= quick_silence and not checked:
+                    checked = True
+                    if is_complete(ep.audio()):
+                        break
     return ep.audio()
 
 

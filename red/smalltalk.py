@@ -163,6 +163,27 @@ def is_casual_yes(text: str | None) -> bool:
     return bool(text) and _CASUAL_YES.fullmatch(normalize(text)) is not None
 
 
+# Words a sentence doesn't end on: "open Edge and...", "um", "play the".
+_UNFINISHED_END = re.compile(
+    r"\b(?:and|or|but|so|then|also|plus|because|cause|if|when|while|that|which|who|to|for|of|"
+    r"with|without|about|from|in|on|at|into|by|the|a|an|my|your|this|some|like|um+|uh+|uhm|"
+    r"er+|erm|hmm+|mm+|ah+|oh|well|okay so|ok so|can you|could you|please|maybe|just|is|are)$"
+)
+
+
+def sounds_finished(text: str) -> bool:
+    """Whether a transcript sounds like a whole sentence, so Red can stop listening sooner.
+
+    "Open Edge." is finished. "Open Edge and", "um", "play the..." and a
+    trailing comma are not: you're probably still talking.
+    """
+    raw = text.strip()
+    if not raw or raw.endswith((",", "...", "…", "-", ":")):
+        return False
+    said = normalize(raw)
+    return bool(said) and _UNFINISHED_END.search(said) is None
+
+
 # Phrases that sound negative but mean "go on": "you don't need my permission",
 # "no problem", "why not". They are removed before looking for no-words.
 _NOT_A_NO = re.compile(
