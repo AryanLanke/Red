@@ -83,6 +83,7 @@ The voice and UI modules are imported lazily, through `load_voice()` and inside 
 - **Reminders:** `attach_reminders()` in `__main__.py` sets `red.scheduler.default_scheduler().on_due` behind a try-import. In voice mode, `VoiceApp.announce()` waits for the current command (`_turn` lock), pauses the wake word and speaks; typed mode prints.
 - **Doctor** (`red/doctor.py`): each check takes a `System` of injected functions (package lookup, HTTP, subprocess, sounddevice), so `tests/test_doctor.py` needs no hardware.
 - **Bringing windows to the front** (`red/windows.py`): `open_app`, `open_folder`, `open_url`, `web_search` and `play_online` call `watch(target)` before launching (a snapshot of the top-level windows), then hand the watcher to `Tool.finish_later()`. While Red speaks, it waits up to 5 s for the new window (by pid, exe or title; browsers may reuse an existing window) and fronts it with `AttachThreadInput`, then the Alt-key trick. `tests/conftest.py` swaps `watch` for a no-op in every test.
+- **Gmail and Calendar** (`red/google_auth.py`, `red/tools/gmail.py`, `red/tools/calendar.py`): registered by `default_registry()` only when `RED_HOME\config\google-token.json` exists. Plain urllib to fixed `googleapis.com` addresses (`GoogleApi` refuses others), PKCE loopback sign-in, the access token refreshed from the stored refresh token. `send_mail`, `reply_mail` and `calendar_cancel` are destructive (read back once, the user's choice); they check their arguments in `prepare()`, which the Executor calls before asking, so an unknown recipient fails without a question. Tests use a fake API (`tests/test_google.py`).
 - **Overlay** (`red/overlay.py`): PySide6, frameless, click-through and never focused. `set_state()` is safe to call from any thread. If Qt can't start, Red falls back to Windows toast notifications.
 
 ## Rules that come from the design
@@ -95,5 +96,5 @@ The voice and UI modules are imported lazily, through `load_voice()` and inside 
   - `monkeypatch` to clear `RED_*` variables, with `load_settings(tmp_path)`
   - `monkeypatch` on `llm.start_ollama` / `llm.start_llama_server`
 - The wake phrase is "Hey Red" (`RED_WAKEWORD=hey_red`). Never use "Jarvis" as a wake word, default, prompt or user-facing text.
-- Red never calls a cloud model. Trading and financial automation are out of scope.
+- Red never calls a cloud model. Voice, screen and the AI stay on the PC. The only account Red talks to is the user's own Google account, and only after `python -m red google-login` (`red/google_auth.py`): mail and calendar text for the Gmail and Calendar tools, nothing else. Trading and financial automation are out of scope.
 - Windows Smart App Control blocks unsigned binaries. Exit code `0xC0E90002` from llama-server means it was blocked; Ollama is the default for this reason.

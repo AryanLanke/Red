@@ -13,6 +13,7 @@ A local voice and action assistant for your Windows laptop. Say "Hey Red" or pre
 - **Finds files** by name and opens the one you pick
 - **Searches the web** in your browser: the web, YouTube, images, maps, news or Wikipedia
 - **Writes email drafts** in your mail app, ready for you to check and send
+- **Mail and calendar, if you sign in to Google (optional):** new mail, reading and replying, sending, and your Google Calendar
 - **Controls your PC:** volume, media keys, screenshots, lock, sleep, shutdown and restart (with a delay), and emptying the Recycle Bin
 - **Plays anything on YouTube:** songs, artists, podcasts, videos and trailers, in your browser
 - **Checks your Git repos** against GitHub and tells you what's unpushed or behind
@@ -119,6 +120,18 @@ You don't need exact words; these are examples.
 
 Pause, resume, next, previous and stop are your keyboard's media keys, so they work for YouTube in the browser, Spotify and other players. Screenshots go to Pictures\Screenshots. Email drafts are never sent by Red: you check them and press Send.
 
+After you sign in to Google (see "Mail and calendar" below) you can also say:
+
+| To | Say |
+|---|---|
+| Check your mail | "any new mail?" |
+| Read a mail | "read my mail from Rahul", "what did Amazon send me" |
+| Reply to it | "reply saying I'll come tomorrow" |
+| Send a mail | "mail Mom that I'll be late" |
+| Your calendar | "what's on my calendar tomorrow?", "add a meeting Friday at 3", "move my 5 pm to 6", "cancel my 4 pm" |
+
+Before sending a mail or deleting an event, Red reads it back once ("Sending to Mom: I'll be late. Send?") and only goes ahead on a clear yes. Everything else just happens.
+
 ---
 
 ## Settings
@@ -187,6 +200,17 @@ mom = "mom@example.com"
 "alex kim" = "alex.kim@example.com"
 ```
 
+### Mail and calendar (optional)
+
+Red can use your Gmail, Google Calendar and Google Contacts. It's optional, and nothing changes if you don't sign in. Red ships no Google client of its own, so you make a free one once:
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create a project and enable the **Gmail API**, the **Google Calendar API** and the **People API**.
+2. Under **OAuth consent screen**, choose External, keep it in Testing, and add your own Google account as a test user.
+3. Under **Credentials**, create an **OAuth client ID** of type **Desktop app**, download its JSON, and save it as `RED_HOME\config\google-client.json`.
+4. Run `python -m red google-login`. Your browser opens Google's page; approve it. Then restart Red (`python -m red stop`, then `python -m red background`).
+
+Red asks for the smallest permissions that work: reading mail, sending mail, your calendar's events, and reading your contacts. The sign-in token is saved in `RED_HOME\config\google-token.json`, only on your PC. `python -m red google-logout` revokes it and deletes the file. Names you say ("mail Mom") come from your Google Contacts first, then `contacts.toml`; Red never guesses an address. Red talks to Google directly with Python's standard library: no extra packages to install.
+
 ### Playing music and videos
 
 Everything you ask Red to play, songs and artists as well as podcasts, videos and trailers, plays on YouTube: Red searches YouTube for your words, opens the first video in your browser (`RED_BROWSER`), brings it to the front, and says its title. "Play some music" starts a mix of popular songs. Red doesn't play music files from your PC. Only the search words leave your PC, and no account or API key is used. If YouTube can't be read, Red opens the search results instead.
@@ -226,7 +250,7 @@ Disk space, roughly: Python packages 2 to 3 GB, Ollama 2.1 GB, the model 2 to 7 
 
 ## Privacy and safety
 
-- **Everything stays on your PC.** Red never sends your voice or commands to a cloud service. Your commands and transcribed speech are logged only under `RED_HOME\logs`.
+- **Everything stays on your PC.** Red never sends your voice, your screen or your commands to a cloud service, and the AI runs on your PC. Your commands and transcribed speech are logged only under `RED_HOME\logs`. The one exception is opt-in: after `python -m red google-login`, the text of the mails and calendar events you ask about goes between Red and your own Google account. Summaries of your mail are written by the local model.
 - **Reading your screen happens only when you ask** ("what's on my screen?"). Red takes one screenshot, reads its text with the OCR built into Windows, and deletes the screenshot at once. Only the local model sees the text, and the log keeps just the window title.
 - **Conversations are remembered briefly.** Red keeps the last few things you both said so it can follow a conversation, in memory only, and forgets them after 10 quiet minutes.
 - **Red only opens what you allow:** Windows' standard folders, plus the folders and apps in `allowlist.toml`. It never runs a command or path the model makes up.
@@ -234,7 +258,7 @@ Disk space, roughly: Python packages 2 to 3 GB, Ollama 2.1 GB, the model 2 to 7 
 - **Shutdowns are limited and cancellable.** Delays are capped at 24 hours, Red always says when a shutdown is scheduled, and "cancel the shutdown" works at any time. When the time comes, Windows closes open apps without asking, so save your work first.
 - **The repo check only reads.** It never pulls, pushes, or changes your repos.
 - **Secrets** such as `GITHUB_TOKEN` stay in `RED_HOME\config\.env`, which is never part of the repo.
-- **Email is never sent by Red.** It only opens a draft in your mail app. Red has no access to your mail account.
+- **Email is sent only after a read-back.** Without the Google sign-in, Red only opens a draft in your mail app and has no access to your mail. With it, Red reads every mail or reply back to you and sends it only on a clear yes, and it does the same before deleting a calendar event.
 - **Finding files only reads.** Red never opens programs or scripts it finds; it opens their folder instead.
 - **Downloads are verified.** Ollama, the llama.cpp fallback, and the speech, voice and wake word models are pinned to exact versions and checked against SHA-256 hashes, and Ollama checks the model files itself.
 
