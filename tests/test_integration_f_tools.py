@@ -72,8 +72,13 @@ CASES = [
     # web_search
     ("search the web for best laptops 2026", "web_search", contains("query", "best laptops")),
     ("google how to boil an egg", "web_search", contains("query", "boil", "egg")),
-    ("search youtube for lofi music", "web_search", has(site="youtube")),
-    ("look up the weather in Pune", "web_search", contains("query", "weather", "pune")),
+    # The model sometimes builds the YouTube results URL itself; the same page opens.
+    ("search youtube for lofi music", ("web_search", "open_url"),
+     lambda a: a.get("site") == "youtube" or
+     (a.get("url", "").startswith("https://www.youtube.com/results") and "lofi" in a["url"])),
+    # Since Track G, the live weather tool answers this aloud, which is better.
+    ("look up the weather in Pune", ("web_search", "weather"),
+     lambda a: "pune" in norm(a.get("query", a.get("place", "")))),
     ("show me pictures of cats", ("web_search", "open_url"), image_search("cats")),
     ("open youtube", "open_url", ANY),
     # find_file and open_found_file
