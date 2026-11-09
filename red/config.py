@@ -26,6 +26,9 @@ DEFAULT_WHISPER_MODEL = "small"
 DEFAULT_WHISPER_DEVICE = "cpu"
 DEFAULT_PIPER_VOICE = "en_US-lessac-medium"
 SEARCH_ENGINE_CHOICES = ("google", "bing", "duckduckgo")
+# The browser pages open in (red.browser). "default" is the Windows default.
+BROWSER_CHOICES = ("chrome", "edge", "firefox", "default")
+DEFAULT_BROWSER = "chrome"
 # How Red shows what it's doing: a glow around the screen edges, the small
 # corner card, Windows notifications, or nothing.
 OVERLAY_CHOICES = ("glow", "card", "notify", "off")
@@ -75,6 +78,7 @@ class Settings:
     mic_device: str | None = None
     music_dir: Path | None = None
     search_engine: str = "google"
+    browser: str = DEFAULT_BROWSER
     overlay: str = DEFAULT_OVERLAY
     end_silence_seconds: float = DEFAULT_END_SILENCE
     quick_end_silence_seconds: float = DEFAULT_QUICK_END_SILENCE
@@ -173,6 +177,10 @@ def load_settings(home: Path | None = None) -> Settings:
     engine = (_env("RED_SEARCH_ENGINE") or "google").lower()
     if engine not in SEARCH_ENGINE_CHOICES:
         engine = "google"
+    # The same rule as red.browser.configured(): unknown means Chrome.
+    browser = (_env("RED_BROWSER") or DEFAULT_BROWSER).lower()
+    if browser not in BROWSER_CHOICES:
+        browser = DEFAULT_BROWSER
     overlay = (_env("RED_OVERLAY") or DEFAULT_OVERLAY).lower()
     if overlay not in OVERLAY_CHOICES:
         raise ValueError(f"RED_OVERLAY must be one of {OVERLAY_CHOICES}, got {overlay!r}")
@@ -202,6 +210,7 @@ def load_settings(home: Path | None = None) -> Settings:
         mic_device=_env("RED_MIC_DEVICE"),
         music_dir=Path(os.path.expandvars(music_dir)).expanduser() if music_dir else None,
         search_engine=engine,
+        browser=browser,
         overlay=overlay,
         end_silence_seconds=end_silence,
         quick_end_silence_seconds=quick_end,

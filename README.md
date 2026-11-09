@@ -98,7 +98,7 @@ You don't need exact words; these are examples.
 |---|---|
 | Open a folder | "open my Downloads folder", "open Documents", "open my projects folder" (a folder from `allowlist.toml`) |
 | Start an app | "open notepad", "open calculator", "open the file explorer app", "open task manager", "open PowerPoint", "open Word", "open Excel", "open Outlook", "open VS Code" |
-| Open a website | "open YouTube", "open github.com" |
+| Open a website | "open YouTube", "open github.com", "open YouTube in Edge" |
 | Search the web | "search the web for cheap flights to Goa", "search YouTube for lofi music", "show me pictures of the Eiffel Tower", "find Pune on the map", "latest news about the World Cup", "look up Marie Curie on Wikipedia" |
 | Find a file | "find my resume", "where is the budget spreadsheet" |
 | Open what Red found | "open it", "open the second one" |
@@ -141,6 +141,7 @@ Your settings are in `RED_HOME\config\.env` (copied from `.env.example`). Settin
 | `RED_PIPER_VOICE` | The voice Red speaks with | `en_US-lessac-medium` |
 | `RED_MUSIC_DIR` | The folder Red plays music from | your Music folder |
 | `RED_SEARCH_ENGINE` | `google`, `bing` or `duckduckgo` for web searches | `google` |
+| `RED_BROWSER` | The browser pages and searches open in: `chrome`, `edge`, `firefox`, or `default` for the Windows default. If it isn't installed, Red uses the Windows default | `chrome` |
 | `RED_LLM_MODEL` | `qwen2.5-7b-instruct-q4_k_m`, or `qwen2.5-3b-instruct-q4_k_m` for PCs with less video memory | 7B |
 | `RED_LLM_KEEP_ALIVE` | How long the model stays loaded after your last command (`5m`, `30m`, `0`) | `5m` |
 | `RED_LLM_BACKEND` | `auto`, `ollama`, or `llama.cpp` | `auto` |

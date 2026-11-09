@@ -24,3 +24,10 @@ class _NoWindows:
 def _no_window_fronting(monkeypatch):
     import red.windows
     monkeypatch.setattr(red.windows, "watch", _NoWindows)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_browser(monkeypatch):
+    """No test finds (and so starts) a real browser; the Windows-default opener is a fake."""
+    import red.browser
+    monkeypatch.setattr(red.browser, "find_exe", lambda exe: None)
