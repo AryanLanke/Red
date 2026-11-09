@@ -9,6 +9,8 @@
     python -m red background               run Red with no window (closing PowerShell won't stop it)
     python -m red stop                     stop the hidden Red; status says whether it runs
     python -m red startup on|off           start Red when you sign in, or stop doing that
+    python -m red google-login             optional: let Red use your Gmail, Calendar and Contacts
+    python -m red google-logout            sign Red out of Google again
     python -m red route "open Downloads"   show the tool call for one command (never runs it)
     python -m red run "open Downloads"     run one typed command
 
@@ -794,6 +796,23 @@ def _setup_voice(settings: Settings) -> int:
     return 0
 
 
+def _google_command(cmd: str, settings: Settings) -> int:
+    from .google_auth import GoogleError, login, logout
+    restart = "Restart Red to use it: python -m red stop, then python -m red background."
+    try:
+        if cmd == "google-login":
+            path = login(settings.home)
+            print(f"Signed in. The token is in {path} (only on this PC). {restart}")
+        elif logout(settings.home):
+            print(f"Signed out of Google, and the token is deleted. {restart}")
+        else:
+            print("Red wasn't signed in to Google.")
+    except GoogleError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _check_allowlist(settings: Settings) -> None:
     try:
         load_allowlist(settings.allowlist_path)
@@ -817,6 +836,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("setup", help="download the LLM backend, the model and the voice models")
     sub.add_parser("doctor", help="check that everything Red needs is in place")
     sub.add_parser("voice-setup", help="say \"Hey Red\" a few times so Red learns your voice")
+    sub.add_parser("google-login", help="optional: let Red use your Gmail, Calendar and Contacts")
+    sub.add_parser("google-logout", help="sign Red out of Google")
     for name, text in (("background", "run Red with no window"),
                        ("stop", "stop the hidden Red"), ("status", "is the hidden Red running?")):
         sub.add_parser(name, help=text)
@@ -847,6 +868,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "startup":
         from .startup import main as startup_main
         return startup_main(args.action, settings.home)
+    if args.cmd in ("google-login", "google-logout"):
+        return _google_command(args.cmd, settings)
     logging.basicConfig(filename=settings.logs_dir / "red.log", level=logging.INFO,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
     if args.cmd == "setup":
