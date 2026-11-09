@@ -86,13 +86,16 @@ def with_history(history: str, text: str) -> str:
     return f"Earlier in this conversation:\n{history.strip()}\n\n{text}"
 
 
-def ask_model(llm: LLM | None, system: str, user: str, *, detail: bool = False) -> str:
+def ask_model(llm: LLM | None, system: str, user: str, *, detail: bool = False,
+              images: list[str] | None = None) -> str:
     """One local-model call that returns {"answer": ...}; the text, cleaned for speech."""
     if llm is None:
         raise ToolError("I need the local model to answer that, and it isn't connected.")
     try:
         if detail:
-            raw = complete(llm, system, user, DETAIL_SCHEMA, max_tokens=DETAIL_MAX_TOKENS)
+            raw = complete(llm, system, user, DETAIL_SCHEMA, max_tokens=DETAIL_MAX_TOKENS, images=images)
+        elif images:
+            raw = complete(llm, system, user, ANSWER_SCHEMA, images=images)
         else:
             raw = llm.complete_json(system, user, ANSWER_SCHEMA)
         answer = json.loads(raw)["answer"]

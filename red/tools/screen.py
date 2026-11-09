@@ -7,6 +7,7 @@ happens when you ask, and nothing leaves the PC.
 
 from __future__ import annotations
 
+import base64
 from pathlib import Path
 from typing import Callable
 
@@ -18,6 +19,10 @@ from .base import ToolError
 SCREEN_SYSTEM = """You are Red, a friendly voice assistant on the user's Windows PC. The user asked about their screen. You get the active window's title, its program, and the text read from the screen by OCR (messy, top to bottom, menus and tabs mixed in).
 Say what's on the screen or what they're doing, in 1 or 2 short, natural spoken sentences, like a friend glancing over: name the app or website and the page, for example "You're on YouTube's home page, just browsing" or "You've got VS Code open on a Python file called overlay.py". If they asked something specific (an error, a word, a number), answer that from the text. Don't read out long text, don't guess beyond what's there, no lists, markdown or emoji.
 Reply with JSON only: {"answer": "<what you say>"}"""
+
+# Models that can see also get a small screenshot (red.screen.screenshot_jpeg).
+SEES_SCREEN = """
+You also get a screenshot of the screen. Use it with the text: it shows pictures, videos and layout the OCR can't. Describe only what you can actually see."""
 
 
 class DescribeScreen(_UsesLLM):
@@ -40,8 +45,13 @@ class DescribeScreen(_UsesLLM):
 
     def run(self, question: str = "") -> str:
         cache = self._cache_dir or red_home() / "cache"
-        info = self._read(cache)
-        if not info.title and not info.lines:
+        sees = bool(getattr(self._llm, "vision", False))
+        info = self._read(cache, with_image=True) if sees else self._read(cache)
+        if not info.title and not info.lines and not info.image:
             raise ToolError("I couldn't see anything on the screen right now.")
         asked = " ".join((question or "").split()) or "What's on my screen?"
-        return ask_model(self._llm, SCREEN_SYSTEM, f"The user asked: {asked}\n\n{info.as_prompt()}")
+        prompt = f"The user asked: {asked}\n\n{info.as_prompt()}"
+        if sees and info.image:
+            return ask_model(self._llm, SCREEN_SYSTEM + SEES_SCREEN, prompt,
+                             images=[base64.b64encode(info.image).decode("ascii")])
+        return ask_model(self._llm, SCREEN_SYSTEM, prompt)

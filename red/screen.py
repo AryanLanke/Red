@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import ctypes
+import io
 import logging
 import os
 import subprocess
@@ -61,6 +62,7 @@ class ScreenInfo:
     app: str = ""                   # its program, e.g. "chrome"
     lines: list[str] = field(default_factory=list)   # text read from the screen
     ocr_ok: bool = True
+    image: bytes | None = None      # a small JPEG of the screen, for models that can see
 
     def as_prompt(self) -> str:
         text = "\n".join(self.lines)
@@ -129,9 +131,35 @@ def screen_text(cache_dir: Path, *, grab: Callable[[], object] | None = None,
     return [line.strip() for line in text.splitlines() if line.strip()]
 
 
+MAX_IMAGE_WIDTH = 1024     # about 700 image tokens for Qwen3.5: quick, and text stays readable
+IMAGE_QUALITY = 70
+
+
+def screenshot_jpeg(grab: Callable[[], object] | None = None) -> bytes | None:
+    """The screen as a small JPEG, kept in memory only. None if it can't be taken."""
+    try:
+        if grab is None:
+            from PIL import ImageGrab
+            grab = ImageGrab.grab
+        image = grab().convert("RGB")
+        if image.width > MAX_IMAGE_WIDTH:
+            image = image.resize((MAX_IMAGE_WIDTH, round(image.height * MAX_IMAGE_WIDTH / image.width)))
+        buf = io.BytesIO()
+        image.save(buf, "JPEG", quality=IMAGE_QUALITY)
+        return buf.getvalue()
+    except Exception as e:  # noqa: BLE001 - no Pillow, a locked screen: the text still works
+        log.warning("Couldn't take a screenshot for the model: %s", e)
+        return None
+
+
 def read_screen(cache_dir: Path, *, window: Callable[[], tuple[str, str]] = foreground_window,
-                text: Callable[[Path], list[str]] = screen_text) -> ScreenInfo:
-    """What's on the screen right now. The window is always known; the text may not be."""
+                text: Callable[[Path], list[str]] = screen_text, with_image: bool = False,
+                picture: Callable[[], bytes | None] = screenshot_jpeg) -> ScreenInfo:
+    """What's on the screen right now. The window is always known; the text may not be.
+
+    with_image also takes a small screenshot (in memory, never saved) for a
+    model that can see it.
+    """
     try:
         title, app = window()
     except OSError:
@@ -142,5 +170,8 @@ def read_screen(cache_dir: Path, *, window: Callable[[], tuple[str, str]] = fore
     except Exception as e:  # noqa: BLE001 - no Pillow, OCR missing, timeout: the title still helps
         log.warning("Couldn't read the screen text: %s", e)
         info.ocr_ok = False
-    log.info("Read the screen: window %r (%s), %d lines of text", title[:80], app, len(info.lines))
+    if with_image:
+        info.image = picture()
+    log.info("Read the screen: window %r (%s), %d lines of text%s", title[:80], app, len(info.lines),
+             f", a {len(info.image) // 1024} KB picture" if info.image else "")
     return info

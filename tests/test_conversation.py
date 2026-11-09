@@ -293,3 +293,79 @@ def test_describe_screen_with_nothing_to_see(tmp_path):
     tool = DescribeScreen(llm=AnswerLLM(), read=lambda cache: sc.ScreenInfo(), cache_dir=tmp_path)
     with pytest.raises(ToolError):
         tool.run()
+
+
+# --- a model that can see gets the screenshot too (plan.md task 4) --------------------
+
+class SeeingLLM(AnswerLLM):
+    vision = True
+
+    def complete_json(self, system, user, schema, **kw):
+        self.images = kw.get("images")
+        return super().complete_json(system, user, schema)
+
+
+def test_a_model_that_sees_gets_a_screenshot(tmp_path):
+    llm = SeeingLLM()
+    asked = []
+
+    def read(cache, with_image=False):
+        asked.append(with_image)
+        return sc.ScreenInfo("YouTube - Google Chrome", "chrome", ["Home"], image=b"\xff\xd8jpeg")
+    DescribeScreen(llm=llm, read=read, cache_dir=tmp_path).run()
+    assert asked == [True]
+    assert llm.images == ["/9hqcGVn"]                      # base64 of the JPEG bytes
+    assert "screenshot" in llm.calls[0][0]
+
+
+def test_a_model_that_cant_see_gets_only_text(tmp_path):
+    llm = AnswerLLM()
+    asked = []
+
+    def read(cache, **kw):
+        asked.append(kw)
+        return sc.ScreenInfo("YouTube - Google Chrome", "chrome", ["Home"])
+    DescribeScreen(llm=llm, read=read, cache_dir=tmp_path).run()
+    assert asked == [{}] and "screenshot" not in llm.calls[0][0]
+
+
+class FakeImage:
+    def __init__(self, width=2560, height=1440):
+        self.width, self.height = width, height
+        self.resized = None
+
+    def convert(self, mode):
+        return self
+
+    def resize(self, size):
+        self.resized = size
+        return self
+
+    def save(self, buf, fmt, quality):
+        buf.write(b"JPEG" + bytes(str(self.resized), "ascii"))
+
+
+def test_screenshot_is_small_and_in_memory():
+    image = FakeImage()
+    data = sc.screenshot_jpeg(grab=lambda: image)
+    assert image.resized == (1024, 576) and data.startswith(b"JPEG")
+
+
+def test_a_failed_screenshot_is_only_skipped(tmp_path):
+    def broken():
+        raise OSError("locked")
+    assert sc.screenshot_jpeg(grab=broken) is None
+    info = sc.read_screen(tmp_path, window=lambda: ("t", "app"), text=lambda p: ["x"],
+                          with_image=True, picture=lambda: None)
+    assert info.image is None and info.lines == ["x"]
+
+
+def test_ollama_sends_images_only_to_a_model_that_sees(monkeypatch):
+    from red import llm as llm_mod
+    sent = []
+    monkeypatch.setattr(llm_mod, "_post_json",
+                        lambda url, body, **kw: sent.append(body) or {"message": {"content": "{}"}})
+    llm_mod.OllamaClient("http://x", "m", vision=True).complete_json("s", "u", {}, images=["abc"])
+    llm_mod.OllamaClient("http://x", "m").complete_json("s", "u", {}, images=["abc"])
+    assert sent[0]["messages"][-1]["images"] == ["abc"]
+    assert "images" not in sent[1]["messages"][-1]
