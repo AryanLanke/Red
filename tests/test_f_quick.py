@@ -71,43 +71,16 @@ def test_set_volume_needs_a_level():
         q.Volume(keyboard=FakeKeys()).run(action="set")
 
 
-class FakePlayer:
-    def __init__(self, current=None):
-        self.current, self.paused, self.calls = current, False, []
-
-    def pause(self):
-        self.calls.append("pause")
-        self.paused = True
-        return True
-
-    def resume(self):
-        self.calls.append("resume")
-        self.paused = False
-        return True
-
-    def next(self):
-        self.calls.append("next")
-        return Path("02 - Next One.mp3")
-
-
 @pytest.mark.parametrize("cls, vk, reply", [
     (q.PauseMedia, q.VK_MEDIA_PLAY_PAUSE, "Paused."),
     (q.ResumeMedia, q.VK_MEDIA_PLAY_PAUSE, "Resuming."),
     (q.NextMedia, q.VK_MEDIA_NEXT, "Next track."),
+    (q.StopMedia, q.VK_MEDIA_STOP, "Stopped."),
 ])
-def test_media_keys_when_red_is_not_playing(cls, vk, reply):
-    keys, player = FakeKeys(), FakePlayer()
-    assert cls(player, keyboard=keys).run() == reply
-    assert keys.log == [("press", vk, 1)] and player.calls == []
-
-
-def test_reds_own_music_comes_first():
+def test_media_keys_control_whatever_is_playing(cls, vk, reply):
     keys = FakeKeys()
-    player = FakePlayer(current=Path("01 - Song.mp3"))
-    assert q.PauseMedia(player, keyboard=keys).run() == "Paused."
-    assert q.ResumeMedia(player, keyboard=keys).run() == "Resuming Song."
-    assert q.NextMedia(player, keyboard=keys).run() == "Playing Next One."
-    assert player.calls == ["pause", "resume", "next"] and keys.log == []
+    assert cls(keyboard=keys).run() == reply
+    assert keys.log == [("press", vk, 1)]
 
 
 def test_previous_track():
@@ -117,8 +90,8 @@ def test_previous_track():
 
 
 def test_media_tools_keep_the_music_tool_names():
-    assert (q.PauseMedia.name, q.ResumeMedia.name, q.NextMedia.name) == \
-        ("pause_music", "resume_music", "next_song")
+    assert (q.PauseMedia.name, q.ResumeMedia.name, q.NextMedia.name, q.StopMedia.name) == \
+        ("pause_music", "resume_music", "next_song", "stop_music")
 
 
 def test_settings_pages_are_a_fixed_list():
@@ -222,6 +195,7 @@ def test_registry_has_every_quick_tool_and_routes_parse():
                  "tell_status", "take_screenshot", "empty_recycle_bin"):
         assert name in reg
     assert isinstance(reg.get("pause_music"), q.PauseMedia)
+    assert isinstance(reg.get("stop_music"), q.StopMedia)
     router = Router(reg)
     assert router.parse('{"tool": "sleep_pc", "args": {}}').destructive
     assert router.parse('{"tool": "empty_recycle_bin", "args": {}}').destructive

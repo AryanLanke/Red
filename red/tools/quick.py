@@ -18,14 +18,13 @@ from pathlib import Path
 from typing import Callable
 
 from .. import known_folders as _known
-from . import music as _music
 from .base import Tool, ToolError
 
 _NO_ARGS = {"type": "object", "properties": {}, "additionalProperties": False}
 
 # Virtual-key codes (WinUser.h).
 VK_VOLUME_MUTE, VK_VOLUME_DOWN, VK_VOLUME_UP = 0xAD, 0xAE, 0xAF
-VK_MEDIA_NEXT, VK_MEDIA_PREV, VK_MEDIA_PLAY_PAUSE = 0xB0, 0xB1, 0xB3
+VK_MEDIA_NEXT, VK_MEDIA_PREV, VK_MEDIA_STOP, VK_MEDIA_PLAY_PAUSE = 0xB0, 0xB1, 0xB2, 0xB3
 VK_LWIN, VK_SNAPSHOT = 0x5B, 0x2C
 VOLUME_STEP = 2          # percent per volume key press on Windows 10 and 11
 
@@ -156,66 +155,53 @@ class Volume(Tool):
         raise ToolError("I can turn the volume up, down, mute, unmute, or set it.")
 
 
-# Red's own player first; otherwise the media keys, which control whatever app
-# is playing (Spotify, a YouTube tab, Windows Media Player).
+# The media keys control whatever is playing: YouTube in the browser (where
+# every "play ..." goes), Spotify, Windows Media Player. The names stay the
+# old music tools' names, so the router's words for them don't change.
 
-class PauseMedia(_music.PauseMusic):
-    description = ("Pause the music or video that is playing, in Red or in another app "
-                   "like Spotify or YouTube.")
-
-    def __init__(self, player=None, keyboard: Keyboard = _keyboard):
-        super().__init__(player)
-        self._keys = keyboard
-
-    def run(self) -> str:
-        if self.player.current is not None:
-            return super().run()
-        self._keys.press(VK_MEDIA_PLAY_PAUSE)
-        return "Paused."
-
-
-class ResumeMedia(_music.ResumeMusic):
-    description = ("Resume (unpause) music or video that was paused, in Red or in another "
-                   "app like Spotify or YouTube.")
-
-    def __init__(self, player=None, keyboard: Keyboard = _keyboard):
-        super().__init__(player)
-        self._keys = keyboard
-
-    def run(self) -> str:
-        if self.player.current is not None:
-            return super().run()
-        self._keys.press(VK_MEDIA_PLAY_PAUSE)
-        return "Resuming."
-
-
-class NextMedia(_music.NextSong):
-    description = ("Skip this song: go forward to the next song or track, in Red's music or "
-                   "in another app like Spotify.")
-
-    def __init__(self, player=None, keyboard: Keyboard = _keyboard):
-        super().__init__(player)
-        self._keys = keyboard
-
-    def run(self) -> str:
-        if self.player.current is not None:
-            return super().run()
-        self._keys.press(VK_MEDIA_NEXT)
-        return "Next track."
-
-
-class PreviousTrack(Tool):
-    name = "previous_track"
-    description = ("Go back to the previous song or track (only when the user says previous, "
-                   "back or last).")
+class _MediaKey(Tool):
     args_schema = _NO_ARGS
+    _key: int
+    _reply: str
 
     def __init__(self, keyboard: Keyboard = _keyboard):
         self._keys = keyboard
 
     def run(self) -> str:
-        self._keys.press(VK_MEDIA_PREV)
-        return "Previous track."
+        self._keys.press(self._key)
+        return self._reply
+
+
+class PauseMedia(_MediaKey):
+    name = "pause_music"
+    description = ("Pause the music or video that is playing, like a song or video on YouTube "
+                   "or Spotify.")
+    _key, _reply = VK_MEDIA_PLAY_PAUSE, "Paused."
+
+
+class ResumeMedia(_MediaKey):
+    name = "resume_music"
+    description = "Resume (unpause) music or video that was paused, on YouTube or in another app."
+    _key, _reply = VK_MEDIA_PLAY_PAUSE, "Resuming."
+
+
+class NextMedia(_MediaKey):
+    name = "next_song"
+    description = "Skip this song or video: go forward to the next one, on YouTube or in another app."
+    _key, _reply = VK_MEDIA_NEXT, "Next track."
+
+
+class StopMedia(_MediaKey):
+    name = "stop_music"
+    description = "Stop the music or video that is playing."
+    _key, _reply = VK_MEDIA_STOP, "Stopped."
+
+
+class PreviousTrack(_MediaKey):
+    name = "previous_track"
+    description = ("Go back to the previous song or track (only when the user says previous, "
+                   "back or last).")
+    _key, _reply = VK_MEDIA_PREV, "Previous track."
 
 
 # --------------------------------------------------------------------------
