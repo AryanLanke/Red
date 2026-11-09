@@ -109,10 +109,22 @@ def _run(router: Router, executor: Executor, command: str, chat: Chat | None = N
             chat.remember(command, quick)
         return
     try:
-        route = router.route(command, context=chat.history(CONTEXT_LINES) if chat else "")
+        steps = router.route_many(command, context=chat.history(CONTEXT_LINES) if chat else "")
     except (RouteError, LLMError) as e:
         print(f"  Sorry, I didn't get that. ({e})")
         return
+    if len(steps) > 1:
+        replies = []
+        for part, step in steps:
+            logging.getLogger("red.commands").info("%r -> %s", part, step.to_json())
+            print(f"  -> {step.to_json()}")
+            replies.append((part, executor.execute(part, step), executor.last_status))
+            executor.finish()
+            if replies[-1][2] in ("error", "cancelled"):
+                break
+        print(f"  Red: {steps_reply(replies, len(steps))}")
+        return
+    route = steps[0][1]
     logging.getLogger("red.commands").info("%r -> %s", command, route.to_json())
     if not route.is_none:
         print(f"  -> {route.to_json()}")
@@ -125,6 +137,24 @@ def _run(router: Router, executor: Executor, command: str, chat: Chat | None = N
     if executor.last_details:
         for line in executor.last_details.splitlines():
             print(f"       {line}")
+
+
+def steps_reply(done: list[tuple[str, str, str]], total: int) -> str:
+    """One reply for several commands: each step's reply, or where it stopped and why.
+
+    done is [(the words, the reply, the status)] for the steps that ran, in order.
+    """
+    said = [reply.strip() for _, reply, status in done if status not in ("error", "cancelled")]
+    if done and done[-1][2] in ("error", "cancelled"):
+        part, reply, status = done[-1]
+        step = len(done)
+        if status == "cancelled":
+            said.append(f"I stopped at step {step}, {part}, so I didn't do the rest."
+                        if step < total else f"I didn't do step {step}, {part}.")
+        else:
+            rest = " I stopped there." if step < total else ""
+            said.append(f"Step {step}, {part}, didn't work: {reply.strip()}{rest}")
+    return " ".join(s if s.endswith((".", "!", "?")) else s + "." for s in said)
 
 
 def bind_conversation(registry, chat: Chat) -> None:
@@ -455,13 +485,16 @@ class VoiceApp:
             return quick, tool, asks_back(quick)
         self._state("thinking", f"“{text}”")
         try:
-            route = self.router.route(text, context=self.chat.history(CONTEXT_LINES))
+            steps = self.router.route_many(text, context=self.chat.history(CONTEXT_LINES))
             timer.mark("route")
         except (RouteError, LLMError) as e:
             log.warning("Couldn't route %r: %s", text, e)
             last = "Sorry, I didn't understand that."
             self._say(last)
             return last, tool, False
+        if len(steps) > 1:
+            return self._run_steps(text, steps, timer)
+        route = steps[0][1]
         logging.getLogger("red.commands").info("%r -> %s", text, route.to_json())
         tool = route.tool
         if tool == "check_repos":
@@ -505,6 +538,44 @@ class VoiceApp:
             self._interrupted = False
             again = True
         return last, tool, again
+
+    def _run_steps(self, text: str, steps, timer):
+        """Several commands in one sentence: each in order, checked and confirmed like one.
+
+        Stops at the first one that fails or that you say no to, and says which.
+        """
+        done: list[tuple[str, str, str]] = []
+        laters = []
+        for part, route in steps:
+            logging.getLogger("red.commands").info("%r -> %s", part, route.to_json())
+            self._state("thinking", f"“{part}”")
+            reply = self.executor.execute(part, route, talk=self._talk)
+            status = self.executor.last_status
+            if self.executor.last_later is not None:
+                laters.append(self.executor.last_later)
+                self.executor.last_later = None
+            done.append((part, reply, status))
+            if status in ("error", "cancelled"):
+                break
+            self.chat.remember(part, reply)
+        timer.mark("act")
+        last = steps_reply(done, len(steps))
+        tools = [route.tool for _, route in steps[:len(done)]]
+        failed = done[-1][2] == "error"
+        again = failed or asks_back(last)
+        if not failed and done[-1][2] != "cancelled" and any(t in INFO_TOOLS for t in tools):
+            question = self._follow_up_question(last)
+            last = f"{last} {question}" if question else last
+            again = True
+
+        def meanwhile():
+            for later in laters:          # bring each opened window to the front, in order
+                run_later(later)
+        timer.first_word()
+        self._say(last, self.executor.last_details, meanwhile=meanwhile if laters else None)
+        timer.mark("speak")
+        timer.log(text, "+".join(tools))
+        return last, tools[-1], again
 
     # --- helpers -------------------------------------------------------------
 

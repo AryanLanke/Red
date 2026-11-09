@@ -801,3 +801,54 @@ def test_interrupt_does_nothing_when_red_isnt_talking(world):
     app, speaker, *_ = make_app(world)
     app.interrupt()
     assert app._interrupted is False and not speaker.stopped
+
+
+# --- several commands in one sentence (plan.md task 9) ----------------------------------
+
+def test_two_commands_run_in_order_and_are_said_together(world):
+    world["llm"].replies["check my repos"] = {"tool": "check_repos", "args": {}}
+    app, speaker, overlay, asked, out = make_app(world, "Open my downloads and check my repos.")
+    app.handle("hotkey")
+    assert speaker.said == ["Opening Downloads. 1 of 2 repos needs attention."]
+    assert [l["command"] for l in log_lines(world)] == ["Open my downloads", "check my repos"]
+    assert len(world["start"].calls) == 1
+
+
+def test_a_failing_step_stops_the_rest_and_says_which(world):
+    world["registry"].add(Broken())
+    world["llm"].replies["open Spotfy"] = {"tool": "open_app", "args": {"app": "Spotfy"}}
+    app, speaker, *_ = make_app(world, "open Spotfy and open my downloads")
+    app.handle("hotkey")
+    assert speaker.said == ["Step 1, open Spotfy, didn't work: I couldn't find an app called Spotfy. I stopped there."]
+    assert world["start"].calls == []                          # step 2 never ran
+
+
+def test_no_to_a_risky_step_stops_there(world):
+    world["llm"].replies["shut down in 2 hours"] = {"tool": "shutdown", "args": {"minutes": 120}}
+    app, speaker, overlay, asked, out = make_app(world, "Open my downloads and shut down in 2 hours",
+                                                 answers=("no",))
+    app.handle("hotkey")
+    assert asked == ["Shut down in 2 hours (at 11:40 PM)?"]
+    assert speaker.said[-1] == "Opening Downloads. I didn't do step 2, shut down in 2 hours."
+    assert world["runner"].calls == []
+
+
+def test_typed_run_does_several_commands_too(world, capsys):
+    from red.executor import Executor
+    world["llm"].replies["check my repos"] = {"tool": "check_repos", "args": {}}
+    router = Router(world["registry"], world["llm"])
+    executor = Executor(world["registry"], ask=FakeAsk())
+    cli._run(router, executor, "Open my downloads and check my repos.")
+    printed = capsys.readouterr().out
+    assert "Red: Opening Downloads. 1 of 2 repos needs attention." in printed
+    assert printed.count("  -> ") == 2
+
+
+@pytest.mark.parametrize("done, total, said", [
+    ([("a", "Done A.", "ok"), ("b", "Done B", "ok")], 2, "Done A. Done B."),
+    ([("a", "Done A.", "ok"), ("b", "No such app.", "error")], 3,
+     "Done A. Step 2, b, didn't work: No such app. I stopped there."),
+    ([("a", "Cancelled.", "cancelled")], 2, "I stopped at step 1, a, so I didn't do the rest."),
+])
+def test_steps_reply(done, total, said):
+    assert cli.steps_reply(done, total) == said
