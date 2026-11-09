@@ -117,6 +117,7 @@ You don't need exact words; these are examples.
 | Take a screenshot | "take a screenshot" |
 | Empty the Recycle Bin | "empty the recycle bin" |
 | Check your repos | "check my repos", "check the red repo", "is my red repo pushed" |
+| Do several things at once | "open Chrome and search flights to Delhi", "mute and lock the PC", "set a timer for 5 minutes and remind me to call mom at 6 pm" (up to four; Red stops at the first one that fails or that you say no to, and tells you which) |
 
 Pause, resume, next, previous and stop are your keyboard's media keys, so they work for YouTube in the browser, Spotify and other players. Screenshots go to Pictures\Screenshots. Email drafts are never sent by Red: you check them and press Send.
 
