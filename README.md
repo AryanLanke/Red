@@ -132,6 +132,7 @@ Your settings are in `RED_HOME\config\.env` (copied from `.env.example`). Settin
 | `RED_WAKEWORD_THRESHOLD` | How sure the wake word detector must be, from 0 to 1. Lower is more sensitive | `0.5` |
 | `RED_MIC_DEVICE` | Which microphone: a device number or part of its name | Windows default |
 | `RED_END_SILENCE` | Seconds of quiet that mean you've finished talking. Raise it if Red cuts you off | `1.5` |
+| `RED_QUICK_END_SILENCE` | A shorter pause that's enough when what you said sounds finished ("open Edge"). After "and", "um" or a comma Red still waits `RED_END_SILENCE`. `0` turns it off | `0.8` |
 | `RED_MAX_COMMAND_SECONDS` | The longest a command can be | `20` |
 | `RED_FOLLOW_UP_SECONDS` | After chat, a reply that asks you something, or something that failed, Red keeps listening this long (you hear the chime). After an action it just goes quiet. Say "no" or "that's all" and it stops. `0` turns it off | `7` |
 | `RED_OVERLAY` | What Red shows while it works: `glow` around the screen edges, a `card` in the corner, `notify` (Windows notifications), or `off` | `glow` |
