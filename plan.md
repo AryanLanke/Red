@@ -167,7 +167,12 @@ are plain media keys (and `stop_music` is Media Stop). Details in progress.md 7.
 - **Check:** unit tests, plus real-model routing for "play Believer", "play some Arijit Singh" and "play
   a podcast about loneliness".
 
-### 4. Switch the model from Qwen2.5 7B to Qwen3.5 4B
+### 4. ✅ Switch the model from Qwen2.5 7B to Qwen3.5 4B
+**Done (2026-11-09):** Qwen3.5 4B is the default, and this PC's `.env` uses it (the user said yes). On the
+GPU it routes in 0.76 s against 1.30 s and got 148 of 149 real-model cases against 149 (then equal after a
+parse fix). One change from the table below: PCs with **no GPU** get **Qwen2.5 3B**, because with Ollama
+0.40.11 Qwen3.5 re-reads the whole router prompt on every call on a CPU (4B: 8.3 s a command; 2B: 3.3 s;
+Qwen2.5 3B: 1.4 s). No Qwen3.6 small models exist yet. Numbers in progress.md 5.
 **Decision (user, 2026-11-08):** the default model changes from `qwen2.5-7b-instruct-q4_k_m`
 (September 2024, 7.6B parameters, 4.7 GB) to **Qwen3.5 4B** (March 2026, 4B parameters, about 3 GB, free
 under Apache 2.0).
