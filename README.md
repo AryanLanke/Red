@@ -143,6 +143,8 @@ Your settings are in `RED_HOME\config\.env` (copied from `.env.example`). Settin
 | `RED_HOTKEY` | The shortcut that makes Red listen, for example `Ctrl+Alt+R`. `off` turns it off | `Ctrl+Alt+R` |
 | `RED_WAKEWORD` | `hey_red`, a path to a custom `.onnx` wake word model, or `off` for the shortcut only | `hey_red` |
 | `RED_WAKEWORD_THRESHOLD` | How sure the wake word detector must be, from 0 to 1. Lower is more sensitive | `0.5` |
+| `RED_VOICE_MATCH` | `on`: only your voice (from `voice-setup`) wakes Red. The shortcut always works | `off` |
+| `RED_VOICE_MATCH_THRESHOLD` | How alike the voice must be, from 0 to 1. Empty: the value voice-setup worked out for you | empty |
 | `RED_MIC_DEVICE` | Which microphone: a device number or part of its name | Windows default |
 | `RED_END_SILENCE` | Seconds of quiet that mean you've finished talking. Raise it if Red cuts you off | `1.5` |
 | `RED_QUICK_END_SILENCE` | A shorter pause that's enough when what you said sounds finished ("open Edge"). After "and", "um" or a comma Red still waits `RED_END_SILENCE`. `0` turns it off | `0.8` |
@@ -217,7 +219,7 @@ Everything you ask Red to play, songs and artists as well as podcasts, videos an
 
 ---
 
-**Teach Red your voice.** Run `python -m red voice-setup` and say "Hey Red" six times after the beeps, like setting up "Hey Siri". Red learns how it hears your voice and accent, so it notices you reliably. Run it again any time, for example with a new microphone. Only the words it heard are saved, never the recordings. It doesn't yet tell your voice apart from other people's.
+**Teach Red your voice.** Run `python -m red voice-setup` and say "Hey Red" ten times after the beeps, like setting up "Hey Siri". Red learns how it hears your voice and accent, so it notices you reliably, and it learns your voice itself. Set `RED_VOICE_MATCH=on` and Red answers only your "Hey Red" and stays silent for anyone else (the shortcut always works). It's off until you turn it on; try it with someone else in the room first, and adjust `RED_VOICE_MATCH_THRESHOLD` if others get in or Red ignores you. Run voice-setup again any time, for example with a new microphone. Only the words it heard and a set of numbers describing your voice are saved, never the recordings.
 
 **Talk to Red like a friend.** Anything that isn't a command ("what's on your mind?", "I had a rough day") gets a real answer, not a stock line, and Red remembers the conversation for a while. Ask "what's on my screen?" and Red tells you what you're looking at. After an answer Red asks whether you want to know more and keeps listening; say "no" or just stay quiet and it stops. Questions about new products, or "compare Hey Copilot with Hey Siri", are looked up on Wikipedia, and when Red doesn't know a name it says so instead of guessing. "Can you open YouTube?" just opens YouTube, like an order would. Common commands ("open YouTube", "volume up", "pause", "lock", "what time is it", "play Believer") don't wait for the language model at all, so they're done about a second after you stop talking. Only risky things (shutdown, restart, sleep, emptying the Recycle Bin) get one question first.
 

@@ -379,6 +379,22 @@ Every command writes a `Timing` line to `red.log`: listen, transcribe, route, ac
 - **The tools appear only after signing in**: `default_registry()` adds them when the token file exists, so the router prompt (and routing) for everyone else is unchanged.
 - **Checked:** `tests/test_google.py` with a fake API: the sign-in over a real loopback request and a fake token server, token refresh, only Google addresses, mail counts, the Gmail search staying two quoted phrases, header injection, a send and a calendar delete only on "yes", unknown recipients refused before asking. Real model (`tests/test_integration_google.py`, Qwen3.5 4B): all 10 commands from the plan route right ("any new mail?", "read my mail from Rahul", "reply saying I'll come tomorrow" after reading, "mail Mom that I'll be late", the four calendar lines, and "draft an email" to `compose_mail`). The user tests the real sign-in by hand.
 
+#### Answer only the owner: voice match (2026-11-09, plan.md task 8, second plan)
+
+- **Model:** CAM++ from 3D-Speaker (`3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx`, 29.6 MB, from the k2-fsa/sherpa-onnx speaker-recognition release), pinned by SHA-256 and downloaded into `RED_HOME\models\wakeword`. It runs on onnxruntime, which Red already uses, so Smart App Control has nothing new to block. Input: 80-band log-mel features ("fbank"), mean over time removed (its metadata says `global-mean`); `voice_match.fbank()` computes them with numpy like Kaldi (25 ms frames every 10 ms, Povey window, pre-emphasis 0.97, mel 20 Hz to 8 kHz, float32-epsilon floor). Output: a 512-number embedding.
+- **Setup:** `python -m red voice-setup` now records "Hey Red" 10 times (was 6). The same recordings teach the words (as before) and the voice: their average embedding is saved in `owner_voice.json` (numbers only, never audio), with a personal threshold: each recording against the average of the others (leave one out), the weakest minus 0.10, kept between 0.40 and 0.75.
+- **At each "Hey Red":** `HeyRedDetector` checks the voice only for clips whose words already matched, so it costs nothing the rest of the time. Not the owner: score 0, logged as "Voice match: 0.31 (not you, ignored)". Too short to judge, or the model failing: let through. The hotkey never goes through it. Cutting in while Red talks uses the same detector, so only the owner can interrupt too.
+- **Settings:** `RED_VOICE_MATCH=on|off` (off until the user has tried it with another person), `RED_VOICE_MATCH_THRESHOLD` (empty: the personal threshold; else the user's value; the fallback is 0.60).
+- **Measured** with Piper voices (owner: 10 enrolment clips at different speeds and noise; tests: 8 more with room noise; others: 5 other Piper voices and 30 LibriTTS-R speakers, 80 clips):
+
+| Owner | Owner's clips | Others, average and highest | At 0.60 |
+|---|---|---|---|
+| en_US-joe | 0.61 to about 0.8 | 0.20, 0.43 | no owner clip refused, no other voice let in |
+| en_US-amy | 0.73 to about 0.85 | 0.32, 0.74 | no owner clip refused, 6% of others let in |
+
+  The others that came close to Amy were LibriTTS-R speakers, all made by one multi-speaker TTS model, so they're probably more alike than real people. Real microphones will score the owner lower than these clean clips, which is why voice-setup sets a personal threshold. The first version floored the log energies at float64's epsilon; silent frames then pulled the features about, and switching to Kaldi's float32 floor improved the separation (Joe's highest other voice went from 0.57 to 0.43).
+- **Checked:** `tests/test_voice_match.py`: fbank shape, mean and loudness, the profile and threshold, settings, the detector asking only when the words matched, voice-setup saving the voice, and the real model on saved recordings (`tests/fixtures/voice/*.wav`, Piper clips, about 300 KB): both owner clips accepted, Ryan, Alan and a LibriTTS-R speaker refused (runs only if the model is already downloaded). **Still to do by the user:** voice-setup in their own voice, `RED_VOICE_MATCH=on`, and a try with another person saying "Hey Red".
+
 ### 7.3 Overlay (Track C)
 
 - PySide6. Frameless, always on top, translucent, and doesn't take keyboard focus. Sits in the bottom-right corner of the primary screen.
