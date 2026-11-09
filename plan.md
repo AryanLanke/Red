@@ -1,13 +1,14 @@
 # Red: what to do next
 
-Updated 2026-11-08 (late evening). The first plan's seven tasks are done (see "Done" below and git
-history). This version comes from comparing Red with Hey Copilot (Windows), the Gemini-based Siri and
-Gemini (which replaced Google Assistant), and from the user's voice test at 23:36–23:38
-(log: RED_HOME\logs\commands.jsonl and red.log).
+Updated 2026-11-09 (morning). The first plan (7 tasks) and the second plan (9 tasks) are done: see `git log`
+and progress.md 5, 7.1, 7.2 and 7.4 for what each one did and the numbers. This third plan comes from the
+user's voice test at 04:26–04:46 on 2026-11-09 (log: RED_HOME\logs\commands.jsonl and red.log).
 
 Read this first, then AGENTS.md. Do the tasks in order. Each task lists the files and how to check it.
 After finishing a task: run the tests, commit (several small commits), push to main, restart the hidden Red
 (`python -m red stop` then `python -m red background`), and tick it off here.
+
+**If your usage limit is near (90%), read "Usage limit" in the Rules first.**
 
 ## The goal
 
@@ -20,7 +21,7 @@ otherwise the user does it themselves.
 - **English only.**
 - **Local and free:** the AI model, speech-to-text, voice, wake word and screen reading all run on the
   PC, with no account needed. The one exception is the optional Google sign-in for mail and calendar
-  (task 7).
+  (built in the second plan).
 
 Speed targets, measured from when the user stops talking (the `Timing` lines in `red.log`):
 
@@ -40,322 +41,109 @@ Waiting 5 s or more before anything happens is a failure: the user could have do
 - cloud AI models
 - big models that run partly on the CPU (gpt-oss-20b, Qwen3.5-35B-A3B), which are too slow
 
-## Done (first plan, 2026-11-08)
+## Done in the second plan (2026-11-09)
 
-1. No permission questions for harmless things (`smalltalk.yes_intent()`, `confirm.is_clear_yes()`).
-2. Do it, then go quiet (`VoiceApp._exchange`, `Tool.finish_later()`).
-3. `play_online`: podcasts, videos and trailers on YouTube (`red/tools/youtube.py`).
-4. Opened windows come to the front (`red/windows.py`).
-5. `Timing` lines, the 0.8 s quick end of speech, the reply spoken while launching, and `base.en` on this
-   PC (progress.md 7.2).
-6. Answers that remember the conversation and go long when asked. When the router picks `none`, Red now
-   speaks a real chat reply, and the router's placeholder is kept only as `router_reply` in the log.
-7. Filler ("you know", "hmm") runs nothing (`smalltalk.is_filler()`).
+Browser fix (Chrome by default, `RED_BROWSER`), follow-up questions and a Whisper vocabulary, every "play"
+on YouTube, Qwen3.5 4B, the fast path for common commands, speaking while the model writes and cutting in
+with "Hey Red", Gmail and Calendar (optional sign-in), voice match (off by default), several commands in one
+sentence. **Not yet tried by the user:** the Google sign-in, voice match, and cutting in.
+
+## What the user found in the voice test (2026-11-09, 04:26–04:46)
+
+| Said | What happened | Cause found in the logs |
+|---|---|---|
+| "Hey Red" (many times) | Almost never woke | `match_score` gives 0 to anything over 4 words, and Whisper wrote "Hey Red Red Red Red Red Red Red" and "Hey Red, hey Red, hey Red" (both 0.00). "Hey Red, <command>" in one breath scores 0.45, below the 0.5 threshold. |
+| "Open YouTube" | Opened, then YouTube was blank | Unknown: the log shows the right window ("YouTube - Google Chrome") fronted. Must be reproduced. |
+| "Play any song of my favorite" | A random video | `play_online` searched the words "any song of my favorite". |
+| "Play Crazy by Le Sserafim" | Misheard ("Alexa Raffy", "Lisa Raffin"), so it played "If Alexa was RUDE" and Shorts | Whisper doesn't know the artist; the first result is used without a check. |
+| "Play my favorites from my YouTube playlist" | Other music | Red has no access to the user's playlists. |
+| "When VS Code says finished, remind me" | A reminder at 12:00 AM that failed, after two chat replies about waking up | `set_reminder` got `"time": "00:00"`, invented by the model. Nothing can watch a window. |
+| "Let's have a debate" | Said a few words, then went quiet | Routed to `answer` (one reply, no turn-taking). |
 
 ## Tasks, in order
 
-### 1. ✅ Fix "open YouTube": it showed an empty browser tab, not YouTube
-**Done (2026-11-09):** `red/browser.py` (`RED_BROWSER`, Chrome by default), the `browser` argument, and a
-new fronting rule in `red/windows.py`. The real cause was different from the "Why" below: this PC's
-default browser is **Chrome**, and only the old, stale `UserChoice` key says Edge (Windows 11 now keeps it
-in `UserChoiceLatest`). So YouTube did open, in Chrome, and Red then covered it with an idle Edge window.
-Details in progress.md 7.1. `python -m red run "Open YouTube."` now fronts "YouTube - Google Chrome" in
-0.6 s. Still worth the spoken check with the hidden Red.
-**What happened (log, 23:37–23:38):**
-- The user said "Open YouTube.", then "Red you just open chrome. I told you to open YouTube", then "Can
-  you open YouTube for me from Chrome?".
-- Routing was right all three times: `open_url` with `https://www.youtube.com`.
-- But each time `red.windows` logged
-  `Brought the existing window 'New tab - Personal - Microsoft Edge' (msedge.exe) to the front`.
-  The user saw a blank tab.
+### 1. Make "Hey Red" wake reliably
+**Why:** this is the first thing the user does, and it failed in the whole test.
+- In `match_score` (`red/wakeword.py`), collapse repeats before counting words: "hey red red red" and
+  "hey red, hey red" become "hey red".
+- One breath: "Hey Red, open YouTube" must wake, and the words after "Hey Red" become the command, with no
+  second recording. Keep the guards against "a red light" (the phrase must start the clip and follow a
+  pause).
+- Add `python -m red wake-test`: for 30 s it prints each wake check, the words heard and the score, so the
+  user (and you) can see what the microphone gives.
+- Look at the real clips: log the loudness of each check, and see whether the microphone is too quiet or the
+  VAD cuts the start ("Hey" lost).
+- **Files:** `red/wakeword.py`, `red/listener.py`, `red/__main__.py`, `tests/test_wakeword.py`.
+- **Check:** unit tests with the lines from `red.log` of 2026-11-09 as cases (text and expected score); Piper
+  clips of "Hey Red" and "Hey Red, open YouTube" through `HeyRedDetector`; then the user tries it by voice.
 
-**Why:**
-- The Windows default browser on this PC is **Edge** (`UrlAssociations\https\UserChoice` = `MSEdgeHTM`),
-  but the user uses **Chrome**. A Chrome window showing YouTube was open at the time.
-- `OpenUrl` and `WebSearch` always use `webbrowser.open`, which means the Windows default browser. They
-  have no way to pick a browser, so "from Chrome" is ignored.
-- `Watcher` with `reuse=True` (`red/windows.py`) fronts *any* existing window of the browser after
-  `REUSE_AFTER_SECONDS`, even one that isn't showing the page Red opened. Here it fronted a "New tab"
-  window, whose title was still "New tab" 50 s later. Edge may have opened the page in another window or
-  profile, or not at all.
+### 2. "Open YouTube" shows a blank page
+- **Reproduce first**, with the hidden Red stopped: `python -m red run "open YouTube"` with VS Code in front,
+  read the screen 3 s later with `red/screen.py` `read_screen`, and check it has YouTube's words. Try
+  Chrome already open and closed, and the window minimised or behind other windows.
+- Suspects, to test and not assume: fronting (`Win32Desktop.front` in `red/windows.py`) before the page has
+  painted; Chrome throttling a window it thinks is hidden. Fix what the test shows, and write the finding in
+  progress.md 7.1.
+- **Files:** `red/windows.py`, `red/browser.py`.
 
-**Fix:**
-- **`RED_BROWSER` setting** (`chrome` by default; also `edge`, `firefox` or `default`):
-  - Red launches that browser's exe, found through App Paths like `open_app` does, with the URL as one
-    argument: `Popen([exe, url])`, no shell, URL already validated as http or https.
-  - If the browser isn't installed, use the Windows default.
-  - Add the setting to `Settings`, `.env.example` and README.
-- **Optional `browser` argument** (enum: chrome, edge, firefox) on `open_url` and `web_search`, for
-  "open YouTube from Chrome" or "search this in Edge". Update the tool descriptions so the router fills
-  it.
-- **Front the right window.** For browsers, wait up to about 5 s for a window whose title contains the
-  site's name ("youtube"), or one whose title changed after the launch. Front that one. Never front a
-  browser window whose title didn't change. If none shows up, log it and front nothing.
-- **Find out why Edge stayed on "New tab".** Do this once by hand, with the user's OK and the hidden Red
-  stopped. Write down what you find in progress.md.
-- Don't change the user's Windows default browser.
+### 3. Play the right song
+- **Names.** A personal list, `RED_HOME\config\vocabulary.txt` (one name per line, for example
+  "LE SSERAFIM"), added to Whisper's hotwords (`command_vocabulary` in `red/stt.py`). Then correct the query
+  with YouTube's public search suggestions before searching (only the search words leave the PC).
+- **A real song.** Skip Shorts and anything under 60 s; prefer a result whose title has the query's words
+  (`first_video` and `fetch_results` in `red/tools/youtube.py`). If nothing fits, open the results page and
+  say so, instead of playing the first thing.
+- **"My favorites", "my liked songs", "my playlist":** open the user's own list in Chrome, where they are
+  signed in to YouTube (Liked videos is playlist `LL`, YouTube Music's likes `LM`; check which URL starts
+  playing). A named playlist ("my workout playlist") needs YouTube access: add the `youtube.readonly` scope
+  to the optional Google sign-in (`red/google_auth.py`) and find the playlist by name.
+- **Files:** `red/stt.py`, `red/tools/youtube.py`, `red/google_auth.py`, `red/router.py`.
+- **Check:** unit tests with saved result pages (never the live site) for "Crazy by Le Sserafim", for the
+  misheard "Lisa Raffin", and for "play my liked songs"; real-model routing for the three.
 
-**Files:** `red/tools/web.py`, `red/windows.py`, `red/tools/system.py` (App Paths lookup),
-`red/config.py`, `.env.example`, README.
+### 4. "Tell me when VS Code finishes"
+- New harmless tool `notify_when_done` (`red/tools/watch.py`): the app's name and, optionally, words to wait
+  for. Every 15 s it reads that window's title and text (`red/screen.py`, OCR of that window only) and says
+  aloud (`VoiceApp.announce`) when it sees "finished", "done" or "completed", or when the text has stopped
+  changing for 2 minutes. At most 3 hours; "stop watching" cancels. Say plainly what it can and can't see.
+- `set_reminder` must never use a time the user didn't say. With no time in their words (`set_command`, as
+  `cancel_reminder` does), ask "When?".
+- Add router examples for the 04:27 sentences.
+- **Files:** `red/tools/watch.py`, `red/tools/reminders.py`, `red/router.py`, `red/tools/__init__.py`.
+- **Check:** unit tests with a fake screen that changes over time; real-model routing for the four sentences
+  in the log.
 
-**Check:**
-- Unit tests with a fake desktop whose window titles change after the launch, and with `FakePopen`
-  checking the exact argument list.
-- Real-model routing cases: "open YouTube", "open YouTube from Chrome", "search lofi in Edge".
-- Manual check with the hidden Red: "open YouTube" shows YouTube in Chrome, in front.
+### 5. Debates and back-and-forth talk
+- "Let's have a debate", "you choose the topic", "quiz me": route to chat, not `answer`. Give `Chat` a
+  debate mode: Red picks a side and the topic if the user didn't, says 2 or 3 sentences, ends with "Your
+  turn.", and keeps listening for longer than usual (15 s). It answers the user's point, until "stop",
+  "you win", or silence. Quiz and storytelling can reuse the same mode if it is cheap.
+- **Files:** `red/chat.py`, `red/router.py`, `red/__main__.py` (follow-up length), `tests/test_voice_app.py`.
+- **Check:** `tests/test_voice_app.py` with fakes: a debate takes at least three turns and ends on "stop";
+  real-model routing for the 23:53 sentence.
 
-### 2. ✅ After an answer, ask if they want more; hear the names right; don't make things up
-**Done (2026-11-09):** a. answers end with "Anything more you want to know about it?" (or a variation) and
-Red keeps listening. b. Whisper `hotwords`: `base.en` got 97% of the names right on Piper test audio,
-against 87% without, in the same time. c. `7a2d87d` did cover the rewrite (the tool used the user's
-words); the invented facts came from the misheard names and a prompt that never said "don't guess".
-Now it says "I don't know Hey CD.", new products and comparisons go to `look_up`, which reads every
-article compared. Details and numbers in progress.md 7.2.
-**What happened (log, 23:41):** the user asked "compare Hey Copilot with Hey Siri and OK Google, which
-one is better at what". The user was fine with the answer itself, but three things went wrong:
+### 6. The Red app: set everything up in one window
+**Why:** the user asked for an app, because setting up from the command line is too hard.
+- First-run wizard: hardware check and model choice (`red/hardware.py`), downloads with progress and
+  checksums, microphone pick with a level meter, `voice-setup` with live "Hey Red" checks, an optional
+  voice-match test, and the optional Google sign-in.
+- Then the settings pages from "Later" below.
+- PySide6 (already used). Frosted, milky glass with no edge line and no rounded edges. It saves
+  `RED_HOME\config\.env` through `Settings` and restarts the hidden Red when you press Save. Start menu
+  shortcut and `python -m red app`.
+- **Files:** new `red/app/` package, `red/__main__.py`, `red/config.py`, `red/startup.py`.
+- **Check:** render every page offscreen (`QT_QPA_PLATFORM=offscreen`), look at the screenshots, and unit-test
+  that saving changes only the keys on the page. Ask the user before changing their `.env`.
 
-**a. Red went quiet after the answer.** The user wanted Red to ask "Anything more you want to know about
-it?" and keep listening.
-- **Cause:** `VoiceApp._exchange` (`red/__main__.py`) treats `answer` like an action:
-  `again = asks_back(last) or error`.
-- **Fix:** after the information tools (`answer`, `look_up`, `weather`, `news`, `describe_screen`), Red
-  ends with a short follow-up question and keeps listening for `RED_FOLLOW_UP_SECONDS`.
-  - Use the user's wording, "Anything more you want to know about it?", plus a few short variations.
-  - Never use the same one twice in a row, and skip it when the answer already ends with "?".
-  - Actions still go quiet (task 2 of the first plan).
-  - "No", "that's it" or silence ends the conversation.
-
-**b. Whisper misheard the names:** "Hey Copilot" became "Heiko Pilot" and "Hey Siri" became "Hey CD".
-- **Fix:** give faster-whisper a short vocabulary through `hotwords` or `initial_prompt`:
-  - Copilot, Siri, Alexa, OK Google, Gemini, YouTube, Chrome, Edge, Red
-  - app names from the allowlist and names from `contacts.toml`
-- Keep it short: long prompts slow transcription and can make Whisper invent words.
-- **Check:** make test audio with Piper voices (as Track E did for the wake word) for sentences with
-  these names. Compare `base.en` with and without the vocabulary, and note accuracy and time in
-  progress.md.
-
-**c. The answer made things up.**
-- The router wrote its own guess into `answer`'s `question` argument ("Hey CD is a voice assistant for
-  Windows and macOS…"). Then the answer invented facts ("Hey CD is more focused on productivity").
-- Products from 2025–2026, like Hey Copilot, are newer than Qwen2.5 7B's training.
-- **Fix:**
-  - `answer` gets the user's own words, not the router's rewrite. Check why commit `7a2d87d` ("tools
-    hear your words") didn't cover this.
-  - The answer prompt says plainly when Red doesn't know a name, instead of inventing.
-  - Questions about recent products, or "latest"/"new"/"compare" questions about things that may be
-    newer than the model, go to `look_up`, so the facts come from a real source.
-
-**Files:** `red/__main__.py`, `red/stt.py`, `red/config.py`, `.env.example`, `red/tools/assistant.py`,
-`red/router.py`.
-
-**Check:**
-- `tests/test_voice_app.py`: an answer ends with a follow-up question and keeps listening; "open Edge"
-  still goes quiet.
-- Replay the 23:41 line through the real model (`RED_INTEGRATION=1`).
-
-### 3. ✅ No local music: every "play …" goes online
-**Done (2026-11-09):** `play_music`, `red/tools/music.py`, pygame-ce and `RED_MUSIC_DIR` are gone; every
-"play …" goes to `play_online` in `RED_BROWSER`, fronting the window titled "… - YouTube". The media tools
-are plain media keys (and `stop_music` is Media Stop). Details in progress.md 7.4.
-- The user doesn't want local music. Route every "play X" (songs, artists, podcasts, videos) to
-  `play_online`, and take `play_music` out of the registry and the router rule.
-- Pause, resume, next and previous keep working through the media keys, so they control YouTube in the
-  browser.
-- `play_online` opens in the `RED_BROWSER` browser and fronts the right window (task 1).
-- **Files:** `red/tools/music.py`, `red/tools/youtube.py`, `red/tools/__init__.py`, `red/router.py`,
-  README, `.env.example` (`RED_MUSIC_DIR` goes).
-- **Check:** unit tests, plus real-model routing for "play Believer", "play some Arijit Singh" and "play
-  a podcast about loneliness".
-
-### 4. ✅ Switch the model from Qwen2.5 7B to Qwen3.5 4B
-**Done (2026-11-09):** Qwen3.5 4B is the default, and this PC's `.env` uses it (the user said yes). On the
-GPU it routes in 0.76 s against 1.30 s and got 148 of 149 real-model cases against 149 (then equal after a
-parse fix). One change from the table below: PCs with **no GPU** get **Qwen2.5 3B**, because with Ollama
-0.40.11 Qwen3.5 re-reads the whole router prompt on every call on a CPU (4B: 8.3 s a command; 2B: 3.3 s;
-Qwen2.5 3B: 1.4 s). No Qwen3.6 small models exist yet. Numbers in progress.md 5.
-**Decision (user, 2026-11-08):** the default model changes from `qwen2.5-7b-instruct-q4_k_m`
-(September 2024, 7.6B parameters, 4.7 GB) to **Qwen3.5 4B** (March 2026, 4B parameters, about 3 GB, free
-under Apache 2.0).
-
-Published scores are far higher:
-
-| Test | Qwen2.5 7B | Qwen3.5 4B |
-|---|---|---|
-| instruction following (IFEval) | 71.2 | 89.8 |
-| knowledge (MMLU-Redux) | 75.4 | 88.8 |
-| harder knowledge (MMLU-Pro) | 56.3 | 79.1 |
-
-Qwen3.5 4B is also smaller, so it should be faster, and it can read images. The Qwen3.5 numbers come from
-an aggregator site (llm-stats) and were probably measured in thinking mode, so test before switching.
-
-**Steps:**
-1. Add `qwen3.5-4b` to `MODELS` in `red/llm.py`, with its Ollama tag and Hugging Face GGUF files pinned
-   by SHA-256 like the others. Keep Qwen2.5 7B as an option.
-2. Run it in non-thinking mode, because Red needs speed.
-3. Add the routing misses from the log to the test set and the router prompt examples:
-   - "Can you just read my screen? What's going on?" → `describe_screen` (it went to `none`)
-   - the YouTube lines from task 1
-   - the 23:41 comparison question from task 2
-   - the "play …" lines from task 3
-4. Run the user's real sentences from `commands.jsonl` and every integration test through both models.
-   Compare correct tool choice, answer quality and time to first word on this laptop (RTX 4050 6 GB,
-   16 GB RAM, Ryzen 7 7735HS), with the GPU and CPU-only.
-5. Make Qwen3.5 4B the default in `red/config.py` (`DEFAULT_MODEL`), `.env.example`, README and
-   AGENTS.md. Ask the user before changing `RED_HOME\config\.env`.
-6. Update the tests that name Qwen2.5 7B, and write the comparison in progress.md.
-
-**Only if Qwen3.5 4B is clearly worse** at picking Red's tools: stay on 7B, and tell the user with the
-numbers.
-
-**Also add as options:**
-- `qwen3.5-9b` (about 6.6 GB) for PCs with an 8 GB+ GPU.
-- A ~2B model for PCs with no GPU.
-- Check whether Qwen3.6 small models exist yet; if one beats Qwen3.5 4B, tell the user before switching.
-
-**Hardware defaults.** `python -m red setup` detects the GPU's memory (`nvidia-smi` or DXGI) and the RAM
-(`GlobalMemoryStatusEx`) and picks a starting model. The user can change it in settings (and later in the
-settings app).
-
-| PC | Model | Whisper |
-|---|---|---|
-| No GPU, 8 GB RAM | ~2B | `base.en` |
-| No GPU, 16 GB RAM | Qwen3.5 4B | `base.en` |
-| 4–6 GB GPU (RTX 3050/4050) | Qwen3.5 4B on the GPU | `base.en` (progress.md 7.2) |
-| 8 GB+ GPU | Qwen3.5 9B | `small.en` on the GPU |
-
-**Screen reading:** with Qwen3.5 4B, `describe_screen` sends the screenshot as well as the screen text,
-so Red understands what it sees, not only the words.
-
-### 5. ✅ Instant common commands
-**Done (2026-11-09):** `red/fastpath.py`. "Open YouTube." is done about 1.26 s after you stop talking (was
-2.65 s at 23:37); routing those commands takes 0.00 s. Details in progress.md 7.2.
-- **Why:** in the 23:37 test, routing took 1.3 s of the 2.65 s for "open YouTube". Common, clear commands
-  don't need the model.
-- **New `red/fastpath.py`, called first from `Router.route()`.** Patterns for:
-  - "open X", "open X in/from Chrome"
-  - "volume up/down/mute"
-  - "pause", "resume", "next", "previous"
-  - "lock", "what time is it", "take a screenshot"
-  - "play X", "search X (on YouTube)"
-- **Anything unclear goes to the model as now.** Results go through the same `Router.parse()` validation
-  and the same confirmations as model calls.
-- **Must work in well under 1 s with no GPU.**
-- **Check:** unit tests, plus `Timing` lines before and after. Target: "open YouTube" done about 1.5 s
-  after the user stops talking.
-
-### 6. ✅ Speak while the model writes; interrupt Red
-**Done (2026-11-09):** `red/speech.py` and `stream_json`. "Tell me the whole story" starts speaking at 2.17 s
-instead of 5.79 s; chat at 1.81 s instead of 2.51 s. "Hey Red" or the hotkey while Red talks stops it and
-listens. Ollama 0.40.11 can't cache Qwen3.5's prompt (0.2 s a command on the GPU). Details in progress.md 7.2.
-- **Why:** in the 23:37 test a chat reply took 6.6 s to speak and was finished 11 s after the user
-  stopped.
-- **Streaming:** use `"stream": true` from Ollama (`red/llm.py`), split the output into sentences, and
-  send each finished sentence to Piper while the rest is written. Do this for `answer`, `look_up`, chat
-  and `describe_screen`. Long answers start in about 1–2 s and then talk as long as they need.
-- **Prompt caching:** keep each system prompt byte-for-byte identical between calls, and check that
-  Ollama reuses the cached prompt so only the new sentence is processed.
-- **Interrupt:** "Hey Red" while Red is talking stops the speech and starts listening.
-- **Files:** `red/llm.py`, `red/tts.py`, `red/chat.py`, `red/tools/assistant.py`, `red/__main__.py`,
-  `red/listener.py`.
-- **Check:** `tests/test_voice_app.py` with fakes, plus `Timing` lines ("first word spoken" added).
-
-### 7. ✅ Mail and calendar
-**Done (2026-11-09):** the user chose "read back before sending a mail or deleting an event, nothing else".
-`python -m red google-login` (needs the user's own Desktop OAuth client, see README), `red/google_auth.py`,
-`red/tools/gmail.py`, `red/tools/calendar.py`. No Google packages: plain urllib, so Smart App Control has
-nothing to block. All 10 example commands route right with the real model. **The user still has to try the
-real sign-in by hand.** Details in progress.md 7.2.
-**Ask the user first:** should Red read back once before **sending an email** or **deleting a calendar
-event** ("Sending to Mom: I'll be late. Send?")? The proposal is yes for those two only, and no questions
-for anything else. Build it the way they answer.
-
-**Sign-in:**
-- One optional, one-time `python -m red google-login` grants Gmail, Calendar and Contacts.
-- The token goes in `RED_HOME\config\google-token.json`, which is never committed.
-- Ask for the smallest scopes that work.
-- Use pure-Python Google client packages pinned in `requirements.txt`, after checking that Smart App
-  Control doesn't block them.
-
-**Mail:**
-- "any new mail?" (count, plus the senders and subjects of the newest few)
-- "read my mail from Rahul" (summary)
-- "reply saying I'll come tomorrow"
-- "mail Mom that I'll be late"
-- Keep `compose_mail` (the mailto: link) for users who don't sign in.
-
-**Calendar:** "what's on my calendar tomorrow?", "add a meeting Friday at 3", "move my 5 pm to 6",
-"cancel my 4 pm".
-
-**Contacts:** names come from Google Contacts, then `contacts.toml`.
-
-**Limits:**
-- Nothing the model writes becomes a command.
-- Recipients must resolve to a real contact or a valid address.
-- Bound subject and body lengths like `compose_mail` does, and cap results and time.
-
-**Rule change:** only mail and calendar text goes to the user's own Google account. Voice, screen and
-the AI stay on the PC. Update README and AGENTS.md to say so.
-
-**Files:** new `red/google_auth.py`, `red/tools/gmail.py`, `red/tools/calendar.py`, registered in
-`red/tools/__init__.py`.
-
-**Check:** unit tests with a fake Google client (no network), plus real-model routing. The user tests
-the sign-in by hand.
-
-### 8. ✅ Answer only the owner (voice match)
-**Done (2026-11-09):** `red/voice_match.py` (CAM++ ONNX on onnxruntime, numpy fbank), checked in
-`HeyRedDetector` only when the words matched; voice-setup records 10 "Hey Red"s and saves the voice and a
-personal threshold. Off by default (`RED_VOICE_MATCH=off`). On Piper voices at 0.60: no owner clip refused,
-0 to 6% of other voices let in. **The user still has to run voice-setup and try it with another person.**
-Details in progress.md 7.2.
-- `python -m red voice-setup` also records about 10 phrases from the owner and saves a voice profile in
-  `RED_HOME\models\wakeword`.
-- At each "Hey Red", Red compares the voice with the owner's using a small, pinned speaker-recognition
-  ONNX model on `onnxruntime` (already installed, so Smart App Control has nothing new to block). It stays
-  silent for anyone else. The hotkey always works.
-- Settings: `RED_VOICE_MATCH=on|off` (off until tested) and `RED_VOICE_MATCH_THRESHOLD`.
-- **Files:** `red/wakeword.py`, `red/listener.py`, `red/voice_setup.py`, new `red/voice_match.py`,
-  `red/config.py`, `.env.example`.
-- **Check:** unit tests with saved audio fixtures, never the microphone. Ask the user to test it with
-  another person speaking.
-
-### 9. ✅ Several things in one sentence
-**Done (2026-11-09):** `split_commands()` and `Router.route_many()` (each part routed and checked like one),
-`VoiceApp._run_steps` (in order; stops at the first failure or "no" and says which). All the plan's examples
-work with the real model. Details in progress.md 7.2.
-- "Open Chrome and search flights to Delhi", "mute and lock the PC", "check my mail and read today's
-  calendar".
-- The router returns up to about 4 tool calls. Each one is validated and confirmed like a single call,
-  and they run in order.
-- If a step fails, Red stops and says which one.
-
-## Later: the Red Settings app
-
-A small desktop app **only for changing Red's settings**: no chat window and no assistant inside it.
-
-- **Launching:** from the Start menu, from the tray, or with `python -m red settings`.
-- **Built with PySide6** (already used). It follows Red's look: frosted, milky glass with no outline line
-  and no rounded-corner edges.
-- **Saving:** it writes `RED_HOME\config\.env` through `Settings` and restarts the hidden Red when you
-  press Save.
+## Later: more for the Red app
 
 **Sections:**
-- **Model**
-  - the current model
-  - pick from `MODELS`, each with a short "best for" line (fast, smart, no GPU)
-  - download with progress and checksum
-  - the hardware recommendation from task 4
-- **Voice**
-  - male and female Piper voices with a Play sample button
-  - already downloaded: female `en_US-amy`, `en_US-lessac`, `en_GB-jenny_dioco`, `en_US-libritts_r`;
-    male `en_US-joe`, `en_US-ryan`, `en_GB-alan`
-  - speaking speed
-- **Wake phrase and listening**
-  - "Hey Red", "Yo Red", "Okay Red", "What's up Red", with voice training for each
-  - sensitivity
-  - hotkey
-  - microphone
-  - voice match on/off and re-recording
+- **Model:** the current model, a pick from `MODELS` with each one's `best_for` line, downloads, and the
+  hardware recommendation.
+- **Voice:** Piper voices with a Play sample button (downloaded: female `en_US-amy`, `en_US-lessac`,
+  `en_GB-jenny_dioco`, `en_US-libritts_r`; male `en_US-joe`, `en_US-ryan`, `en_GB-alan`), and speed.
+- **Wake phrase and listening:** "Hey Red", "Yo Red", "Okay Red", "What's up Red" with voice training,
+  sensitivity, hotkey, microphone, voice match on/off and re-recording.
 - **Speech-to-text:** Whisper model (`base.en` / `small.en`) and device.
 - **Personality:** normal or opt-in casual (banter that swears back).
 - **Browser:** `RED_BROWSER` and the search engine.
@@ -366,7 +154,8 @@ Also later:
 - A one-click Windows installer, so users need no Python or venv. Without a code-signing certificate,
   Windows warns about an unknown publisher.
 - A glow that reacts to the voice.
-- "Hey Red, open Downloads" said in one breath.
+- Ollama that reuses the cached prompt for Qwen3.5: check each new Ollama release (progress.md 5), and then
+  Qwen3.5 can be the model for PCs with no GPU too.
 
 ## Rules: what to do and what not to do
 
@@ -381,8 +170,8 @@ Do:
 - Commit as several small commits and push to `main` (the user wants contributions), then restart the
   hidden Red so the user tests the new code.
 - Use files for long scripts and commit messages. PowerShell and bash here-docs break on quotes.
-- Keep confirmations for shutdown, restart, sleep, emptying the Recycle Bin, and whatever the user
-  chooses in task 7. Keep allowlists. Never run model text as a command.
+- Keep confirmations for shutdown, restart, sleep, emptying the Recycle Bin, and sending a mail or deleting a calendar
+  event (the user chose a read-back for those two). Keep allowlists. Never run model text as a command.
 
 Don't:
 - Don't ask permission or "Anything else?" for harmless actions.
@@ -391,7 +180,7 @@ Don't:
   open).
 - Don't send voice, screen or the AI's work to any cloud service. Red is local-only. Public look-ups
   (Wikipedia, weather, news, YouTube search) are fine, and so is the user's own Google mail and calendar
-  after they sign in (task 7).
+  after they sign in.
 - Don't build for Mac, Linux or other languages.
 - Don't install packages with unsigned native DLLs. Smart App Control blocks them (it blocked `winrt-*`).
   Use Windows PowerShell or signed system APIs instead.
@@ -400,3 +189,18 @@ Don't:
 - Don't bring back a rim or outline line on the glow, or rounded-corner edges. The user wants frosted,
   milky, liquid glass with no edge line.
 - Don't use "Jarvis" anywhere in Red's text or defaults.
+
+Usage limit (any coding agent: Claude, DeepSeek, Kimi or another):
+- If your usage (a weekly or session limit, or any provider's quota) reaches **90%**, don't start anything
+  new. Finish the smallest working part of the task you are on, run the unit tests, commit, **push to
+  `main`**, and write a short hand-off note under that task in this file: what is done, what is left, and
+  the exact next step. Then stop and tell the user.
+- If you can't see your usage, commit and push after every task anyway, and after every hour of work.
+- Never leave uncommitted work, a half-edited file, or a stopped hidden Red when you stop. Restart it.
+
+Any agent:
+- Read AGENTS.md first. This is Windows with PowerShell 5.1: no `&&` (use `;`), and the shared venv is
+  `D:\RED\.venv` with `RED_HOME=D:\RED`.
+- Don't write code through shell here-docs: they turn `\b` into a backspace and break quotes. Write files
+  with your editor tool, and after any script edit search the changed files for control characters.
+- Don't change `D:\RED\config\.env` without asking the user.
