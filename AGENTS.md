@@ -1,5 +1,7 @@
 # AGENTS.md
 
+**Start here:** read [plan.md](plan.md) first. It lists the next tasks in order and the rules for working on Red.
+
 Red is a local, offline voice and action assistant for Windows. A local LLM turns a command into one JSON tool call, and Red validates it before anything runs.
 
 - [progress.md](progress.md) is the developer document: status, specs, decisions, open questions, and the parallel-sessions plan (section 8). Follow its specs and safety rules when building a feature, and keep its status up to date.
