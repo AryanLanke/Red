@@ -2,7 +2,7 @@
 
 This file is for developers and coding agents. [README.md](README.md) is for users. Read [AGENTS.md](AGENTS.md) for commands and how the code fits together.
 
-Last updated: 2026-11-08.
+Last updated: 2026-11-09.
 
 ---
 
@@ -218,6 +218,25 @@ projects = 'D:\Projects'
 **Command log:** each action Red runs or cancels is one JSON line in `RED_HOME\logs\commands.jsonl`, with the time, the command text, the tool, its arguments, whether you confirmed, and the result.
 
 **CLI:** `python -m red` runs actions for real. `python -m red --dry-run` keeps the Day 1 behaviour and only shows the tool calls.
+
+#### Browsers and the "open YouTube" fix (2026-11-09, plan.md task 1, second plan)
+
+**What went wrong at 23:37.** Routing was right (`open_url`, `https://www.youtube.com`), but Red brought an idle Edge window ("New tab - Personal") to the front each time, so the user saw a blank tab.
+
+**Why Edge stayed on "New tab" (checked by hand on 2026-11-09, hidden Red stopped, with the user's OK).** Edge was never asked to open anything. On this PC the real default browser is **Chrome**:
+- Newer Windows 11 builds keep the default in `HKCU\...\UrlAssociations\https\UserChoiceLatest\ProgId` (`ChromeHTML` here) and leave the old `...\https\UserChoice` key stale (`MSEdgeHTM` here). The shell's own answer (`AssocQueryStringW`, `ASSOCSTR_EXECUTABLE` for `https`) is `chrome.exe`.
+- `webbrowser.open` goes through the shell, so YouTube opened as a tab in the Chrome window ("AryanLanke - Google Chrome" became "Untitled", then "YouTube - Google Chrome" after 0.6 s). That's why the user said "you just open chrome".
+- `red.windows.default_browser_exe()` read only the stale `UserChoice` key, so the watcher looked for `msedge.exe` windows. With `reuse=True` it fronted the topmost Edge window after 1.2 s, the "New tab" window, which covered the Chrome window showing YouTube.
+- Starting `msedge.exe https://www.youtube.com` directly works: a new window appears hidden as "Untitled - Personal - Microsoft Edge" and becomes visible as "YouTube - Personal - Microsoft Edge" after 1.4 s.
+
+**What changed.**
+- `default_browser_exe()` asks the shell first, then reads `UserChoiceLatest\ProgId`, then `UserChoice`.
+- `RED_BROWSER` (`chrome` by default; `edge`, `firefox`, `default`): `red/browser.py` finds the browser through App Paths and starts it with `Popen([exe, url])`, no shell. Only plain http(s) addresses with no spaces, quotes, `<` or `>` reach its command line, so a URL can never become a switch like `--gpu-launcher`. If the browser isn't installed (or is a Store build), the Windows default opens the page.
+- `open_url` and `web_search` take an optional `browser` (chrome, edge, firefox). The tool keeps the model's pick only if the user's own words name that browser (`browser.from_words`): Qwen2.5 7B adds `"browser": "chrome"` to a plain "Open YouTube.", and misses it for "Red you just open chrome. I told you to open YouTube".
+- Fronting a browser window: it must be new or have had a different title at some point since the launch. One whose title names the site (`site_name("www.youtube.com")` is `youtube`) or the search words is fronted at once; a changed one without them after 2.5 s. A browser window whose title never changed is never fronted; if none qualifies in 5 s, Red logs it and fronts nothing.
+- Router prompt: one rule, "a browser named in the command only fills the browser argument; it never changes the tool". An example line ("search the web for cheap flights in Edge") fixed one more search case but turned "find the folder called holiday photos" into `open_folder` (temperature 0, so it's repeatable), so it was left out.
+
+**Checked.** Unit tests with a fake desktop whose titles change after the launch, and `FakePopen` checking `[chrome.exe, url]`. Real model: all 143 integration cases pass, including "open YouTube", "open YouTube from Chrome", the three 23:37 lines and "search lofi in Edge". By hand: `python -m red run "Open YouTube."` opened YouTube in Chrome and fronted "YouTube - Google Chrome" 0.6 s after launching.
 
 ### 7.2 Voice (Track B)
 
@@ -1328,6 +1347,7 @@ Each version ships with tests for its new tools and an updated safety section.
 
 - **Shutdown:** `shutdown /s /t <seconds>`, `/r` for restart, and `shutdown /a` to cancel. `shutdown /a` fails with error 1116 when nothing is scheduled.
 - **Opening apps and folders:** `os.startfile(path)` opens folders, files and registered apps.
+- **Default browser:** ask the shell (`AssocQueryStringW` with `ASSOCF_IS_PROTOCOL`, `ASSOCSTR_EXECUTABLE`, `"https"`). Newer Windows 11 builds keep the choice in `UrlAssociations\https\UserChoiceLatest\ProgId`; the old `UserChoice` key can be stale.
 - **Ollama** uses an NVIDIA GPU automatically when drivers are current. Its logs are in `RED_HOME\logs\ollama.log`.
 - **Smart App Control** blocks unsigned programs and DLLs. Exit code `0xC0E90002` means it blocked something.
 - **faster-whisper on the GPU** needs cuBLAS and cuDNN through pip (`nvidia-cublas-cu12`, `nvidia-cudnn-cu12`).
