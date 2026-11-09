@@ -9,7 +9,10 @@ for its top-level window and brings it to the front:
 1. Snapshot the visible top-level windows before launching.
 2. After launching, look for a new window from the same process, program or
    with the expected title. Browsers often open a tab in a window that's
-   already there; then Red fronts the topmost window of that browser.
+   already there, so for a browser Red fronts the window whose title shows
+   the page (it has the site's name, like "YouTube"), or else one whose title
+   changed after the launch. A browser window whose title never changed
+   isn't showing the page, so it's never fronted.
 3. Restore it if it's minimised, then SetForegroundWindow, with
    AttachThreadInput (and the Alt-key trick if that isn't enough) to get
    past the foreground lock.
@@ -31,9 +34,9 @@ log = logging.getLogger(__name__)
 
 WAIT_SECONDS = 5.0
 POLL_SECONDS = 0.1
-# A browser that already had a window: if no new window shows up by then,
-# the page opened as a tab in an existing one.
-REUSE_AFTER_SECONDS = 1.2
+# A browser window whose title changed but doesn't name the site yet is
+# fronted after this long (some pages never put the site's name in the title).
+CHANGED_AFTER_SECONDS = 2.5
 
 BROWSERS = frozenset({"msedge.exe", "chrome.exe", "firefox.exe", "brave.exe", "opera.exe",
                       "vivaldi.exe", "iexplore.exe", "arc.exe"})
@@ -58,12 +61,17 @@ class Target:
     exes: frozenset[str] = frozenset()
     pids: set[int] = field(default_factory=set)
     titles: tuple[str, ...] = ()      # lower case words expected in the title
-    reuse: bool = False               # browsers: may open in an existing window
+    browser: bool = False             # the page may open as a tab in an existing window
 
     def matches(self, w: Window) -> bool:
         title = w.title.lower()
         return (w.pid in self.pids or w.exe in self.exes
                 or any(t and t in title for t in self.titles))
+
+    def shows_page(self, w: Window) -> bool:
+        """Browsers: the title has the site's name (or the search words)."""
+        title = w.title.lower()
+        return any(t and t in title for t in self.titles)
 
 
 class Desktop(Protocol):
@@ -82,10 +90,33 @@ def folder_target(name: str) -> Target:
     return Target(titles=(name.strip().lower(),))
 
 
-def browser_target() -> Target:
-    """The default browser (or any browser, if Windows doesn't say which)."""
-    exe = default_browser_exe()
-    return Target(exes=frozenset({exe}) if exe else BROWSERS, reuse=True)
+def browser_target(exe: str | None = None, page: tuple[str, ...] | str = ()) -> Target:
+    """A browser window showing a page.
+
+    exe is the browser Red started ("chrome.exe"); None means the Windows
+    default (or any browser, if Windows doesn't say which). page is the words
+    the page's title should have: the site's name ("youtube") or the search.
+    """
+    exe = exe or default_browser_exe()
+    words = (page,) if isinstance(page, str) else page
+    return Target(exes=frozenset({exe.lower()}) if exe else BROWSERS,
+                  titles=tuple(t.strip().lower() for t in words if t.strip()), browser=True)
+
+
+# Second-level names under a country domain: bbc.co.uk -> bbc.
+_SECOND_LEVEL = {"co", "com", "org", "net", "ac", "gov", "edu"}
+
+
+def site_name(host: str) -> str:
+    """'www.youtube.com' -> 'youtube', 'en.wikipedia.org' -> 'wikipedia', 'bbc.co.uk' -> 'bbc'.
+
+    Empty when it's too short to recognise in a title ('x.com').
+    """
+    labels = [p for p in host.lower().strip(".").split(".") if p]
+    if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in _SECOND_LEVEL:
+        labels = labels[:-1]
+    name = labels[-2] if len(labels) >= 2 else (labels[0] if labels else "")
+    return name if len(name) >= 3 else ""
 
 
 def default_browser_exe() -> str | None:
@@ -113,9 +144,10 @@ class Watcher:
         self.target = target
         self._desktop = desktop
         self._wait, self._clock, self._sleep = wait, clock, sleep
-        before = desktop.windows()
-        self._before = {w.hwnd for w in before}
-        self._had_window = target.reuse and any(w.exe in target.exes for w in before)
+        # Each window's title before launching: a browser window that shows the
+        # new page has a new title (or is a new window).
+        self._before = {w.hwnd: w.title for w in desktop.windows()}
+        self._changed: set[int] = set()
 
     def add_pid(self, pid: int | None) -> None:
         """The launched process, once it exists (open_app with Popen)."""
@@ -126,18 +158,32 @@ class Watcher:
         start = self._clock()
         while True:
             now = self._desktop.windows()
-            new = [w for w in now if w.hwnd not in self._before and self.target.matches(w)]
-            if new:
-                return self._front(new[0], "new")
             waited = self._clock() - start
-            if self._had_window and waited >= REUSE_AFTER_SECONDS:
-                old = [w for w in now if w.exe in self.target.exes]
-                if old:
-                    return self._front(old[0], "existing")
+            if self.target.browser:
+                found = self._browser_window(now, waited)
+                if found:
+                    return self._front(*found)
+            else:
+                new = [w for w in now if w.hwnd not in self._before and self.target.matches(w)]
+                if new:
+                    return self._front(new[0], "new")
             if waited >= self._wait:
-                log.info("No window showed up for %s", self.target)
+                log.info("No window showed the page for %s; fronting nothing", self.target)
                 return False
             self._sleep(POLL_SECONDS)
+
+    def _browser_window(self, now: list[Window], waited: float) -> tuple[Window, str] | None:
+        """The browser window showing the page, once it's clear which one that is."""
+        for w in now:
+            if w.exe in self.target.exes and self._before.get(w.hwnd) != w.title:
+                self._changed.add(w.hwnd)          # new, or its title changed: once is enough
+        changed = [w for w in now if w.hwnd in self._changed]       # topmost first
+        page = [w for w in changed if self.target.shows_page(w)]
+        if page:
+            return page[0], "page"
+        if changed and waited >= CHANGED_AFTER_SECONDS:
+            return changed[0], "changed"
+        return None
 
     def _front(self, w: Window, kind: str) -> bool:
         ok = self._desktop.front(w.hwnd)

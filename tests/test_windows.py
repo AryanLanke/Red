@@ -16,17 +16,20 @@ REAL_WATCH = w.watch
 
 
 class FakeDesktop:
-    """Windows appear on the desktop at given times; front() records what was fronted."""
+    """Windows appear (or change title) at given times; front() records what was fronted."""
 
     def __init__(self, now=(), later=()):
-        self.now = list(now)            # there before launching
-        self.later = list(later)        # (seconds after launching, Window)
+        self.now = list(now)            # there before launching, topmost first
+        self.later = list(later)        # (seconds after launching, Window); same hwnd = new title
         self.t = 0.0
         self.fronted = []
 
     def windows(self):
-        shown = [win for at, win in self.later if at <= self.t]
-        return list(reversed(shown)) + self.now          # newest on top
+        shown = list(self.now)
+        for at, win in sorted(self.later, key=lambda e: e[0]):
+            if at <= self.t:            # a new or retitled window comes out on top
+                shown = [win] + [old for old in shown if old.hwnd != win.hwnd]
+        return shown
 
     def front(self, hwnd):
         self.fronted.append(hwnd)
@@ -86,26 +89,84 @@ def test_an_explorer_window_by_folder_name():
     assert desktop.fronted == [7]
 
 
-def test_a_browser_tab_in_an_existing_window_fronts_that_window():
-    desktop = FakeDesktop(now=[CODE, EDGE_OLD])        # VS Code on top, Edge behind it
-    target = w.Target(exes=frozenset({"msedge.exe"}), reuse=True)
-    assert watcher(target, desktop)() is True
-    assert desktop.fronted == [1]
-    assert w.REUSE_AFTER_SECONDS <= desktop.t < w.REUSE_AFTER_SECONDS + 0.2
+CHROME_OLD = w.Window(11, 400, "chrome.exe", "Believer - YouTube - Google Chrome")
+CHROME_MAIL = w.Window(12, 400, "chrome.exe", "Inbox - Gmail - Google Chrome")
+EDGE_BLANK = w.Window(13, 100, "msedge.exe", "New tab - Personal - Microsoft\u200b Edge")
+
+
+def test_a_tab_in_an_existing_window_fronts_the_window_that_shows_the_page():
+    # Chrome opens the page as a tab in the window behind; its title changes to the page.
+    page = w.Window(12, 400, "chrome.exe", "YouTube - Google Chrome")
+    desktop = FakeDesktop(now=[CODE, CHROME_OLD, CHROME_MAIL], later=[(0.6, page)])
+    assert watcher(w.browser_target("chrome.exe", "youtube"), desktop)() is True
+    assert desktop.fronted == [12]
+    assert 0.6 <= desktop.t < 0.8                   # at once, no fixed wait
+
+
+def test_a_browser_window_whose_title_never_changed_is_never_fronted():
+    # The 23:37 test: Edge's "New tab" window stayed "New tab", so Red must not front it.
+    desktop = FakeDesktop(now=[CODE, EDGE_BLANK])
+    assert watcher(w.browser_target("msedge.exe", "youtube"), desktop)() is False
+    assert desktop.fronted == []
+    assert desktop.t >= w.WAIT_SECONDS
+
+
+def test_an_old_window_that_already_named_the_site_is_not_the_page():
+    # CHROME_OLD had "YouTube" in its title from before; the page opened in a new window.
+    new = w.Window(14, 400, "chrome.exe", "YouTube - Google Chrome")
+    desktop = FakeDesktop(now=[CODE, CHROME_OLD], later=[(1.0, new)])
+    assert watcher(w.browser_target("chrome.exe", "youtube"), desktop)() is True
+    assert desktop.fronted == [14]
+
+
+def test_a_changed_window_without_the_site_name_is_fronted_after_a_while():
+    loading = w.Window(12, 400, "chrome.exe", "Untitled - Google Chrome")
+    desktop = FakeDesktop(now=[CODE, CHROME_MAIL], later=[(0.4, loading)])
+    assert watcher(w.browser_target("chrome.exe", "example"), desktop)() is True
+    assert desktop.fronted == [12]
+    assert w.CHANGED_AFTER_SECONDS <= desktop.t < w.CHANGED_AFTER_SECONDS + 0.2
+
+
+def test_a_title_that_changes_and_changes_back_still_counts():
+    # The new tab passes through "New Tab" and lands on the same title as before.
+    blank = w.Window(11, 400, "chrome.exe", "New Tab - Google Chrome")
+    desktop = FakeDesktop(now=[CODE, CHROME_OLD], later=[(0.3, blank), (0.6, CHROME_OLD)])
+    assert watcher(w.browser_target("chrome.exe", "youtube"), desktop)() is True
+    assert desktop.fronted == [11]
+    assert desktop.t < 1.0
+
+
+def test_other_browsers_windows_are_ignored():
+    edge = w.Window(15, 100, "msedge.exe", "YouTube - Microsoft Edge")
+    desktop = FakeDesktop(now=[CODE], later=[(0.5, edge)])
+    assert watcher(w.browser_target("chrome.exe", "youtube"), desktop)() is False
+    assert desktop.fronted == []
 
 
 def test_a_browser_that_wasnt_running_gets_time_to_start():
-    desktop = FakeDesktop(now=[CODE], later=[(3.0, EDGE_NEW)])
-    target = w.Target(exes=frozenset({"msedge.exe"}), reuse=True)
-    assert watcher(target, desktop)() is True
-    assert desktop.fronted == [3]
+    page = w.Window(16, 401, "chrome.exe", "YouTube - Google Chrome")
+    desktop = FakeDesktop(now=[CODE], later=[(3.0, page)])
+    assert watcher(w.browser_target("chrome.exe", "youtube"), desktop)() is True
+    assert desktop.fronted == [16]
 
 
-def test_browser_target_uses_the_default_browser(monkeypatch):
-    monkeypatch.setattr(w, "default_browser_exe", lambda: "chrome.exe")
-    assert w.browser_target().exes == frozenset({"chrome.exe"})
+def test_browser_target_uses_the_browser_red_started(monkeypatch):
+    target = w.browser_target("Chrome.exe", ("YouTube", " "))
+    assert target.exes == frozenset({"chrome.exe"}) and target.titles == ("youtube",)
+    assert target.browser is True
+    monkeypatch.setattr(w, "default_browser_exe", lambda: "msedge.exe")
+    assert w.browser_target(None, "lofi").exes == frozenset({"msedge.exe"})
     monkeypatch.setattr(w, "default_browser_exe", lambda: None)
     assert w.browser_target().exes == w.BROWSERS
+
+
+@pytest.mark.parametrize("host, name", [
+    ("www.youtube.com", "youtube"), ("youtube.com", "youtube"), ("en.wikipedia.org", "wikipedia"),
+    ("news.google.com", "google"), ("www.bbc.co.uk", "bbc"), ("github.com", "github"),
+    ("x.com", ""), ("localhost", "localhost"),
+])
+def test_site_name(host, name):
+    assert w.site_name(host) == name
 
 
 def test_watch_never_fails_the_launch():
@@ -182,14 +243,18 @@ def test_a_failed_launch_leaves_nothing_to_finish():
     assert tool.take_later() is None
 
 
-@pytest.mark.parametrize("make, args", [
-    (lambda watch: OpenUrl(open_browser=lambda url: True, watch=watch), {"url": "https://example.com"}),
-    (lambda watch: WebSearch(open_browser=lambda url: True, watch=watch), {"query": "cats"}),
+@pytest.mark.parametrize("make, args, words", [
+    (lambda watch: OpenUrl(open_browser=lambda url: True, watch=watch),
+     {"url": "https://www.example.com/a"}, ("example",)),
+    (lambda watch: WebSearch(open_browser=lambda url: True, watch=watch),
+     {"query": "Cute  cats"}, ("cute cats",)),
     (lambda watch: PlayOnline(open_browser=lambda url: True, find=lambda q: Video("abcdefghijk", "Cats"),
-                              watch=watch), {"query": "cats"}),
+                              watch=watch), {"query": "cats"}, ()),
 ])
-def test_browser_tools_front_the_browser(make, args):
+def test_browser_tools_front_the_browser(make, args, words):
     watches = Watches()
     tool = make(watches)
     tool.run(**args)
-    assert watches.targets[0].reuse is True and tool.take_later() is not None
+    assert watches.targets[0].browser is True and tool.take_later() is not None
+    if words:
+        assert watches.targets[0].titles == words
