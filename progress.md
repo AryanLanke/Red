@@ -273,6 +273,28 @@ Every command writes a `Timing` line to `red.log`: listen, transcribe, route, ac
 - **Routing** with the model warm: 0.81 to 0.99 s for short commands (12.9k-character system prompt, cached by Ollama).
 - **Budget for "open Edge"** after you stop talking: 0.8 s pause + 0.4 s transcribe + 0.85 s route + 0.06 s launch, about 2.1 s (it was about 3.7 s: 1.5 s pause + 1.3 s + 0.85 s). Check the `Timing` lines after the next voice test.
 
+#### Follow-ups, names and honest answers (2026-11-09, plan.md task 2, second plan)
+
+**a. After an answer, ask if they want more.** After `answer`, `look_up`, `weather`, `news` and `describe_screen` succeed, `VoiceApp._exchange` adds a short question ("Anything more you want to know about it?", the user's wording, then three variations taken in turn, so never the same twice in a row) and keeps listening for `RED_FOLLOW_UP_SECONDS`. No question when the answer already ends with "?", or when the tool failed. The conversation memory keeps the answer without the question. Actions still go quiet. "No", "that's it", "not really", "nope, that's all" or silence ends it (`smalltalk.is_goodbye` learned the last two).
+
+**b. Hearing the names right.** The command transcriber gets faster-whisper `hotwords`: Hey Copilot, Hey Siri, Alexa, OK Google, Gemini, YouTube, Chrome, Edge, Red, then the allowlist's app names and `contacts.toml` names, capped at 250 characters (`stt.command_vocabulary`, `__main__.vocabulary`). Measured with 8 sentences full of these names, spoken by 6 Piper voices (amy, lessac, joe, ryan, alan, jenny_dioco), each clean and with noise about 12 dB below the voice (96 clips), `base.en` int8 on the CPU of this laptop:
+
+| Whisper `base.en` | Names right | Time per clip |
+|---|---|---|
+| no vocabulary | 135 of 156 (87%) | same (0.45 to 0.9 s, varied with load) |
+| `hotwords` | 151 of 156 (97%) | same |
+| `initial_prompt` | 151 of 156 (97%) | same |
+
+`hotwords` and `initial_prompt` scored the same, so Red uses `hotwords` (faster-whisper's option for this, already used by the wake word). The time differences between runs were noise from the hidden Red sharing the CPU, not the vocabulary. Without it Whisper wrote "HeyCiri", "Hay Theory", "Syria" and "serial" for Siri, and "Heiko Pilot", "Haco Pilot" and "Jim and I" for Copilot and Gemini. The 5 misses left were all "Heyco Pilot" from the British voices and Ryan, so `stt.fix_names` turns "Heyco/Heiko/Haco Pilot" into "Hey Copilot" (and leaves "the co-pilot landed" alone). The script was a scratch file; to repeat it, synthesize with `red.tts._load_piper`, resample to 16 kHz, and call `WhisperModel.transcribe` with the same options as `Transcriber._run`.
+
+**c. The answer made things up.** Commit `7a2d87d` did cover the router's rewrite: the hidden Red was started at 23:31:29, after it, and `Answer.run` uses the user's words (`set_command`), so the router's made-up `question` ("Hey CD is a voice assistant for Windows and macOS...") is only in the log, not in the answer's prompt. The made-up facts came from the misheard names (b) plus an answer prompt that never said "don't guess". Changes:
+- `ANSWER_SYSTEM` and `DETAIL_SYSTEM`: never guess; say plainly "I don't know Hey CD." and answer only what it knows. "What is Hey CD?" now gets exactly that.
+- Router rule: products, apps, AI assistants or gadgets that may be new (2024 on), and "latest", "newest" or "compare" questions about products, go to `look_up`.
+- `look_up` takes `others` (up to 2) for comparisons and reads each article (1,200 characters each). It finds articles better: an exact title from the title search, otherwise Wikipedia's full-text search ("latest iPhone" found Ladik Lake before, now "IPhone": "the iPhone 17 and iPhone 17e"). Wake phrases map to their articles ("Hey Copilot" to Microsoft Copilot, "OK Google" to Google Assistant), because the search found Google Assistant and Google Search for them. The summary prompt says never to add facts that aren't in the text.
+- Replayed the 23:41 line with the names heard right: `look_up` with topic "Hey Copilot" and others "Hey Siri", "Ok Google", answered from the Microsoft Copilot, Siri and Google Assistant articles. One weakness left: it still repeated the user's own "Copilot is Windows-only" claim. With the names misheard ("Heiko Pilot", "Hey CD") it now says the articles don't cover them instead of inventing.
+
+**Checked.** `tests/test_voice_app.py` (an answer asks and keeps listening; no repeat in a row; no second question; "no" ends it; actions still go quiet), `tests/test_stt.py` (hotwords reach Whisper, the Copilot fix-up), `tests/test_g_online.py` (title and full-text search, comparisons, wake phrases). Real model: all 145 integration cases pass, with the 23:41 comparison and "What is Hey CD?" added. The Everest case had a test bug (it checked `question` when `look_up` puts the name in `topic`), fixed.
+
 ### 7.3 Overlay (Track C)
 
 - PySide6. Frameless, always on top, translucent, and doesn't take keyboard focus. Sits in the bottom-right corner of the primary screen.
