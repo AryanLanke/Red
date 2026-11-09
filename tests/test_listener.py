@@ -6,8 +6,8 @@ import pytest
 
 import red.audio as audio
 from red.audio import AudioError
-from red.listener import (WAKEWORDS, Listener, download_wakeword, normalize_hotkey,
-                          resolve_wakeword)
+from red.listener import (DEFAULT_WAKEWORD, WAKEWORDS, Listener, download_wakeword,
+                          make_detector, normalize_hotkey, resolve_wakeword)
 from voice_fakes import FakeDetector, FakeHotKeys, FakeMic, fake_download
 
 
@@ -80,20 +80,49 @@ def test_bad_hotkeys_are_rejected(bad):
 
 
 def test_resolve_wakeword():
-    assert resolve_wakeword("Hey Jarvis") == "hey_jarvis"
+    assert resolve_wakeword("Hey Red") == "hey_red"
+    assert resolve_wakeword("hey, red") == "hey_red"
+    assert resolve_wakeword("hey_red") == "hey_red"
     assert resolve_wakeword("hey-mycroft") == "hey_mycroft"
     assert resolve_wakeword(r"D:\models\hey_red.onnx") == r"D:\models\hey_red.onnx"
     with pytest.raises(ValueError):
-        resolve_wakeword("hey red")
+        resolve_wakeword("hey computer")
+
+
+def test_hey_red_is_the_default_and_no_other_assistant_name_is_offered():
+    assert DEFAULT_WAKEWORD == "hey_red"
+    assert all("jarvis" not in name for name in WAKEWORDS)
+    import inspect
+    params = inspect.signature(Listener).parameters
+    assert params["detector_factory"].default is make_detector
+
+
+def test_download_hey_red_fetches_pinned_tiny_whisper(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(audio, "download", fake_download(calls))
+    wake_dir = tmp_path / "wakeword"
+    path = download_wakeword(wake_dir, "hey_red")
+    assert path == tmp_path / "whisper" / "tiny.en"
+    assert {d.name for _, d, _ in calls} == {"config.json", "model.bin", "tokenizer.json", "vocabulary.txt"}
+    assert all("Systran/faster-whisper-tiny.en/resolve/0d3d19a" in u for u, _, _ in calls)
+
+
+def test_make_detector_picks_the_hey_red_detector(tmp_path, monkeypatch):
+    import red.wakeword as wakeword
+    made = []
+    monkeypatch.setattr(audio, "download", fake_download())
+    monkeypatch.setattr(wakeword.HeyRedDetector, "create", classmethod(lambda cls, d: made.append(d) or "det"))
+    assert make_detector(tmp_path / "wakeword", "hey_red") == "det"
+    assert made == [tmp_path / "wakeword"]
 
 
 def test_download_wakeword_fetches_pinned_onnx_models(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(audio, "download", fake_download(calls))
-    path = download_wakeword(tmp_path, "hey_jarvis")
-    assert path == tmp_path / "hey_jarvis_v0.1.onnx"
+    path = download_wakeword(tmp_path, "hey_mycroft")
+    assert path == tmp_path / "hey_mycroft_v0.1.onnx"
     names = [d.name for _, d, _ in calls]
-    assert names == ["melspectrogram.onnx", "embedding_model.onnx", "hey_jarvis_v0.1.onnx"]
+    assert names == ["melspectrogram.onnx", "embedding_model.onnx", "hey_mycroft_v0.1.onnx"]
     assert all(u.startswith("https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/")
                and u.endswith(".onnx") for u, _, _ in calls)
     assert all(len(a.sha256) == 64 for a in WAKEWORDS.values())
@@ -181,7 +210,7 @@ def test_wakeword_triggers_and_mic_is_closed_while_handling(listener_factory):
     release = threading.Event()
     rec = Recorder(block=release)
     det = FakeDetector(fire_at={20})
-    lst, mic, _ = listener_factory(rec, wakeword="hey_jarvis", detector=det)
+    lst, mic, _ = listener_factory(rec, wakeword="hey_red", detector=det)
     lst.start()
     assert rec.entered.wait(3)
     assert rec.calls == ["wakeword"]
@@ -197,7 +226,7 @@ def test_wakeword_triggers_and_mic_is_closed_while_handling(listener_factory):
 
 
 def test_pause_closes_mic_and_resume_reopens(listener_factory):
-    lst, mic, det = listener_factory(Recorder(), wakeword="hey_jarvis")
+    lst, mic, det = listener_factory(Recorder(), wakeword="hey_red")
     lst.start()
     assert wait_for(lambda: mic.is_open)
     lst.pause()
@@ -215,7 +244,7 @@ def test_pause_closes_mic_and_resume_reopens(listener_factory):
 
 
 def test_extra_resume_is_harmless(listener_factory):
-    lst, mic, _ = listener_factory(Recorder(), wakeword="hey_jarvis")
+    lst, mic, _ = listener_factory(Recorder(), wakeword="hey_red")
     lst.start()
     lst.resume()
     lst.resume()
@@ -225,7 +254,7 @@ def test_extra_resume_is_harmless(listener_factory):
 
 def test_hotkey_still_works_while_wakeword_is_paused(listener_factory):
     rec = Recorder()
-    lst, _, _ = listener_factory(rec, wakeword="hey_jarvis")
+    lst, _, _ = listener_factory(rec, wakeword="hey_red")
     lst.start()
     lst.pause()
     FakeHotKeys.instances[-1].press()
@@ -234,14 +263,14 @@ def test_hotkey_still_works_while_wakeword_is_paused(listener_factory):
 
 def test_mic_errors_are_retried(listener_factory):
     mic = SlowMic(block=1280, fail_after=3)
-    lst, _, _ = listener_factory(Recorder(), wakeword="hey_jarvis", mic=mic)
+    lst, _, _ = listener_factory(Recorder(), wakeword="hey_red", mic=mic)
     lst.start()
     assert wait_for(lambda: isinstance(lst.last_error, AudioError))
     lst.stop()                                     # doesn't hang while waiting to retry
 
 
 def test_stop_ends_all_threads(listener_factory):
-    lst, mic, _ = listener_factory(Recorder(), wakeword="hey_jarvis")
+    lst, mic, _ = listener_factory(Recorder(), wakeword="hey_red")
     lst.start()
     assert wait_for(lambda: mic.is_open)
     lst.stop()
@@ -270,7 +299,7 @@ def test_detector_load_errors_surface_in_start(tmp_path):
     def broken(model_dir, wakeword):
         raise RuntimeError("bad model")
 
-    lst = Listener(Recorder(), wakeword="hey_jarvis", model_dir=tmp_path,
+    lst = Listener(Recorder(), wakeword="hey_red", model_dir=tmp_path,
                    hotkey_factory=FakeHotKeys, detector_factory=broken)
     with pytest.raises(RuntimeError, match="bad model"):
         lst.start()

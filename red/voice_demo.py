@@ -1,6 +1,6 @@
 """Try Red's voice without the rest of Red.
 
-    python -m red.voice_demo              press Ctrl+Alt+R or say "hey Jarvis", then speak
+    python -m red.voice_demo              press Ctrl+Alt+R or say "Hey Red", then speak
     python -m red.voice_demo --confirm    also ask a spoken yes/no after each command
     python -m red.voice_demo --setup      only download the voice models
     python -m red.voice_demo --levels     show microphone levels for 5 seconds
@@ -25,6 +25,7 @@ from pathlib import Path
 import numpy as np
 
 from red.audio import Microphone, chime, record_command, resample, rms, to_float32
+from red.confirm import is_yes
 from red.config import load_settings
 from red.listener import (DEFAULT_HOTKEY, DEFAULT_THRESHOLD, DEFAULT_WAKEWORD, Listener,
                           download_wakeword)
@@ -61,11 +62,10 @@ class VoiceConfig:
         )
 
 
-def _is_yes(answer: str | None) -> bool:
-    # Stand-in for confirm.is_yes from Track A; the integration step swaps it in.
-    if answer is None:
-        return False
-    return answer.strip().rstrip(".!?,;: ").strip().lower() in ("y", "yes")
+def _spoken_name(wakeword: str) -> str:
+    """'hey_red' -> 'Hey Red'; a model path -> its file name without version."""
+    name = Path(wakeword).stem.split("_v0")[0].replace("_", " ")
+    return name.title()
 
 
 def _pretty_hotkey(hotkey: str) -> str:
@@ -100,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--say", metavar="TEXT", help="speak TEXT and exit")
     p.add_argument("--file", metavar="WAV", type=Path, help="transcribe a 16-bit WAV file and exit")
     p.add_argument("--hotkey", help=f"global shortcut (default {_pretty_hotkey(DEFAULT_HOTKEY)}, or RED_HOTKEY)")
-    p.add_argument("--wakeword", help=f"pre-trained phrase or .onnx path (default {DEFAULT_WAKEWORD}, or RED_WAKEWORD)")
+    p.add_argument("--wakeword", help="hey_red (default, or RED_WAKEWORD), another openWakeWord phrase, or an .onnx path")
     p.add_argument("--no-wakeword", action="store_true", help="hotkey only")
     p.add_argument("--device", choices=("auto", "cuda", "cpu"), help="Whisper device (default auto, or RED_WHISPER_DEVICE)")
     p.add_argument("-v", "--verbose", action="store_true")
@@ -170,7 +170,7 @@ def main(argv: list[str] | None = None) -> int:
         speaker.say(f"You said: {text}" if text else "Sorry, I didn't catch that.")
         if args.confirm:
             answer = ask("Do you want to confirm? [y/N]", 30.0)
-            yes = _is_yes(answer)
+            yes = is_yes(answer)
             print(f"  Answer: {answer!r} -> {'confirmed' if yes else 'cancelled'}")
             speaker.say("Confirmed." if yes else "Cancelled.")
 
@@ -186,11 +186,14 @@ def main(argv: list[str] | None = None) -> int:
     if cfg.hotkey:
         ways.append(f"press {_pretty_hotkey(listener.hotkey)}")
     if cfg.wakeword:
-        ways.append(f"say \"{Path(listener.wakeword).stem.replace('_', ' ').split(' v0')[0]}\"")
+        ways.append(f"say \"{_spoken_name(listener.wakeword)}\"")
     if not ways:
         print("Both the hotkey and the wake word are off; nothing can trigger Red.", file=sys.stderr)
         return 2
-    print(f"Ready. {' or '.join(ways).capitalize()}, then speak. Ctrl+C quits.")
+    how = " or ".join(ways)
+    print(f"Ready. {how[0].upper() + how[1:]}, then speak. Ctrl+C quits.")
+    if cfg.wakeword:
+        print("Say the wake phrase on its own, pause, and give the command after the beep.")
     try:
         while True:
             time.sleep(0.25)

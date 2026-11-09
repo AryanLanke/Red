@@ -20,16 +20,45 @@ from red.llm import Asset
 
 _PIPER_REV = "e7229f7d33a10e145e109b886d661984201ac3c4"
 
+def _voice(name: str, onnx_sha: str, json_sha: str) -> PinnedFiles:
+    """A Piper voice such as 'en_US-lessac-medium', from rhasspy/piper-voices."""
+    locale, speaker, quality = name.split("-")
+    lang = locale.split("_")[0]
+    return PinnedFiles(hf_url("rhasspy/piper-voices", _PIPER_REV, f"{lang}/{locale}/{speaker}/{quality}"),
+                       (Asset(f"{name}.onnx", onnx_sha), Asset(f"{name}.onnx.json", json_sha)))
+
+
 PIPER_VOICES: dict[str, PinnedFiles] = {
-    "en_US-lessac-medium": PinnedFiles(
-        hf_url("rhasspy/piper-voices", _PIPER_REV, "en/en_US/lessac/medium"),
-        (
-            Asset("en_US-lessac-medium.onnx",
-                  "5efe09e69902187827af646e1a6e9d269dee769f9877d17b16b1b46eeaaf019f"),
-            Asset("en_US-lessac-medium.onnx.json",
-                  "efe19c417bed055f2d69908248c6ba650fa135bc868b0e6abb3da181dab690a0"),
-        ),
-    ),
+    "en_US-lessac-medium": _voice(
+        "en_US-lessac-medium",
+        "5efe09e69902187827af646e1a6e9d269dee769f9877d17b16b1b46eeaaf019f",
+        "efe19c417bed055f2d69908248c6ba650fa135bc868b0e6abb3da181dab690a0"),
+    # Other voices: for RED_PIPER_VOICE, and for testing and training the wake word.
+    "en_US-amy-medium": _voice(
+        "en_US-amy-medium",
+        "b3a6e47b57b8c7fbe6a0ce2518161a50f59a9cdd8a50835c02cb02bdd6206c18",
+        "95a23eb4d42909d38df73bb9ac7f45f597dbfcde2d1bf9526fdeaf5466977d77"),
+    "en_US-ryan-medium": _voice(
+        "en_US-ryan-medium",
+        "abf4c274862564ed647ba0d2c47f8ee7c9b717d27bdad9219100eb310db4047a",
+        "44034c056cb15681b2ad494307c7f3f2e4499d1253c700c711fa0a4607ffe78d"),
+    "en_US-joe-medium": _voice(
+        "en_US-joe-medium",
+        "58afce0321b8d9c46d7cdf9c16500cc55a793b4220212dba6b70fb788b3baf06",
+        "3d6d5410b3795cb1950595247ef8f06190719e6fdbfa3a2356d8ec368e1aad33"),
+    "en_GB-alan-medium": _voice(
+        "en_GB-alan-medium",
+        "0a309668932205e762801f1efc2736cd4b0120329622adf62be09e56339d3330",
+        "c0f0d124e5895c00e7c03b35dcc8287f319a6998a365b182deb5c8e752ee8c1e"),
+    "en_GB-jenny_dioco-medium": _voice(
+        "en_GB-jenny_dioco-medium",
+        "469c630d209e139dd392a66bf4abde4ab86390a0269c1e47b4e5d7ce81526b01",
+        "a9a7a93a317c9a3cb6563e37eb057df9ef09c06188a8a4341b0fcb58cba54dd4"),
+    # 904 speakers in one model: lots of different voices for training data.
+    "en_US-libritts_r-medium": _voice(
+        "en_US-libritts_r-medium",
+        "10bb85e071d616fcf4071f369f1799d0491492ab3c5d552ec19fb548fac13195",
+        "b471dc60d2d8335e819c393d196d6fbf792817f40051257b269878505bc9afb3"),
 }
 DEFAULT_VOICE = "en_US-lessac-medium"
 
