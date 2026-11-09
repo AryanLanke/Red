@@ -8,6 +8,7 @@ model or server that ignores the schema still can't trigger a bad call.
 from __future__ import annotations
 
 import json
+import re
 import logging
 from dataclasses import dataclass
 from typing import Callable
@@ -56,6 +57,25 @@ Examples:
 "Can you just read my screen? What's going on?" -> {{"tool": "describe_screen", "args": {{"question": "What's going on on my screen?"}}}}
 "open the second one" -> {{"tool": "open_found_file", "args": {{"number": 2}}}}
 "mail mom that I'll be late" -> {{"tool": "compose_mail", "args": {{"to": "mom", "subject": "Running late", "body": "I'll be late."}}}}"""
+
+
+# "Open Chrome and search flights to Delhi", "mute and lock the PC": a sentence is
+# cut where "and", "then" or a comma is followed by one of these command words.
+# "search for cats and dogs" stays whole ("dogs" isn't a command), and so does
+# "search ... and tell me about it" (a look_up), because "tell me" isn't here.
+MAX_STEPS = 4
+_COMMAND_WORDS = (r"open|launch|start|close|search|google|find|look up|play|put on|pause|resume|"
+                  r"stop|skip|mute|unmute|lock|turn|set|check|read|reply|mail|email|send|add|move|"
+                  r"cancel|delete|remind|show|take|empty|shut down|restart|volume")
+_SPLIT = re.compile(r"\s*(?:,\s*)?(?:\band then\b|\bthen\b|\band also\b|\band\b|,)\s+"
+                    r"(?=(?:please\s+|also\s+)?(?:%s)\b)" % _COMMAND_WORDS, re.IGNORECASE)
+
+
+def split_commands(text: str) -> list[str]:
+    """'mute and lock the PC' -> ['mute', 'lock the PC']; one part when it isn't a list of commands."""
+    parts = [p.strip(" ,.") for p in _SPLIT.split(text.strip())]
+    parts = [p for p in parts if p]
+    return parts if 1 < len(parts) <= MAX_STEPS else [text.strip()]
 
 
 class RouteError(ValueError):
@@ -134,6 +154,25 @@ class Router:
                     f"\n\nCommand: {command}")
         raw = self.llm.complete_json(self.system_prompt, user, self.schema)
         return self.parse(raw)
+
+    def route_many(self, command: str, context: str = "") -> list[tuple[str, Route]]:
+        """[(the words, its route)] for each command in the sentence, in order (up to MAX_STEPS).
+
+        A sentence that isn't a list of commands, or where any part would be chat
+        ("none"), is routed whole, exactly as route() does.
+        """
+        parts = split_commands(command)
+        if len(parts) > 1:
+            routes = []
+            for part in parts:
+                route = self.route(part, context)
+                if route.is_none:
+                    break
+                routes.append((part, route))
+            else:
+                log.info("Several commands in one: %s", " | ".join(r.to_json() for _, r in routes))
+                return routes
+        return [(command, self.route(command, context))]
 
     def parse(self, raw: str) -> Route:
         """Validate a raw LLM reply. Raises RouteError if it isn't a valid call."""

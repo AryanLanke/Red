@@ -129,3 +129,56 @@ def test_junk_before_the_call_is_still_refused():
     router = Router(ToolRegistry([OpenUrl(open_browser=lambda url: True)]))
     with pytest.raises(RouteError):
         router.parse('Sure! {"tool": "open_url", "args": {"url": "https://www.youtube.com"}}')
+
+
+# --- several commands in one sentence (plan.md task 9) ----------------------------------
+
+from red.router import split_commands  # noqa: E402
+
+
+@pytest.mark.parametrize("said, parts", [
+    ("Open Chrome and search flights to Delhi", ["Open Chrome", "search flights to Delhi"]),
+    ("mute and lock the PC", ["mute", "lock the PC"]),
+    ("check my mail and read today's calendar", ["check my mail", "read today's calendar"]),
+    ("find my resume and open it", ["find my resume", "open it"]),
+    ("open YouTube, then play Believer", ["open YouTube", "play Believer"]),
+    ("search for cats and dogs", ["search for cats and dogs"]),
+    ("play rock and roll", ["play rock and roll"]),
+    ("search online for the mars rover and tell me about it",
+     ["search online for the mars rover and tell me about it"]),
+    ("turn the volume up and down", ["turn the volume up and down"]),
+    ("I went home and then I slept", ["I went home and then I slept"]),
+    ("mute and lock and open youtube and play x and pause", ["mute and lock and open youtube and play x and pause"]),
+])
+def test_split_commands(said, parts):
+    assert split_commands(said) == parts
+
+
+class ByCommand:
+    """A model that answers by the command it's given."""
+
+    def __init__(self, calls):
+        self.calls, self.asked = calls, []
+
+    def complete_json(self, system, user, schema, **kw):
+        said = user.rsplit("Command: ", 1)[-1]
+        self.asked.append(said)
+        return self.calls.get(said, call("none", reply="Hm?"))
+
+
+def test_route_many_routes_each_part():
+    llm = ByCommand({"read today's calendar": call("tell_status", what="date")})
+    router = Router(default_registry(), llm)
+    steps = router.route_many("Open Chrome and search flights to Delhi")
+    assert [(p, r.tool) for p, r in steps] == [("Open Chrome", "open_app"), ("search flights to Delhi", "web_search")]
+    assert llm.asked == []                                      # both took the fast path
+    steps = router.route_many("mute and read today's calendar")
+    assert [r.tool for _, r in steps] == ["volume", "tell_status"]
+    assert llm.asked == ["read today's calendar"]               # only the unclear part asked the model
+
+
+def test_a_part_that_is_chat_means_the_sentence_is_one_command():
+    llm = ByCommand({"open the door": call("none", reply="Hm?"),
+                     "I want to open the door and open my heart": call("none", reply="That's sweet.")})
+    steps = Router(default_registry(), llm, fast=None).route_many("I want to open the door and open my heart")
+    assert len(steps) == 1 and steps[0][1].is_none
