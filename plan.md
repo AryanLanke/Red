@@ -259,7 +259,12 @@ listens. Ollama 0.40.11 can't cache Qwen3.5's prompt (0.2 s a command on the GPU
   `red/listener.py`.
 - **Check:** `tests/test_voice_app.py` with fakes, plus `Timing` lines ("first word spoken" added).
 
-### 7. Mail and calendar
+### 7. ✅ Mail and calendar
+**Done (2026-11-09):** the user chose "read back before sending a mail or deleting an event, nothing else".
+`python -m red google-login` (needs the user's own Desktop OAuth client, see README), `red/google_auth.py`,
+`red/tools/gmail.py`, `red/tools/calendar.py`. No Google packages: plain urllib, so Smart App Control has
+nothing to block. All 10 example commands route right with the real model. **The user still has to try the
+real sign-in by hand.** Details in progress.md 7.2.
 **Ask the user first:** should Red read back once before **sending an email** or **deleting a calendar
 event** ("Sending to Mom: I'll be late. Send?")? The proposal is yes for those two only, and no questions
 for anything else. Build it the way they answer.
