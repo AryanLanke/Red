@@ -1,8 +1,11 @@
-"""play_online: play a podcast, video, trailer or song on YouTube, with no API key.
+"""play_online: every "play ...": a song, artist, podcast, video or trailer on YouTube, with no API key.
+
+Red has no local music player: the user plays everything online.
 
 Red fetches YouTube's public results page for the user's words, reads the
 first video in it, and opens https://www.youtube.com/watch?v=<id> in the
-browser, which starts playing. Only the search words leave the PC. If the
+browser (RED_BROWSER, Chrome by default), which starts playing, and brings
+the window showing it to the front. Only the search words leave the PC. If the
 page can't be fetched or read, Red opens the results page instead, so you
 can still pick one.
 
@@ -18,11 +21,11 @@ import socket
 import unicodedata
 import urllib.error
 import urllib.request
-import webbrowser
 from dataclasses import dataclass
 from typing import Callable
 from urllib.parse import quote_plus
 
+from .. import browser as _browser
 from .. import windows as _windows
 from .base import Tool, ToolError
 
@@ -44,6 +47,16 @@ _VIDEO = re.compile(r'"videoRenderer":\{"videoId":"([A-Za-z0-9_-]{11})"')
 _ANY_ID = re.compile(r'"videoId":"([A-Za-z0-9_-]{11})"')
 _TITLE = re.compile(r'"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"')
 _ID_OK = re.compile(r"[A-Za-z0-9_-]{11}")
+# "Play some music", "play anything": no song named, so start a mix of popular songs.
+_ANYTHING = re.compile(r"(?:some |any |a |the |my )?(?:music|songs?|tunes|anything|something|"
+                       r"all|all (?:the |my )?songs|whatever)", re.I)
+ANYTHING_QUERY = "popular songs mix"
+
+
+def search_words(query: str) -> str:
+    """What to search YouTube for: the user's words, or a mix when they named nothing."""
+    query = " ".join(query.split())[:MAX_QUERY]
+    return ANYTHING_QUERY if _ANYTHING.fullmatch(query.strip(" .!?")) else query
 
 Opener = Callable[..., object]
 
@@ -115,36 +128,41 @@ def fetch_results(query: str, opener: Opener = urllib.request.urlopen,
 
 class PlayOnline(Tool):
     name = "play_online"
-    description = ("Play a podcast, video, trailer or talk online on YouTube, or anything the "
-                   "user says to play on YouTube, for example 'play a podcast about loneliness', "
-                   "'play the Punisher trailer', 'play lofi on YouTube'. Starts the first result.")
+    description = ("Play anything the user asks to play, online on YouTube: a song, artist, "
+                   "album, genre, podcast, video, trailer or talk, for example 'play Believer', "
+                   "'play some Arijit Singh', 'play a podcast about loneliness', 'play the "
+                   "Punisher trailer'. Starts the first result.")
     args_schema = {
         "type": "object",
         "properties": {"query": {
             "type": "string", "minLength": 1, "maxLength": MAX_QUERY,
-            "description": "What to play, as words to search YouTube for, e.g. "
-                           "\"podcast about loneliness\" or \"Punisher trailer\"."}},
+            "description": "What to play, as words to search YouTube for, e.g. \"Believer\", "
+                           "\"Arijit Singh songs\" or \"podcast about loneliness\"."}},
         "required": ["query"],
         "additionalProperties": False,
     }
 
-    def __init__(self, open_browser: Callable[[str], bool] = webbrowser.open,
-                 find: Callable[[str], Video | None] = fetch_results, watch: Callable | None = None):
-        self._open = open_browser
+    def __init__(self, open_browser: Callable[[str], bool] | None = None,
+                 find: Callable[[str], Video | None] = fetch_results, watch: Callable | None = None,
+                 browsers: _browser.Browsers | None = None):
+        # open_browser on its own (tests) is the Windows-default opener.
+        self._browsers = browsers or _browser.Browsers(default_open=open_browser)
         self._find = find
         self._watch = watch
 
     def _open_and_front(self, url: str) -> bool:
-        watcher = (self._watch or _windows.watch)(_windows.browser_target())
-        if not self._open(url):
+        choice = self._browsers.pick()
+        # A watch page's title ends in "- YouTube".
+        watcher = (self._watch or _windows.watch)(_windows.browser_target(choice.exe, "youtube"))
+        if not self._browsers.open(url, choice):
             return False
         self.finish_later(watcher)       # bring the browser to the front while Red speaks
         return True
 
     def run(self, query: str) -> str:
-        query = " ".join(query.split())[:MAX_QUERY]
-        if not query:
+        if not " ".join(query.split()):
             raise ToolError("What should I play?")
+        query = search_words(query)
         try:
             video = self._find(query)
         except (OSError, urllib.error.URLError, socket.timeout, ValueError) as e:

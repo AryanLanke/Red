@@ -1,4 +1,4 @@
-"""play_online: YouTube results parsing (from a saved page, never the live site) and the hand-over from play_music."""
+"""play_online: YouTube results parsing (from a saved page, never the live site), and every "play ..." going online."""
 
 import io
 import socket
@@ -8,9 +8,10 @@ import pytest
 
 from red.tools import default_registry
 from red.tools.base import ToolError
-from red.tools.music import Library, PlayMusic
-from red.tools.youtube import (BROWSER_AGENT, PlayOnline, Video, fetch_results, first_video,
-                               search_url, spoken_title)
+from fakes import FakePopen
+from red import browser as b
+from red.tools.youtube import (ANYTHING_QUERY, BROWSER_AGENT, PlayOnline, Video, fetch_results,
+                               first_video, search_url, search_words, spoken_title)
 
 FIXTURE = Path(__file__).parent / "fixtures" / "youtube_results.html"
 PAGE = FIXTURE.read_text(encoding="utf-8")
@@ -119,67 +120,46 @@ def test_play_online_needs_words():
         PlayOnline(open_browser=Browser(), find=lambda q: None).run(query="   ")
 
 
-# --- play_music hands over --------------------------------------------------------
+# --- every "play ..." goes online (plan.md task 3, second plan) -------------------------
 
-class Online:
-    def __init__(self):
-        self.queries = []
-
-    def run(self, query):
-        self.queries.append(query)
-        return f"Playing {query} on YouTube."
-
-    def take_later(self):
-        return None
+CHROME = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 
 
-class NoPlayer:
-    current, paused = None, False
+def test_a_song_plays_on_youtube_in_chrome():
+    popen, found = FakePopen(), []
+    browsers = b.Browsers(read={"chrome.exe": CHROME}.get, exists=lambda p: True, popen=popen,
+                          setting=lambda: "chrome")
 
-    def play(self, tracks):
-        from red.tools.music import PlayerError
-        raise PlayerError("pygame-ce isn't installed")
-
-
-def test_no_local_match_plays_online_instead(tmp_path):
-    root = tmp_path / "Music"
-    root.mkdir()
-    (root / "Daft Punk - Get Lucky.mp3").write_bytes(b"")
-    online = Online()
-    reply = PlayMusic(NoPlayer(), Library(root), online=online).run(query="podcast about loneliness")
-    assert online.queries == ["podcast about loneliness"]
-    assert reply == "Playing podcast about loneliness on YouTube."
+    def find(query):
+        found.append(query)
+        return Video("7wtfhZwyrcc", "Imagine Dragons - Believer (Official Music Video)")
+    reply = PlayOnline(find=find, browsers=browsers).run(query="Believer")
+    assert reply == "Playing Imagine Dragons - Believer (Official Music Video) on YouTube."
+    assert found == ["Believer"]
+    assert popen.calls[0][0] == [CHROME, "https://www.youtube.com/watch?v=7wtfhZwyrcc"]
 
 
-def test_podcasts_and_videos_never_play_a_local_song(tmp_path):
-    root = tmp_path / "Music"
-    root.mkdir()
-    (root / "Loneliness.mp3").write_bytes(b"")       # would match "loneliness"
-    online = Online()
-    music = PlayMusic(NoPlayer(), Library(root), online=online)
-    music.run(query="podcast about loneliness")
-    music.run(query="Punisher trailer")
-    assert online.queries == ["podcast about loneliness", "Punisher trailer"]
+def test_play_online_fronts_the_window_showing_youtube():
+    targets = []
+
+    def watch(target):
+        targets.append(target)
+        return lambda: True
+    browsers = b.Browsers(default_open=lambda url: True, read={"chrome.exe": CHROME}.get,
+                          exists=lambda p: True, popen=FakePopen(), setting=lambda: "chrome")
+    PlayOnline(find=lambda q: Video("abcdefghijk", "x"), watch=watch, browsers=browsers).run(query="x")
+    assert targets[0].exes == frozenset({"chrome.exe"}) and targets[0].titles == ("youtube",)
 
 
-def test_an_empty_music_folder_plays_online(tmp_path):
-    # 22:26 in the log: "There's no music I can play in C:\\Users\\aryan\\Music."
-    online = Online()
-    PlayMusic(NoPlayer(), folder=lambda: tmp_path, online=online).run(query="podcast")
-    PlayMusic(NoPlayer(), folder=lambda: tmp_path / "missing", online=online).run()
-    assert online.queries == ["podcast", "music"]
+@pytest.mark.parametrize("said, query", [
+    ("music", ANYTHING_QUERY), ("some music", ANYTHING_QUERY), ("anything", ANYTHING_QUERY),
+    ("songs", ANYTHING_QUERY), ("all my songs", ANYTHING_QUERY),
+    ("Arijit Singh songs", "Arijit Singh songs"), ("Believer", "Believer"),
+    ("  lofi   music ", "lofi music"),
+])
+def test_play_anything_starts_a_mix(said, query):
+    assert search_words(said) == query
 
 
-def test_a_player_that_cant_start_plays_online(tmp_path):
-    root = tmp_path / "Music"
-    root.mkdir()
-    (root / "Get Lucky.mp3").write_bytes(b"")
-    online = Online()
-    PlayMusic(NoPlayer(), Library(root), online=online).run(query="get lucky")
-    assert online.queries == ["get lucky"]
-
-
-def test_the_default_registry_wires_play_music_to_play_online():
-    registry = default_registry()
-    assert registry.get("play_music")._online is registry.get("play_online")
-    assert not registry.get("play_online").destructive
+def test_play_online_is_harmless():
+    assert not default_registry().get("play_online").destructive
