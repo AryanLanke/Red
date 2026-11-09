@@ -117,8 +117,12 @@ def _model_spec(name: str) -> ModelSpec:
 # --- Clients -----------------------------------------------------------------
 
 class LLM(Protocol):
-    def complete_json(self, system: str, user: str, schema: dict) -> str:
-        """Return the model's reply, constrained to the JSON schema."""
+    def complete_json(self, system: str, user: str, schema: dict, temperature: float = 0.0) -> str:
+        """Return the model's reply, constrained to the JSON schema.
+
+        Routing uses temperature 0 (the same command, the same tool); chat
+        uses a little more, so Red doesn't sound like a form letter.
+        """
         ...
 
 
@@ -145,14 +149,14 @@ class OllamaClient:
         self.base_url = base_url.rstrip("/")
         self.model, self.keep_alive = model, keep_alive
 
-    def complete_json(self, system: str, user: str, schema: dict) -> str:
+    def complete_json(self, system: str, user: str, schema: dict, temperature: float = 0.0) -> str:
         data = _post_json(f"{self.base_url}/api/chat", {
             "model": self.model,
             "messages": _messages(system, user),
             "format": schema,
             "stream": False,
             "keep_alive": self.keep_alive,
-            "options": {"temperature": 0, "num_predict": 256, "num_ctx": 4096},
+            "options": {"temperature": temperature, "num_predict": 256, "num_ctx": 4096},
         })
         try:
             return data["message"]["content"]
@@ -208,12 +212,12 @@ class OpenAICompatClient:
         self.base_url = base_url.rstrip("/")
         self.model, self.api_key = model, api_key
 
-    def complete_json(self, system: str, user: str, schema: dict) -> str:
+    def complete_json(self, system: str, user: str, schema: dict, temperature: float = 0.0) -> str:
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
         data = _post_json(f"{self.base_url}/chat/completions", {
             "model": self.model,
             "messages": _messages(system, user),
-            "temperature": 0,
+            "temperature": temperature,
             "max_tokens": 256,
             "response_format": {"type": "json_schema",
                                 "json_schema": {"name": "route", "strict": True, "schema": schema}},

@@ -35,7 +35,8 @@ from .config import Settings, load_settings
 from .executor import Executor
 from .llm import LLMError, connect
 from .router import RouteError, Router
-from .smalltalk import dismissal_reply, is_goodbye, quick_reply
+from .chat import Chat
+from .smalltalk import dismissal_reply, is_ability_question, is_goodbye, quick_reply
 from .tools import default_registry
 
 log = logging.getLogger("red")
@@ -77,11 +78,13 @@ def _show(router: Router, command: str) -> None:
     logging.getLogger("red.commands").info("%r -> %s", command, route.to_json())
 
 
-def _run(router: Router, executor: Executor, command: str) -> None:
+def _run(router: Router, executor: Executor, command: str, chat: Chat | None = None) -> None:
     quick = dismissal_reply(command) or quick_reply(command)
     if quick is not None:
         logging.getLogger("red.commands").info("%r -> small talk", command)
         print(f"  Red: {quick}")
+        if chat is not None:
+            chat.remember(command, quick)
         return
     try:
         route = router.route(command)
@@ -91,7 +94,12 @@ def _run(router: Router, executor: Executor, command: str) -> None:
     logging.getLogger("red.commands").info("%r -> %s", command, route.to_json())
     if not route.is_none:
         print(f"  -> {route.to_json()}")
-    print(f"  Red: {executor.execute(command, route)}")
+    reply = executor.execute(command, route, offer=is_ability_question(command))
+    if chat is not None:
+        reply = chat.reply(command, fallback=reply) if route.is_none else reply
+        if not route.is_none:
+            chat.remember(command, reply)
+    print(f"  Red: {reply}")
     if executor.last_details:
         for line in executor.last_details.splitlines():
             print(f"       {line}")
@@ -181,6 +189,7 @@ class VoiceApp:
             return spoken(question, timeout)
 
         self.executor = Executor(registry, ask=with_fallback(ask, typed_fallback), log_path=log_path)
+        self.chat = Chat(router.llm)        # conversation with memory, for anything that isn't a command
         self.listener = None
         self.notice = ""        # why the wake word is off, if it is
         self.reminders = None   # red.scheduler's Scheduler, when it exists
@@ -341,6 +350,7 @@ class VoiceApp:
         quick = quick_reply(text)
         if quick is not None:
             logging.getLogger("red.commands").info("%r -> small talk", text)
+            self.chat.remember(text, quick)
             self._say(quick)
             return quick, tool, True
         self._state("thinking", f"“{text}”")
@@ -359,7 +369,13 @@ class VoiceApp:
             # Red paused the music only to listen. Let the tool pause it for
             # real, so it says "Paused." and not "already paused".
             player.resume()
-        last = self.executor.execute(text, route)
+        last = self.executor.execute(text, route, offer=is_ability_question(text))
+        if route.is_none:
+            # Not a command: talk like a friend instead of the router's stock line.
+            self._state("thinking", "")
+            last = self.chat.reply(text, fallback=last)
+        else:
+            self.chat.remember(text, last)
         self._say(last, self.executor.last_details)
         return last, tool, True
 
@@ -622,8 +638,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.typed:
             reminders = attach_reminders(_print_reminder)
+            chat = Chat(router.llm)
             try:
-                _typed_loop(lambda c: _run(router, executor, c), "Red. Type a command, or 'quit'.")
+                _typed_loop(lambda c: _run(router, executor, c, chat), "Red. Type a command, or 'quit'.")
             finally:
                 if reminders is not None and reminders.on_due is _print_reminder:
                     reminders.on_due = None

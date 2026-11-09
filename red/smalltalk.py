@@ -35,10 +35,6 @@ _RULES: list[tuple[str, Reply]] = [
      lambda now: f"{greeting(now)}! What can I do for you?"),
     (rf"good ?night{_RED}",
      lambda now: "Good night! Sleep well."),
-    (rf"how are you(?: doing)?(?: today)?{_RED}|how's it going{_RED}|how are things{_RED}",
-     lambda now: "I'm doing great, thanks for asking. What can I do for you?"),
-    (rf"what are you (?:doing|up to)(?: right now| now)?{_RED}",
-     lambda now: "Just here on your PC, listening for you. What do you need?"),
     (r"who are you|what is your name|what's your name|whats your name|what are you",
      lambda now: "I'm Red, your assistant on this PC."),
     (rf"(?:thank you|thanks|thanks a lot|thank you so much|thank you very much){_RED}",
@@ -135,3 +131,33 @@ def dismissal_reply(text: str) -> str | None:
     if rude and not asks_for_something and len(said.split()) <= 8:
         return RUDE_REPLY
     return None
+
+
+# "Can you ...?", "Could you ...?", "... will you do that?": asking whether Red
+# can do something. Red says it can and asks before doing it.
+_ABILITY = re.compile(
+    r"^(?:hey red )?(?:can|could|would|will) you\b"
+    r"|^(?:are you able|would you be able|will you be able) to\b"
+    r"|^is it possible\b"
+    r"|^do you know how to\b"
+    r"|^(?:can|could|may) i ask you to\b"
+    r"|\b(?:can|could|will|would) you do (?:that|this|it)\b"
+    r"|\bis that something you can do\b"
+)
+
+# Yes, the relaxed way people say it. Only for things that aren't risky:
+# shutdown and friends still need a plain "yes".
+_CASUAL_YES = re.compile(
+    r"(?:yes|yeah|yep|yup|ya|sure|ok|okay|alright|all right|of course|absolutely|definitely|"
+    r"go ahead|do it|go for it|please|yes please|please do|sure thing|why not)"
+    r"(?: (?:yes|yeah|sure|ok|okay|please|go ahead|do it|go for it|thanks|thank you|red))*"
+)
+
+
+def is_ability_question(text: str) -> bool:
+    """True for "can you turn off my laptop?", not for "turn off my laptop"."""
+    return _ABILITY.search(normalize(text)) is not None
+
+
+def is_casual_yes(text: str | None) -> bool:
+    return bool(text) and _CASUAL_YES.fullmatch(normalize(text)) is not None

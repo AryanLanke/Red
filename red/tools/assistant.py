@@ -72,7 +72,7 @@ class Answer(_UsesLLM):
     description = ("Answer a general knowledge question or explain something from the "
                    "model's own knowledge, offline, in a few sentences, for example 'what is "
                    "Hugging Face' or 'explain recursion'. Not for live facts like weather "
-                   "or news.")
+                   "or news, and not for chat or questions about Red itself.")
     args_schema = {
         "type": "object",
         "properties": {"question": {"type": "string", "minLength": 1, "maxLength": 300,
