@@ -83,6 +83,20 @@ class Executor:
 
         confirmed = None
         if route.destructive or tool.destructive:
+            # A tool can check its arguments first (a mail to someone Red has no
+            # address for), so Red doesn't ask "Send?" for something it can't do.
+            prepare = getattr(tool, "prepare", None)
+            if callable(prepare):
+                set_command = getattr(tool, "set_command", None)
+                if callable(set_command):
+                    set_command(command)
+                try:
+                    prepare(**route.args)
+                except ToolError as e:
+                    reply = str(e)
+                    self.last_status = "error"
+                    self._log(command, route, status="error", confirmed=None, result=reply)
+                    return reply
             try:
                 question = tool.describe(**route.args)
             except Exception:
