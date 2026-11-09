@@ -401,6 +401,15 @@ Every command writes a `Timing` line to `red.log`: listen, transcribe, route, ac
 - **Running:** `VoiceApp._run_steps` (and typed `run`) execute the parts in order through the Executor, so each destructive part asks its own question. The first failure or "no" stops the rest, and Red says which step ("Step 1, open Spotfy, didn't work: ... I stopped there.", "I didn't do step 2, shut down in 2 hours."). The replies are said together; windows that steps opened are brought to the front in order while Red speaks; each step is its own line in `commands.jsonl`.
 - **Checked:** unit tests for the splitter, `route_many`, and running, stopping and confirming steps. Real model (Qwen3.5 4B): "Open Chrome and search flights to Delhi" (both by the fast path), "mute and lock the PC", "open my downloads folder and then play Believer", "set a timer for 5 minutes and remind me to call mom at 6 pm", and "check my mail and read today's calendar" (with the Google tools) all split right; the two sentences that must stay whole stay whole. All 166 real-model cases pass.
 
+#### Waking reliably (2026-11-09, plan.md task 1, third plan)
+
+- **Cause, from red.log of the voice test:** Whisper wrote "Hey Red Red Red Red Red Red Red" and "Hey Red, hey Red, hey Red" for a plain "Hey Red", and `match_score` gave 0 to anything over 4 words. A clip over 1.6 s ("Hey Red, open YouTube") was dropped before Whisper saw it, and a 3-word one scored 0.45, under the 0.5 threshold.
+- **Fix** (`red/wakeword.py`): repeats are collapsed first (`collapse_repeats`); a burst of speech over 1.25 s is scored on its first two words only ("head" mode), and a burst over 1.6 s has its first 1.3 s checked once. The guards stay: a pause before, the phrase at the start. Cost: every long burst after a pause now costs one Whisper tiny.en run on 1.3 s of audio (about 0.3 s on two CPU threads), where before it cost none.
+- **Piper through the real detector** (Silero VAD + tiny.en, 4 voices): "Hey Red", "Hey Red Red Red", "hey red hey red" and "Hey Red, open YouTube" all wake (1.00); "I saw a red car yesterday", "Tell me about the red planet" and "What is going on today" stay at 0.00. When the speaker pauses after "Hey Red" it counts as a short phrase and the command is a second burst.
+- **`python -m red wake-test`** (`red/wake_test.py`) prints each check with its words, score, loudness (peak) and verdict for 30 s, and says if the microphone is quiet. Each check is also logged with its peak in red.log.
+- **Not done:** the words said right after "Hey Red" in the same breath are not kept as the command; Red still beeps and listens again. That needs the detector to hand its audio to the recorder (`Listener` and `record_command`).
+- **Still to do by the user:** try it by voice. I could only test with Piper voices, not your microphone or your accent.
+
 ### 7.3 Overlay (Track C)
 
 - PySide6. Frameless, always on top, translucent, and doesn't take keyboard focus. Sits in the bottom-right corner of the primary screen.
