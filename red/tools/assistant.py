@@ -1,33 +1,70 @@
 """Questions answered by the local model: the offline `answer` tool.
 
 The router's model picks the tool; this makes a second call to the same local
-model for a short spoken answer. There's no cloud model. The Router gives the
-tool its LLM through `bind_llm()`, so `default_registry()` needs no arguments.
+model for a spoken answer. There's no cloud model. The Router gives the tool
+its LLM through `bind_llm()`, so `default_registry()` needs no arguments.
+
+Answers know the conversation (`bind_context()`, from red.chat), so "what's
+that series about?" knows the series, and their length follows the request:
+2 to 4 sentences normally, up to about 12 for "a big summary", "tell me the
+whole story" or "in detail".
 """
 
 from __future__ import annotations
 
 import json
 import re
+from typing import Callable
 
-from ..llm import LLM, LLMError
+from ..llm import LLM, LLMError, complete
 from .base import Tool, ToolError
 
 MAX_SENTENCES = 4
 MAX_ANSWER = 700
+DETAIL_SENTENCES = 12
+MAX_DETAIL_ANSWER = 2400
+DETAIL_MAX_TOKENS = 900          # about 12 sentences, plus the JSON around them
 
 ANSWER_SYSTEM = """You are Red, a voice assistant on the user's Windows PC. Answer the question from your own knowledge in 2 to 4 short sentences of plain spoken English. No lists, markdown, links or emoji. If it needs live information (today's news, weather, prices, scores) or you don't know, say so in one sentence.
+If there's an earlier conversation, use it to work out what "it", "that" or "the series" means, and answer about that.
 Reply with JSON only: {"answer": "<your answer>"}"""
 
-ANSWER_SCHEMA = {
-    "type": "object",
-    "properties": {"answer": {"type": "string", "minLength": 1, "maxLength": MAX_ANSWER}},
-    "required": ["answer"],
-    "additionalProperties": False,
-}
+DETAIL_SYSTEM = """You are Red, a voice assistant on the user's Windows PC. The user wants a long, detailed answer. Tell it like a story, in 8 to 12 sentences of plain spoken English: the setup, the main people, what happens and how it turns out, or for other topics the full explanation step by step. No lists, markdown, links or emoji. Don't promise to give more later: give it now. If you aren't sure of details, say which parts you're unsure of.
+If there's an earlier conversation, use it to work out what "it", "that" or "the series" means, and answer about that.
+Reply with JSON only: {"answer": "<your answer>"}"""
 
 
-def spoken(text: str, max_sentences: int = MAX_SENTENCES) -> str:
+def _schema(max_length: int) -> dict:
+    return {
+        "type": "object",
+        "properties": {"answer": {"type": "string", "minLength": 1, "maxLength": max_length}},
+        "required": ["answer"],
+        "additionalProperties": False,
+    }
+
+
+ANSWER_SCHEMA = _schema(MAX_ANSWER)
+DETAIL_SCHEMA = _schema(MAX_DETAIL_ANSWER)
+
+# "A big summary", "tell me the whole story", "in detail", "explain fully".
+_DETAIL = re.compile(
+    r"\b(?:big|long|longer|full|whole|detailed|complete|proper|bigger|deep)\s+"
+    r"(?:summary|story|explanation|answer|version|overview|recap|plot)\b"
+    r"|\bin (?:more |full |great |much )?detail\b|\bdetailed\b|\bin depth\b|\bdeep dive\b"
+    r"|\bexplain (?:it |that |this |everything )?(?:fully|completely|properly|thoroughly)\b"
+    r"|\btell me (?:the |its |the whole |the full |whole )?(?:story|plot)\b"
+    r"|\bstory thing\b|\belaborate\b|\bmore details?\b|\btell me (?:much )?more\b"
+    r"|\beverything about\b|\bsmall summary\b|\bnot (?:so |that )?short\b",
+    re.I,
+)
+
+
+def wants_detail(text: str) -> bool:
+    """True when the user asks for a long answer ("I want a big summary")."""
+    return bool(text) and _DETAIL.search(text) is not None
+
+
+def spoken(text: str, max_sentences: int = MAX_SENTENCES, max_chars: int = MAX_ANSWER) -> str:
     """Make model text fit to say aloud: no markdown or links, at most N sentences."""
     text = re.sub(r"https?://\S+", "", text)
     text = re.sub(r"^\s*(?:[-•*]|\d+[.)])\s+", "", text, flags=re.M)   # list markers
@@ -35,44 +72,79 @@ def spoken(text: str, max_sentences: int = MAX_SENTENCES) -> str:
     text = " ".join(text.split())
     sentences = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9\"'])", text)
     text = " ".join(sentences[:max_sentences]).strip()
-    if len(text) > MAX_ANSWER:
-        text = text[:MAX_ANSWER].rsplit(" ", 1)[0] + "…"
+    if len(text) > max_chars:
+        text = text[:max_chars].rsplit(" ", 1)[0] + "…"
     return text
 
 
-def ask_model(llm: LLM | None, system: str, user: str) -> str:
+def with_history(history: str, text: str) -> str:
+    """The prompt text, with the earlier conversation in front when there is one."""
+    if not history.strip():
+        return text
+    return f"Earlier in this conversation:\n{history.strip()}\n\n{text}"
+
+
+def ask_model(llm: LLM | None, system: str, user: str, *, detail: bool = False) -> str:
     """One local-model call that returns {"answer": ...}; the text, cleaned for speech."""
     if llm is None:
         raise ToolError("I need the local model to answer that, and it isn't connected.")
     try:
-        raw = llm.complete_json(system, user, ANSWER_SCHEMA)
+        if detail:
+            raw = complete(llm, system, user, DETAIL_SCHEMA, max_tokens=DETAIL_MAX_TOKENS)
+        else:
+            raw = llm.complete_json(system, user, ANSWER_SCHEMA)
         answer = json.loads(raw)["answer"]
     except LLMError as e:
         raise ToolError("The local model didn't answer. Try again in a moment.") from e
     except (ValueError, KeyError, TypeError) as e:
         raise ToolError("The local model gave an answer I couldn't read.") from e
-    text = spoken(str(answer))
+    if detail:
+        text = spoken(str(answer), DETAIL_SENTENCES, MAX_DETAIL_ANSWER)
+    else:
+        text = spoken(str(answer))
     if not text:
         raise ToolError("I don't have an answer for that.")
     return text
 
 
 class _UsesLLM(Tool):
+    max_reply = MAX_DETAIL_ANSWER + 100     # long answers aren't cut off by the Executor
+
     def __init__(self, llm: LLM | None = None):
         self._llm = llm
+        self._history: Callable[[], str] = lambda: ""
+        self._command = ""
 
     def bind_llm(self, llm: LLM) -> None:
         """Called by the Router with its model, unless one was passed in."""
         if self._llm is None:
             self._llm = llm
 
+    def bind_context(self, history: Callable[[], str]) -> None:
+        """Called by the voice or typed loop: the conversation so far (Chat.history)."""
+        self._history = history
+
+    def set_command(self, command: str) -> None:
+        """Called by the Executor before run(): what the user actually said.
+
+        The router's arguments can be a paraphrase; "I want a big summary"
+        must still mean a long answer.
+        """
+        self._command = " ".join(command.split())
+
+    def history(self) -> str:
+        try:
+            return self._history() or ""
+        except Exception:  # noqa: BLE001 - an answer without context beats no answer
+            return ""
+
 
 class Answer(_UsesLLM):
     name = "answer"
     description = ("Answer a general knowledge question or explain something from the "
-                   "model's own knowledge, offline, in a few sentences, for example 'what is "
-                   "Hugging Face' or 'explain recursion'. Not for live facts like weather "
-                   "or news, and not for chat or questions about Red itself.")
+                   "model's own knowledge, offline, for example 'what is Hugging Face', "
+                   "'explain recursion' or 'tell me the whole story of it'. Not for live facts "
+                   "like weather or news, and not for chat or questions about Red itself.")
     args_schema = {
         "type": "object",
         "properties": {"question": {"type": "string", "minLength": 1, "maxLength": 300,
@@ -83,6 +155,13 @@ class Answer(_UsesLLM):
 
     def run(self, question: str) -> str:
         question = " ".join(question.split())
-        if not question:
+        said = self._command or question
+        self._command = ""
+        if not said:
             raise ToolError("What's the question?")
-        return ask_model(self._llm, ANSWER_SYSTEM, question)
+        # The user's own words win: the router's "question" is sometimes a
+        # paraphrase, or even a reply it made up.
+        detail = wants_detail(said)
+        history = self.history()
+        prompt = with_history(history, f"Question: {said}") if history.strip() else said
+        return ask_model(self._llm, DETAIL_SYSTEM if detail else ANSWER_SYSTEM, prompt, detail=detail)

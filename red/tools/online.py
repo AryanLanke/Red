@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import urllib.error
 import urllib.request
@@ -22,7 +23,9 @@ import xml.etree.ElementTree as ET
 from typing import Callable
 from urllib.parse import quote, urlencode
 
-from .assistant import _UsesLLM, ask_model, spoken
+from ..llm import LLMError
+from .assistant import (DETAIL_SENTENCES, MAX_DETAIL_ANSWER, _UsesLLM, ask_model, spoken,
+                        wants_detail, with_history)
 from .base import Tool, ToolError
 
 TIMEOUT_SECONDS = 6.0
@@ -174,9 +177,60 @@ class Weather(Tool):
 WIKI_SEARCH_URL = "https://en.wikipedia.org/w/api.php?"
 WIKI_SUMMARY_URL = "https://en.wikipedia.org/api/rest_v1/page/summary/"
 MAX_EXTRACT = 3000
+MAX_DETAIL_EXTRACT = 7000     # the intro plus the plot, about 1,800 tokens
+# Sections that tell the story or explain the thing, best first.
+STORY_SECTIONS = ("premise", "plot", "synopsis", "plot summary", "story", "storyline",
+                  "summary", "overview", "series overview", "description", "biography", "history")
 
-SUMMARY_SYSTEM = """You are Red, a voice assistant. Using only the Wikipedia text below, answer the user's question in 2 or 3 short sentences of plain spoken English. No lists, markdown or links. If the text doesn't answer it, say what the article is about instead.
+SUMMARY_SYSTEM = """You are Red, a voice assistant. Using only the Wikipedia text below, answer the user's question in 2 or 3 short sentences of plain spoken English. No lists, markdown or links. If the text doesn't answer it, say what the article is about instead. Use any earlier conversation only to understand the question; don't repeat it or give advice from it.
 Reply with JSON only: {"answer": "<your answer>"}"""
+
+DETAIL_SUMMARY_SYSTEM = """You are Red, a voice assistant. The user wants a long, detailed answer. Using only the Wikipedia text below, tell it like a story in 8 to 12 sentences of plain spoken English: the setup, the main people, what happens and how it turns out (for things that aren't stories, the full explanation). No lists, markdown or links. Don't promise more later: give it now. Use any earlier conversation only to understand the question.
+Reply with JSON only: {"answer": "<your answer>"}"""
+
+TOPIC_SYSTEM = """From the conversation and the user's request, give the best Wikipedia search words for what the user means. Use the conversation to resolve words like "it", "that" or "the series", and keep details that pick the right article, for example "The Punisher (TV series)" rather than "Punisher" when they talked about the web series.
+Reply with JSON only: {"topic": "<search words>"}"""
+
+TOPIC_SCHEMA = {
+    "type": "object",
+    "properties": {"topic": {"type": "string", "minLength": 1, "maxLength": 120}},
+    "required": ["topic"],
+    "additionalProperties": False,
+}
+
+_REFERS_BACK = re.compile(r"\b(?:it|its|that|this|those|these|they|them|he|him|she|her|the (?:series|show|"
+                          r"movie|film|book|game|song|album|one))\b", re.I)
+
+
+def story_text(article: str, limit: int = MAX_DETAIL_EXTRACT) -> str:
+    """The intro and the plot (or premise, synopsis...) of a plain-text Wikipedia article.
+
+    `article` is the API's plain text with "== Heading ==" lines.
+    """
+    parts = re.split(r"^(=+)\s*(.*?)\s*=+\s*$", article, flags=re.M)
+    intro = " ".join(parts[0].split())
+    sections = [(len(parts[i]), parts[i + 1].strip().lower(), " ".join(parts[i + 2].split()))
+                for i in range(1, len(parts) - 2, 3)]
+    story = ""
+    for wanted in STORY_SECTIONS:
+        for level, heading, body in sections:
+            if heading == wanted and body:
+                story = body
+                # Subsections ("=== Season 1 ===") hold the actual plot.
+                start = sections.index((level, heading, body))
+                for sub_level, _, sub_body in sections[start + 1:]:
+                    if sub_level <= level:
+                        break
+                    story += " " + sub_body
+                break
+        if story:
+            break
+    text = intro[:2000]
+    if story:
+        text += "\n\n" + story
+    elif len(intro) < limit:
+        text += "\n\n" + " ".join(body for _, _, body in sections)
+    return text[:limit]
 
 
 class LookUp(_UsesLLM):
@@ -201,11 +255,43 @@ class LookUp(_UsesLLM):
         self._open = opener
         self.last_details = ""
 
+    def _topic(self, topic: str, said: str, history: str) -> str:
+        """With an earlier conversation, ask the model what the user really means."""
+        if not history or self._llm is None:
+            return topic
+        words = set(re.findall(r"[a-z0-9]+", topic.lower()))
+        talked_about = any(w in history.lower() for w in words if len(w) > 2)
+        if not (talked_about or _REFERS_BACK.search(f"{topic} {said}")):
+            return topic
+        try:
+            raw = self._llm.complete_json(TOPIC_SYSTEM, with_history(history, f"Request: {said or topic}"),
+                                          TOPIC_SCHEMA)
+            better = " ".join(str(json.loads(raw)["topic"]).split())
+        except (LLMError, ValueError, KeyError, TypeError):
+            return topic
+        return better or topic
+
+    def _article(self, title: str) -> str:
+        """The whole article as plain text with == headings ==, or "" if that fails."""
+        try:
+            data = fetch_json(WIKI_SEARCH_URL + urlencode({
+                "action": "query", "prop": "extracts", "explaintext": 1, "exsectionformat": "wiki",
+                "redirects": 1, "titles": title, "format": "json", "formatversion": 2}),
+                "Wikipedia", self._open)
+            pages = data.get("query", {}).get("pages", [])
+            return str(pages[0].get("extract", "")) if pages else ""
+        except (ToolError, AttributeError, IndexError, TypeError):
+            return ""
+
     def run(self, topic: str, question: str = "") -> str:
         self.last_details = ""
+        said, self._command = self._command, ""
         topic = " ".join(topic.split())
         if not topic:
             raise ToolError("What should I look up?")
+        detail = wants_detail(said) or wants_detail(question)
+        history = self.history()
+        topic = self._topic(topic, said, history)
         found = fetch_json(WIKI_SEARCH_URL + urlencode({
             "action": "opensearch", "search": topic, "limit": 1, "namespace": 0,
             "format": "json"}), "Wikipedia", self._open)
@@ -223,11 +309,16 @@ class LookUp(_UsesLLM):
         self.last_details = f"Wikipedia: {page.get('title', title)}\n{url}"
         if page.get("type") == "disambiguation":
             return f"{title} can mean several things. Try saying which one you mean."
+        if detail:
+            # A big summary needs the story, not just the first paragraph.
+            extract = story_text(self._article(page.get("title", title))) or extract
         if self._llm is None:
-            return "From Wikipedia: " + spoken(extract, 3)
-        ask = question.strip() or f"What is {topic}?"
-        answer = ask_model(self._llm, SUMMARY_SYSTEM,
-                           f"Question: {ask}\n\nWikipedia article '{title}':\n{extract}")
+            return "From Wikipedia: " + spoken(extract, DETAIL_SENTENCES if detail else 3,
+                                               MAX_DETAIL_ANSWER if detail else 700)
+        ask = said or question.strip() or f"What is {topic}?"
+        answer = ask_model(self._llm, DETAIL_SUMMARY_SYSTEM if detail else SUMMARY_SYSTEM,
+                           with_history(history, f"Question: {ask}\n\nWikipedia article '{title}':\n{extract}"),
+                           detail=detail)
         return f"From Wikipedia: {answer}"
 
 
