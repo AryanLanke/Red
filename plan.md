@@ -226,7 +226,9 @@ settings app).
 **Screen reading:** with Qwen3.5 4B, `describe_screen` sends the screenshot as well as the screen text,
 so Red understands what it sees, not only the words.
 
-### 5. Instant common commands
+### 5. ✅ Instant common commands
+**Done (2026-11-09):** `red/fastpath.py`. "Open YouTube." is done about 1.26 s after you stop talking (was
+2.65 s at 23:37); routing those commands takes 0.00 s. Details in progress.md 7.2.
 - **Why:** in the 23:37 test, routing took 1.3 s of the 2.65 s for "open YouTube". Common, clear commands
   don't need the model.
 - **New `red/fastpath.py`, called first from `Router.route()`.** Patterns for:
