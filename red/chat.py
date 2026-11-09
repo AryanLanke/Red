@@ -17,6 +17,7 @@ from collections import deque
 from datetime import datetime
 from typing import Callable
 
+from . import speech as _speech
 from .llm import complete
 from .tools.assistant import spoken
 
@@ -89,12 +90,37 @@ class Chat:
         return complete(self.llm, CHAT_SYSTEM, self.prompt(said), CHAT_SCHEMA,
                         temperature=CHAT_TEMPERATURE)
 
+    def _reply_streaming(self, said: str, stream) -> str:
+        """Speak each sentence of the reply as soon as the model has written it."""
+        said_back: list[str] = []
+        pieces = _speech.stream_field(self.llm, CHAT_SYSTEM, self.prompt(said), CHAT_SCHEMA, "reply",
+                                      temperature=CHAT_TEMPERATURE)
+        try:
+            for sentence in _speech.sentences(pieces):
+                text = spoken(sentence, max_sentences=50, max_chars=MAX_REPLY)
+                if not text:
+                    continue
+                stream.say(text)
+                said_back.append(text)
+                if len(said_back) >= 3 or stream.cancelled:
+                    break
+        except Exception as e:  # noqa: BLE001 - a dull reply beats no reply
+            log.warning("Chat reply failed: %s", e)
+        finally:
+            close = getattr(pieces, "close", None)
+            if close:
+                close()
+        return " ".join(said_back)
+
     def reply(self, said: str, fallback: str = "") -> str:
         """Red's answer to `said`, remembered. Falls back to `fallback` if the model fails."""
         self._expire()
         said = " ".join(said.split())
         text = ""
-        if self.llm is not None:
+        stream = _speech.current()
+        if self.llm is not None and stream is not None and hasattr(self.llm, "stream_json"):
+            text = self._reply_streaming(said, stream)
+        elif self.llm is not None:
             try:
                 text = spoken(str(json.loads(self._ask(said))["reply"]), max_sentences=3)
             except Exception as e:  # noqa: BLE001 - a dull reply beats no reply

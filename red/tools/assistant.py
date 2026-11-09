@@ -13,11 +13,15 @@ whole story" or "in detail".
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Callable
 
+from .. import speech as _speech
 from ..llm import LLM, LLMError, complete
 from .base import Tool, ToolError
+
+log = logging.getLogger(__name__)
 
 MAX_SENTENCES = 4
 MAX_ANSWER = 700
@@ -87,10 +91,18 @@ def with_history(history: str, text: str) -> str:
 
 
 def ask_model(llm: LLM | None, system: str, user: str, *, detail: bool = False,
-              images: list[str] | None = None) -> str:
-    """One local-model call that returns {"answer": ...}; the text, cleaned for speech."""
+              images: list[str] | None = None, prefix: str = "") -> str:
+    """One local-model call that returns {"answer": ...}; the text, cleaned for speech.
+
+    With a SpeechStream open (the voice loop), each sentence is spoken as soon
+    as the model has written it, `prefix` ("From Wikipedia:") first. The text
+    returned is the same either way, without the prefix.
+    """
     if llm is None:
         raise ToolError("I need the local model to answer that, and it isn't connected.")
+    stream = _speech.current()
+    if stream is not None and hasattr(llm, "stream_json"):
+        return _ask_streaming(llm, stream, system, user, detail=detail, images=images, prefix=prefix)
     try:
         if detail:
             raw = complete(llm, system, user, DETAIL_SCHEMA, max_tokens=DETAIL_MAX_TOKENS, images=images)
@@ -110,6 +122,40 @@ def ask_model(llm: LLM | None, system: str, user: str, *, detail: bool = False,
     if not text:
         raise ToolError("I don't have an answer for that.")
     return text
+
+
+def _ask_streaming(llm, stream, system: str, user: str, *, detail: bool,
+                   images: list[str] | None, prefix: str) -> str:
+    """ask_model, speaking each sentence while the model writes the next one."""
+    max_sentences, max_chars = (DETAIL_SENTENCES, MAX_DETAIL_ANSWER) if detail else (MAX_SENTENCES, MAX_ANSWER)
+    options = {"max_tokens": DETAIL_MAX_TOKENS} if detail else {}
+    said: list[str] = []
+    size = 0
+    pieces = _speech.stream_field(llm, system, user, DETAIL_SCHEMA if detail else ANSWER_SCHEMA,
+                                  "answer", images=images, **options)
+    try:
+        for sentence in _speech.sentences(pieces):
+            text = spoken(sentence, max_sentences=50, max_chars=max_chars)   # cleaned, not cut
+            if not text:
+                continue
+            if not said and prefix:
+                stream.say(prefix)
+            stream.say(text)
+            said.append(text)
+            size += len(text) + 1
+            if len(said) >= max_sentences or size >= max_chars or stream.cancelled:
+                break
+    except LLMError as e:
+        if not said:
+            raise ToolError("The local model didn't answer. Try again in a moment.") from e
+        log.warning("The answer stopped part way: %s", e)
+    finally:
+        close = getattr(pieces, "close", None)
+        if close:
+            close()               # stop the model; the rest isn't needed
+    if not said:
+        raise ToolError("I don't have an answer for that.")
+    return " ".join(said)
 
 
 class _UsesLLM(Tool):

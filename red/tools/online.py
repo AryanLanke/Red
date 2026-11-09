@@ -390,7 +390,7 @@ class LookUp(_UsesLLM):
         answer = ask_model(self._llm, DETAIL_SUMMARY_SYSTEM if detail else SUMMARY_SYSTEM,
                            with_history(history, f"Question: {ask}\n\nWikipedia article '{title}':\n"
                                                  f"{extract}{more}"),
-                           detail=detail)
+                           detail=detail, prefix="From Wikipedia:")
         return f"From Wikipedia: {answer}"
 
 
