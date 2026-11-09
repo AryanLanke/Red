@@ -164,8 +164,11 @@ class HeyRedDetector:
 
     def __init__(self, vad: Callable[[np.ndarray], float], transcribe: Callable[[np.ndarray], str],
                  clock: Callable[[], float] = time.perf_counter, *,
-                 personal: frozenset[str] = frozenset(), max_clip_seconds: float = MAX_CLIP_SECONDS):
+                 personal: frozenset[str] = frozenset(), max_clip_seconds: float = MAX_CLIP_SECONDS,
+                 owner: Callable[[np.ndarray], bool] | None = None):
         self._vad = vad
+        # RED_VOICE_MATCH: is it the owner's voice? (red/voice_match.py). None: anyone.
+        self.owner = owner
         self._transcribe = transcribe
         self._clock = clock
         self.personal = frozenset(personal)
@@ -187,8 +190,9 @@ class HeyRedDetector:
             max_clip = MAX_CLIP_SECONDS
         if personal:
             log.info("Using your voice profile for \"Hey Red\": %s", ", ".join(sorted(personal)))
+        from .voice_match import OwnerCheck
         return cls(StreamingVAD(), whisper.transcribe, personal=personal,
-                   max_clip_seconds=float(max_clip))
+                   max_clip_seconds=float(max_clip), owner=OwnerCheck.create(model_dir))
 
     def reset(self) -> None:
         if hasattr(self._vad, "reset"):
@@ -214,6 +218,8 @@ class HeyRedDetector:
         score = match_score(text, self.personal)
         # Logged so a missed "Hey Red" can be explained (RED_HOME\logs\red.log).
         log.info("Wake check: heard %r (score %.2f)", text[:60], score)
+        if score > 0 and self.owner is not None and not self.owner(clip):
+            return 0.0                       # the right words, but not your voice
         return score
 
     def _step(self, chunk: np.ndarray) -> float:
