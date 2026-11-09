@@ -20,7 +20,7 @@ Last updated: 2026-11-09.
 | Confirmation, allowlist, command log, executor | `red/confirm.py`, `red/allowlist.py`, `red/known_folders.py`, `red/executor.py` | ✅ Done (Track A) |
 | Speech to text, text to speech, hotkey, wake word | `red/audio.py`, `red/stt.py`, `red/tts.py`, `red/listener.py`, `red/voice_confirm.py` | ✅ Done (Track B). The "Hey Red" wake word is Track E |
 | Floating overlay | `red/overlay.py` | ✅ Done (Track C) |
-| Music and repo sync tools | `red/tools/music.py`, `red/tools/git_sync.py` | ✅ Done (Track C) |
+| Repo sync tool | `red/tools/git_sync.py` | ✅ Done (Track C). The local music tool was removed on 2026-11-09 (7.4) |
 | Wiring it all together: settings, setup, voice loop, docs | `red/__main__.py`, `red/config.py`, `README.md`, `AGENTS.md` | ✅ Done (Track D, section 8.13). The shared venv install and the v0.1.0 tag are still to do |
 
 **Day 1 result:** typed commands like "open Downloads" and "shut down in 2 hours" produce the right JSON in under a second once the model is loaded. 38 unit tests and 8 real-model tests pass. Commits: `a44da78` (project setup), `ebae152` (Day 1 code), `727ac5f` and `ffe2ff1` (README).
@@ -45,7 +45,7 @@ Last updated: 2026-11-09.
 | "Set a timer for 10 minutes", "remind me at 3 pm to call mom", "what reminders do I have", "cancel the timer" | Says it when it's due, even after a restart | ✅ Track G: `set_timer`, `set_reminder`, `list_reminders` and `cancel_reminder` on `red/scheduler.py`. Up to 7 days ahead; Track H wires the voice |
 | "What is Hugging Face", "explain recursion" | Answers aloud in 2 to 4 sentences, offline | ✅ Track G: `answer`, a second call to the local model |
 | "What's the weather in Pune", "latest news about India", "look up the James Webb telescope" | Fetches it online and says it; "I'm offline" with no network | ✅ Track G: `weather` (Open-Meteo), `news` (Google News headlines), `look_up` (Wikipedia, summarised by the local model) |
-| "Play a podcast about loneliness", "play the Punisher trailer", "play lofi on YouTube" | Starts the first YouTube video in the browser and says its title | ✅ `play_online` (`red/tools/youtube.py`): reads the first `videoRenderer` from the public results page, no API key; opens the results page if that fails. `play_music` hands over when the song isn't on the PC or names a podcast, video or trailer |
+| "Play a podcast about loneliness", "play the Punisher trailer", "play lofi on YouTube" | Starts the first YouTube video in the browser and says its title | ✅ `play_online` (`red/tools/youtube.py`): reads the first `videoRenderer` from the public results page, no API key; opens the results page if that fails. Songs and artists go here too since 2026-11-09 (7.4) |
 | Anything else | Says it can't do that yet | New abilities arrive as tools (section 4), and the plugin system (v0.4) makes adding them easy |
 
 The safety model doesn't change as Red grows: every ability is a tool with a fixed schema, nothing the model says is run as a command, and destructive actions ask first.
@@ -304,6 +304,9 @@ Every command writes a `Timing` line to `red.log`: listen, transcribe, route, ac
 
 ### 7.4 Music (Track C)
 
+**Removed on 2026-11-09 (plan.md task 3, second plan).** The user doesn't want local music, so every "play X" (songs, artists, podcasts, videos) goes to `play_online` on YouTube, in `RED_BROWSER`, and Red fronts the window whose title has "YouTube". `play_music`, `red/tools/music.py` (the folder library and the pygame-ce player), `RED_MUSIC_DIR`, pygame-ce in `requirements-ui.txt`, and the voice loop's "pause Red's own music while listening" are gone. Pause, resume, next, previous and stop are the media keys (`red/tools/quick.py`, same tool names, `stop_music` is the Media Stop key), so they control YouTube in the browser. "Play some music" or "play anything" searches for a popular songs mix. Smart App Control was already blocking pygame's DLLs on this PC, so the local player couldn't start here anyway. `cancel_reminder` now falls back to the user's words when the model's `which` is just "reminder" (the changed tool list made Qwen2.5 7B do that for "cancel my reminder to call mom"). Real model: all 148 integration cases pass, with "play Believer", "play some Arijit Singh" and "play a podcast about loneliness" going to `play_online`.
+
+The original Track C spec, kept for history:
 - Plays from a local folder: `RED_MUSIC_DIR`, or the user's Music folder by default. Spotify is not in v0.1.
 - Tools: play (an optional song, artist or folder name, matched against file names; shuffle when none is given) and stop. Add pause or next only if they come cheaply.
 - Playback continues after `run()` returns. Choose a backend that doesn't require installing VLC system-wide, and record the choice in 8.8.
