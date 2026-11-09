@@ -46,7 +46,8 @@ the whole job**, otherwise the user does it themselves.
 - Add real-model routing cases to `tests/test_integration_*`. Unit-test the parsing with a saved HTML
   fixture, never the live site.
 
-### 4. Bring opened windows to the front
+### 4. ✅ Bring opened windows to the front
+**Done:** `red/windows.py`, wired through `Tool.finish_later()`. Checked from a detached `pythonw` process: Edge came to the front in 0.27 s. Still worth the spoken check below.
 - After `open_app`, `open_url`, `open_folder` or `play_online` launch something, wait (up to about 5 s)
   for its top-level window by process id or title, then bring it to the front: `ShowWindow(SW_RESTORE)`,
   then `SetForegroundWindow`, using the Alt-key trick or `AttachThreadInput` to get past Windows'
