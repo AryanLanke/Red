@@ -192,10 +192,12 @@ class _UsesLLM(Tool):
 
 class Answer(_UsesLLM):
     name = "answer"
-    description = ("Answer a general knowledge question or explain something from the "
-                   "model's own knowledge, offline, for example 'what is Hugging Face', "
-                   "'explain recursion' or 'tell me the whole story of it'. Not for live facts "
-                   "like weather or news, and not for chat or questions about Red itself.")
+    description = ("Explain an idea or answer a question from the model's own knowledge, "
+                   "offline, for example 'explain recursion', 'why is the sky blue' or 'tell me "
+                   "the whole story of it'. For a fact about a named thing, person, place or "
+                   "event ('what is Hugging Face', 'who made Siri') use look_up instead, since "
+                   "it checks sources. Not for live facts like weather or news, and not for chat "
+                   "or questions about Red itself.")
     args_schema = {
         "type": "object",
         "properties": {"question": {"type": "string", "minLength": 1, "maxLength": 300,
