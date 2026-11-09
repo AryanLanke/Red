@@ -156,7 +156,12 @@ answers first. README "Privacy and safety" says what is sent.
 - **Before release:** test on clean Windows 10 and 11 PCs with Smart App Control on (SearXNG needs
   `lxml`, `curl_cffi`, `msgspec`). Ship SearXNG's AGPL license and a link to its source and our patch;
   Red stays MIT (check with someone who knows licensing). Offer the `pwd` fix upstream to SearXNG.
-- **Speed:** whole answer 5–8 s with the web, 2–4 s without. Keep measuring; "I'm searching." covers the wait.
+- **Done (2026-11-09):** Red installs and runs its own SearXNG (`red/searxng.py`, `RED_WEB_SEARCH`);
+  sources are used in search-ranking order, Wikipedia included where it ranks; only Google and Brave
+  (DuckDuckGo hit CAPTCHAs, Bing was off-topic, all engines together took 2 s); Wikipedia results are read
+  through its API (its pages took 1.1–2.7 s); pages get 1.5 s.
+- **Speed:** whole answer 3.5–4.8 s with the web (was 5.4–8.1 s), of which search and reading 2.1–3.2 s;
+  2–4 s without. "I'm searching." covers the wait. Next ideas: start speaking the first sentence sooner.
 
 ## Roadmap 2.0: shipping, personality and beating the competition
 

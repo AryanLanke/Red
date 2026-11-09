@@ -241,18 +241,18 @@ def test_gather_budget_uses_the_clock_it_is_given():
 
 # --- the look-up: Wikipedia plus the web, checked against each other ---------------------
 
-def test_look_up_cross_checks_wikipedia_with_the_web(searx_on):
+def test_look_up_uses_the_web_in_ranking_order_with_wikipedia_last_if_unranked(searx_on):
     opener = FakeOpener({**wiki_routes(), f"{LOCAL}/search": HF_SEARX})
-    llm = FakeLLM("Wikipedia and the web agree that Hugging Face is an AI company.")
+    llm = FakeLLM("Hugging Face is an AI company.")
     tool = LookUp(llm, opener)
     reply = tool.run(topic="hugging face", question="what is hugging face")
-    assert reply == ("From Wikipedia and the web: Wikipedia and the web agree that Hugging Face "
-                     "is an AI company.")
+    assert reply == "From the web: Hugging Face is an AI company."
     system, user = llm.calls[0]
     assert system == cross_check_system(False)
-    assert "Wikipedia article 'Hugging Face'" in user
-    assert "Other sources:" in user and "[1] huggingface.co, Hugging Face docs:" in user
+    assert "Sources, best-ranked first:" in user
+    assert "[1] huggingface.co, Hugging Face docs:" in user
     assert "[2] techcrunch.com" in user
+    assert "[3] Wikipedia, Hugging Face: Hugging Face, Inc. is an American company" in user
     assert tool.last_details.splitlines() == [
         "Wikipedia: Hugging Face", "https://en.wikipedia.org/wiki/Hugging_Face",
         "huggingface.co: Hugging Face docs", "https://huggingface.co/docs",
@@ -283,6 +283,24 @@ def test_look_up_without_the_web_says_nothing_extra(monkeypatch):
     with speaking_to(stream):
         LookUp(FakeLLM("Hugging Face is an AI company."), FakeOpener(wiki_routes())).run(topic="hugging face")
     assert stream.spoken == []
+
+
+def test_wikipedia_keeps_its_search_rank_and_is_not_added_twice(searx_on):
+    ranked = {"results": [
+        {"url": "https://en.wikipedia.org/wiki/Hugging_Face", "title": "Hugging Face - Wikipedia",
+         "content": "Hugging Face, Inc. is an American company that builds machine learning tools."},
+        {"url": "https://huggingface.co/docs", "title": "Hugging Face docs",
+         "content": "Hugging Face is an AI company that hosts models and datasets."}]}
+    opener = FakeOpener({**wiki_routes(), f"{LOCAL}/search": ranked})
+    llm = FakeLLM("Hugging Face is an American AI company.")
+    LookUp(llm, opener).run(topic="hugging face")
+    user = llm.calls[0][1]
+    assert "[1] Wikipedia, Hugging Face - Wikipedia:" in user
+    assert "[2] huggingface.co" in user and "[3]" not in user       # not again at the end
+
+
+def test_the_prompt_prefers_the_best_ranked_source():
+    assert "prefer the first one that answers" in cross_check_system(False)
 
 
 def test_look_up_searches_the_web_with_the_users_own_words(searx_on):
@@ -346,6 +364,20 @@ def test_read_top_pages_reads_only_the_top_three():
     opener = FakeOpener({f"https://site{i}.com/": PAGE for i in range(4)})
     better = read_top_pages(found, "who made Siri", opener)
     assert len(opener.urls) == 3 and better[3].text == "snippet"
+
+
+def test_wikipedia_results_are_read_through_its_api_not_the_heavy_page():
+    from red.tools.sources import read_paragraphs
+    article = {"query": {"pages": [{"extract":
+        "Microsoft is an American technology company.\n\n== Leadership ==\n"
+        "Satya Nadella has been the CEO of Microsoft since February 2014, after Steve Ballmer."}]}}
+    opener = FakeOpener({"https://en.wikipedia.org/w/api.php": article})
+    item = Evidence("Wikipedia", "Microsoft - Wikipedia", "snippet", "https://en.wikipedia.org/wiki/Microsoft")
+    paragraphs = read_paragraphs(item, opener)
+    assert paragraphs == ["Microsoft is an American technology company.",
+                          "Satya Nadella has been the CEO of Microsoft since February 2014, after Steve Ballmer."]
+    assert "titles=Microsoft" in opener.urls[0] and "/wiki/" not in opener.urls[0]
+    assert "Satya Nadella" in best_passages(paragraphs, "who is the CEO of Microsoft")
 
 
 def test_fetch_page_refuses_plain_http():

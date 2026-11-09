@@ -31,10 +31,10 @@ from dataclasses import dataclass, replace
 from functools import partial
 from html.parser import HTMLParser
 from typing import Callable
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import unquote, urlencode, urlsplit
 
 from .base import ToolError
-from .online import MAX_BYTES, TIMEOUT_SECONDS, USER_AGENT, Opener
+from .online import MAX_BYTES, TIMEOUT_SECONDS, USER_AGENT, Opener, fetch_json
 
 log = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ BUDGET_SECONDS = 6.0        # the most the look-up waits for the other sources i
 MAX_TEXT = 700              # characters per snippet, so the model's prompt stays small
 MAX_RESULTS = 4             # web results used per look-up
 READ_PAGES = 3              # the top results whose pages are read, not just their snippets
-PAGE_SECONDS = 2.5          # the most the page reading waits, all pages together
+PAGE_SECONDS = 1.5          # the most the page reading waits, all pages together (most took 0.2-0.6 s)
 MAX_PASSAGES = 1100         # characters kept from each page: the paragraphs that fit the question
 MAX_PAGE_BYTES = 1_500_000
 MIN_CONTENT = 40            # a snippet shorter than this says nothing ("Sign in")
@@ -109,12 +109,13 @@ def search_url() -> str:
 
 def searxng(topic: str, opener: Opener, base: str = "", query: str = "",
             read_pages: bool = True) -> list[Evidence]:
-    """Web results from the local SearXNG, minus Wikipedia (already read).
+    """Web results from the local SearXNG, in the search engines' ranking order.
 
     `query` is what is searched: the user's own question ("who made Siri") finds
     better pages than the bare topic ("Siri"). `topic` decides which results are
-    relevant. The top pages are then read, so the model sees the paragraphs that
-    answer the question, not just the two-line snippet.
+    relevant. Wikipedia keeps its place in the ranking like any other site. The
+    top pages are then read, so the model sees the paragraphs that answer the
+    question, not just the two-line snippet.
     """
     base = base or search_url()
     if not base:
@@ -141,12 +142,13 @@ def searxng(topic: str, opener: Opener, base: str = "", query: str = "",
         content = " ".join(str(result.get("content") or "").split())
         host = (urlsplit(link).hostname or "").removeprefix("www.")
         site = site_of(host) if host else ""
-        if not host or site == "wikipedia.org" or site in SKIP_SITES or site in sites:
+        if not host or site in SKIP_SITES or site in sites:
             continue
         if len(content) < MIN_CONTENT or not relevant(topic, title, content):
             continue
         sites.add(site)
-        found.append(Evidence(host, title or host, _clip(content), link))
+        name = "Wikipedia" if site == "wikipedia.org" else host
+        found.append(Evidence(name, title or host, _clip(content), link))
         if len(found) >= MAX_RESULTS:
             break
     if read_pages and found:
@@ -251,6 +253,35 @@ def fetch_page(url: str, opener: Opener) -> str:
     return raw.decode(charset or "utf-8", errors="replace")
 
 
+WIKI_TEXT_URL = "https://en.wikipedia.org/w/api.php?"
+
+
+def wikipedia_paragraphs(url: str, opener: Opener) -> list[str]:
+    """A Wikipedia article as plain-text paragraphs, from its API.
+
+    Its web page is often over 1 MB of HTML and took 1.1-2.7 s to load
+    (2026-11-09); the same text from the API is a fraction of that.
+    """
+    path = urlsplit(url).path
+    if not path.startswith("/wiki/"):
+        return []
+    title = unquote(path[len("/wiki/"):]).replace("_", " ")
+    data = fetch_json(WIKI_TEXT_URL + urlencode({
+        "action": "query", "prop": "extracts", "explaintext": 1, "redirects": 1,
+        "titles": title, "format": "json", "formatversion": 2}), "Wikipedia", opener)
+    pages = data.get("query", {}).get("pages", []) if isinstance(data, dict) else []
+    text = str(pages[0].get("extract", "")) if pages else ""
+    return [p for p in (" ".join(line.split()) for line in text.splitlines())
+            if len(p) >= 40 and not p.startswith("==")]
+
+
+def read_paragraphs(item: Evidence, opener: Opener) -> list[str]:
+    """The readable paragraphs behind one search result."""
+    if item.source == "Wikipedia" and urlsplit(item.url).hostname == "en.wikipedia.org":
+        return wikipedia_paragraphs(item.url, opener)
+    return page_paragraphs(fetch_page(item.url, opener))
+
+
 def read_top_pages(found: list[Evidence], query: str, opener: Opener,
                    budget: float = PAGE_SECONDS) -> list[Evidence]:
     """The same evidence, with the top pages' best paragraphs in place of their snippets.
@@ -260,13 +291,13 @@ def read_top_pages(found: list[Evidence], query: str, opener: Opener,
     """
     top = found[:READ_PAGES]
     pool = ThreadPoolExecutor(max_workers=len(top))
-    futures = [pool.submit(fetch_page, item.url, opener) for item in top]
+    futures = [pool.submit(read_paragraphs, item, opener) for item in top]
     wait_all(futures, timeout=budget)
     better = []
     for item, future in zip(top, futures):
         text = ""
         if future.done() and not future.cancelled() and future.exception() is None:
-            text = best_passages(page_paragraphs(future.result()), query)
+            text = best_passages(future.result(), query)
         better.append(replace(item, text=text) if len(text) >= 100 else item)
     pool.shutdown(wait=False, cancel_futures=True)
     return better + found[READ_PAGES:]

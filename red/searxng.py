@@ -61,8 +61,20 @@ _PWD_USE_FIXED = ("        if pwd is not None:\n"
                   "            logger.exception(\"can't connect valkey DB ...\")\n")
 
 SETTINGS_YML = """# Red's SearXNG: listens on this PC only, answers look_up in JSON.
-# Written by `python -m red setup`. The port is chosen by Red each time it starts.
-use_default_settings: true
+# Written by Red each time it starts SearXNG (red/searxng.py); edits are overwritten.
+#
+# Only Google and Brave: measured on 2026-11-09, together they answer in about
+# 0.3-0.7 s, where all the default engines took 2 s (SearXNG waits for the
+# slowest). DuckDuckGo asked for a CAPTCHA, Bing's results were off-topic, and
+# the translation and currency engines aren't web search.
+use_default_settings:
+  engines:
+    keep_only:
+      - google cse
+      - brave
+
+outgoing:
+  request_timeout: 2.0        # an engine slower than this is left out of the answer
 
 general:
   instance_name: "Red search"
@@ -154,6 +166,7 @@ def patch_for_windows(src: Path) -> None:
 
 
 def write_settings(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(SETTINGS_YML.format(secret=secrets.token_hex(32)), encoding="utf-8")
 
 
@@ -184,6 +197,7 @@ def install(settings: Settings, *, fetch: Callable = download, run: Callable = s
 def start(settings: Settings, *, server_factory: Callable = ManagedServer,
           port: Callable[[], int] = free_port) -> tuple[str, ManagedServer]:
     """Start Red's SearXNG on a free port; return its address and the server."""
+    write_settings(_settings_file(settings))     # always this version's engines and timeouts
     chosen = port()
     env = child_env(SEARXNG_SETTINGS_PATH=str(_settings_file(settings)),
                     SEARXNG_PORT=str(chosen), SEARXNG_BIND_ADDRESS="127.0.0.1",
