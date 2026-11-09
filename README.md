@@ -132,6 +132,7 @@ Your settings are in `RED_HOME\config\.env` (copied from `.env.example`). Settin
 | `RED_MIC_DEVICE` | Which microphone: a device number or part of its name | Windows default |
 | `RED_END_SILENCE` | Seconds of quiet that mean you've finished talking. Raise it if Red cuts you off | `1.5` |
 | `RED_MAX_COMMAND_SECONDS` | The longest a command can be | `20` |
+| `RED_FOLLOW_UP_SECONDS` | After an answer, Red asks "Anything else?" and listens this long for a reply. Say "no" or "that's all" and it stops. `0` turns it off | `7` |
 | `RED_OVERLAY` | What Red shows while it works: `glow` around the screen edges, a `card` in the corner, `notify` (Windows notifications), or `off` | `glow` |
 | `RED_WHISPER_DEVICE` | Speech recognition on `cpu`, `cuda` (NVIDIA GPU) or `auto` | `cpu` |
 | `RED_WHISPER_MODEL` | Speech recognition model | `small` |
@@ -189,6 +190,8 @@ mom = "mom@example.com"
 Red plays `mp3`, `ogg`, `opus`, `flac` and `wav` files from your Music folder, or from `RED_MUSIC_DIR`. It doesn't play `m4a`, `aac` or `wma`. Songs are matched by file and folder names, so "play Daft Punk" works if there's a folder or file with that name.
 
 ---
+
+**Keeping Red running.** The microphone is only on while Red runs. `python -m red background` starts Red with no window, so closing PowerShell doesn't stop it, and `python -m red stop` stops it and turns the microphone off. `python -m red startup on` starts it when you sign in. If you'd rather have the microphone open only after you press Ctrl+Alt+R, set `RED_WAKEWORD=off`.
 
 ## Where Red keeps its files
 
