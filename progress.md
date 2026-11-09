@@ -161,14 +161,60 @@ Conventions for every new tool:
 
 | Job | Model | Why |
 |---|---|---|
-| Intent routing | Qwen2.5 7B Instruct (Q4_K_M) via Ollama; Qwen2.5 3B for low-VRAM machines | Free, private, offline, good at JSON tool calls |
+| Intent routing and answers | Qwen3.5 4B (Q4_K_M, non-thinking) via Ollama by default since 2026-11-09; Qwen3.5 9B for 8 GB+ GPUs; Qwen2.5 3B with no GPU. Qwen2.5 7B is still an option | Free (Apache 2.0), private, offline; see "Qwen3.5 4B against Qwen2.5 7B" below |
 | Speech to text | Whisper small via faster-whisper (float16 on GPU, int8 on CPU) | Fast and accurate; works on any machine through the CPU fallback |
 | Wake word | openWakeWord: a pre-trained phrase for v0.1, a custom "Hey Red" model later | Free, open source, low CPU |
 | Text to speech | Piper | Free, local, fast |
 
 **Developer machine:** Windows 11, AMD Ryzen 7 7735HS, RTX 4050 laptop GPU (6 GB VRAM), 16 GB RAM, Python 3.11.9. With 6 GB of VRAM, the 7B model and Whisper on the GPU at the same time is tight, so tests run Whisper on the CPU.
 
-**Data folder on this machine:** `RED_HOME = D:\RED`. The repo is `D:\RED\red`, the venv is `D:\RED\.venv`, and Ollama v0.40.11 and the 7B model are already downloaded. The full `RED_HOME` layout is in the README.
+**Data folder on this machine:** `RED_HOME = D:\RED`. The repo is `D:\RED\red`, the venv is `D:\RED\.venv`, and Ollama v0.40.11 with Qwen2.5 7B, Qwen3.5 4B, Qwen3.5 2B and Qwen2.5 3B is already downloaded. The full `RED_HOME` layout is in the README.
+
+### Qwen3.5 4B against Qwen2.5 7B (2026-11-09, plan.md task 4, second plan)
+
+Measured on this laptop (RTX 4050 6 GB, Ryzen 7 7735HS, 16 GB), Ollama 0.40.11, Q4_K_M, Qwen3.5 with thinking off (`"think": false`). The hidden Red was stopped while measuring.
+
+**Picking Red's tools.** Every real-model integration case (149: `test_integration_llm`, `_c_tools`, `_f_tools`, `_g_tools`, `_play_online`, `_conversation`), twice each, after the prompt and description fixes below:
+
+| | Qwen3.5 4B | Qwen2.5 7B |
+|---|---|---|
+| Correct, run 1 / run 2 | 148 / 148 (and it passes a case the 7B is expected to fail) | 149 / 149 |
+| The miss | "Red you just open chrome. I told you to open YouTube": the right call followed by junk ("```json {..." repeated), so it didn't parse. Fixed afterwards in `Router.parse` (first JSON object wins); the suite then passes on the 4B too | none |
+| Whole suite | 116 s | 179 s |
+
+Before the fixes the 4B got 142 of 148: it sent "open YouTube" to `open_app`, answered "open it" and "mail Priya about lunch" with a question, and once said `which: "all"` for "cancel my reminder to call mom". Fixes that help any model: router examples for the log's misses ("Open YouTube.", "Can you just read my screen? What's going on?", "open the second one", a mail), `open_app` says websites aren't apps, `compose_mail` says to write a short subject and body instead of asking, a rule that a repeated or corrected request is a command, `cancel_reminder` never cancels everything unless you said all, and "open it" tests now carry the find_file conversation they always follow.
+
+**The user's 47 logged sentences** (`commands.jsonl`, no conversation context): the same tool for 38. Of the 9 that differ, the 4B is better on "What are you doing right now?" (the 7B read the screen), reasonable on "I'll tell you to turn off my laptop after 3 hours, will you do that?" (asks instead of scheduling), worse on "What's the latest iPhone?" (`answer` instead of `look_up`), and the rest are answer-versus-look_up or follow-ups that need the conversation.
+
+**Speed on the GPU:**
+
+| | Qwen3.5 4B | Qwen2.5 7B |
+|---|---|---|
+| Route one of the 47 sentences | median 0.76 s, max 1.17 s | median 1.30 s, max 2.08 s |
+| Short answer ("explain recursion") | 0.94 s | 1.68 s |
+| Long answer (the Punisher "in detail") | 4.8 s | 9.9 s |
+| Chat reply | about 0.9 to 1.0 s | about 1.8 to 2.6 s |
+| `describe_screen` with a new screenshot each time (OCR 0.7 s + model) | 2.3 s | text only |
+
+Answers: both fine on facts; the 4B gives a little more. On the detailed Punisher story both invented details (the 4B said Wilson Fisk killed Frank's family; the 7B invented a "Winter Soldier" second season), the 7B more. Time to first word is the answer time plus Piper until task 6 streams it.
+
+**CPU only (`num_gpu` 0), 8 commands, all routed right by every model:**
+
+| Model | Route median | Prompt re-read per call |
+|---|---|---|
+| Qwen2.5 3B | 1.38 s | 0.23 s (cached) |
+| Qwen2.5 7B | 3.07 s | 0.46 s (cached) |
+| Qwen3.5 2B | 3.34 s | 2.47 s |
+| Qwen3.5 4B | 8.30 s | 6.05 s |
+
+Ollama 0.40.11 doesn't reuse the cached system prompt for Qwen3.5 (its hybrid layers keep a state, not only a KV cache), so every command re-reads about 3,500 router tokens. On a GPU that costs little; on a CPU it breaks the 5 s limit. So `red/hardware.py` gives PCs with no GPU Qwen2.5 3B, not Qwen3.5 (the plan's table said Qwen3.5 2B or 4B). Revisit when Ollama caches Qwen3.5 prompts (task 6 looks at caching).
+
+**Decision:** Qwen3.5 4B is the default (`DEFAULT_MODEL`, `.env.example`, README). It isn't clearly worse at picking tools (148 against 149, then equal after the parse fix) and is 40 to 50% faster on a GPU. Qwen3.6 has no small models yet (only 27B and 35B-A3B, April 2026), so nothing to switch to. Qwen3.5 9B is pinned for 8 GB+ GPUs but untested here (it doesn't fit a 6 GB card next to anything else).
+
+**Other notes.**
+- Qwen publishes no GGUF repo for Qwen3.5; the llama.cpp fallback uses Unsloth's (`unsloth/Qwen3.5-4B-GGUF` and friends), pinned by commit and SHA-256. That fallback is text only: no mmproj file is pinned, so `describe_screen` sends pictures only through Ollama.
+- `describe_screen` sends a JPEG, at most 1024 px wide (about 50 KB), held in memory only, never saved. The first picture after the model loads takes about 10 s more (the vision part loading); after that it's about 1.6 s.
+- Ollama keeps a model loaded with the options it was loaded with: after the CPU-only runs, later requests reused the CPU copies (0 MiB on the GPU in `/api/ps`) until they were unloaded. Anyone benchmarking with `num_gpu` 0 should unload afterwards (`keep_alive: 0`).
 
 ---
 
