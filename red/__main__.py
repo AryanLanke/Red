@@ -648,6 +648,45 @@ def _install_examples(settings: Settings) -> None:
             print(f"Created {target}; edit it to add your own entries.")
 
 
+EXAMPLE_ENV = REPO_ROOT / ".env.example"
+
+
+def with_settings(text: str, values: dict[str, str]) -> str:
+    """.env text with each `KEY=` line set to values[KEY] (other lines untouched)."""
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        key = line.split("=", 1)[0].strip()
+        if "=" in line and not line.lstrip().startswith("#") and key in values:
+            lines[i] = f"{key}={values[key]}"
+    return "\n".join(lines) + "\n"
+
+
+def _setup_model(settings: Settings, detect: Callable | None = None) -> Settings:
+    """Pick a starting model for this PC's GPU and RAM (red.hardware).
+
+    A new RED_HOME\\config\\.env gets it written in. An existing .env is
+    never changed: Red only says what it would pick.
+    """
+    from .hardware import detect as detect_hardware
+    from .llm import MODELS
+
+    choice = (detect or detect_hardware)()
+    best = MODELS[choice.model].best_for if choice.model in MODELS else ""
+    print(f"This PC has {choice.why}. Best fit: {choice.model} ({best}), "
+          f"Whisper {choice.whisper_model} on the {choice.whisper_device.upper()}.")
+    env = settings.config_dir / ".env"
+    if env.exists() or not EXAMPLE_ENV.is_file():
+        if settings.llm_model != choice.model:
+            print(f"Your settings use {settings.llm_model}. To switch, set "
+                  f"RED_LLM_MODEL={choice.model} in {env}.")
+        return settings
+    values = {"RED_LLM_MODEL": choice.model, "RED_WHISPER_MODEL": choice.whisper_model,
+              "RED_WHISPER_DEVICE": choice.whisper_device}
+    env.write_text(with_settings(EXAMPLE_ENV.read_text(encoding="utf-8"), values), encoding="utf-8")
+    print(f"Created {env} with these. Change them there any time.")
+    return load_settings(settings.home)
+
+
 def _setup_voice(settings: Settings) -> int:
     """Download and verify the Whisper, Piper and wake word models."""
     try:
@@ -726,6 +765,8 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(filename=settings.logs_dir / "red.log", level=logging.INFO,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
     if args.cmd == "setup":
+        settings.ensure_dirs()
+        settings = _setup_model(settings)
         _install_examples(settings)
     _check_allowlist(settings)
 

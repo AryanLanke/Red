@@ -44,6 +44,16 @@ WHISPER_MODELS: dict[str, PinnedFiles] = {
             Asset("vocabulary.txt", "ff77588746d3a2595d32ab5b69ffd7b95ce2441ac57533cb66fc3eb575a115cf"),
         ),
     ),
+    # For PCs with an 8 GB+ GPU, where it runs on the GPU next to the model.
+    "small.en": PinnedFiles(
+        hf_url("Systran/faster-whisper-small.en", "d1d751a5f8271d482d14ca55d9e2deeebbae577f"),
+        (
+            Asset("config.json", "666a9605530ac1f61fa8177f3702b4dacec9966749e42610839fcc32661d5fae"),
+            Asset("model.bin", "62b2a45b05ee59acb4a5341b33ee35e041395d378d418a18acfe4c9e768ee37a"),
+            Asset("tokenizer.json", "929c5252409436dce1b38a75d1abbcb5e132d170d8e324e4e04ed915fa2d22df"),
+            Asset("vocabulary.txt", "ff77588746d3a2595d32ab5b69ffd7b95ce2441ac57533cb66fc3eb575a115cf"),
+        ),
+    ),
     "base.en": PinnedFiles(
         hf_url("Systran/faster-whisper-base.en", "3d3d5dee26484f91867d81cb899cfcf72b96be6c"),
         (
