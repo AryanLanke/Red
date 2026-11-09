@@ -13,7 +13,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-DEFAULT_MODEL = "qwen2.5-7b-instruct-q4_k_m"
+# Qwen3.5 4B (March 2026): faster than Qwen2.5 7B on a GPU and about as good at
+# picking Red's tools (progress.md 5). PCs with no GPU get Qwen2.5 3B from setup.
+DEFAULT_MODEL = "qwen3.5-4b"
 GPU_CHOICES = ("auto", "cuda", "vulkan", "cpu")
 BACKEND_CHOICES = ("auto", "ollama", "llama.cpp")
 WHISPER_DEVICE_CHOICES = ("auto", "cuda", "cpu")
@@ -22,7 +24,7 @@ DEFAULT_HOTKEY = "<ctrl>+<alt>+r"
 DEFAULT_WAKEWORD = "hey_red"
 DEFAULT_WAKEWORD_THRESHOLD = 0.5
 DEFAULT_WHISPER_MODEL = "small"
-# CPU by default: on a 6 GB GPU, Whisper and the 7B model don't fit together.
+# CPU by default: on a 6 GB GPU, Whisper and the language model don't fit together.
 DEFAULT_WHISPER_DEVICE = "cpu"
 DEFAULT_PIPER_VOICE = "en_US-lessac-medium"
 SEARCH_ENGINE_CHOICES = ("google", "bing", "duckduckgo")

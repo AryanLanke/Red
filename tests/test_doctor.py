@@ -92,7 +92,7 @@ def test_home(settings):
 
 
 def test_llm_running_with_and_without_model(settings):
-    tag = "qwen2.5:7b-instruct-q4_K_M"
+    tag = "qwen3.5:4b-q4_K_M"      # the default model
     ok = doctor.check_llm(settings, system(tags={"models": [{"name": tag}]}))
     assert ok[0].status == OK
     missing = doctor.check_llm(settings, system(tags={"models": [{"name": "other"}]}))
@@ -107,7 +107,7 @@ def test_llm_not_running_uses_installed_files(settings):
     marker.parent.mkdir(parents=True)
     marker.write_text("x")
     manifest = (settings.models_dir / "ollama" / "manifests" / "registry.ollama.ai" / "library"
-                / "qwen2.5" / "7b-instruct-q4_K_M")
+                / "qwen3.5" / "4b-q4_K_M")
     manifest.parent.mkdir(parents=True)
     manifest.write_text("{}")
     assert doctor.check_llm(settings, system(tags=None))[0].status == OK

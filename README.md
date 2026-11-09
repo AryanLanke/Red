@@ -31,8 +31,11 @@ A local voice and action assistant for your Windows laptop. Say "Hey Red" or pre
 
 | Your PC | What Red uses |
 |---|---|
-| NVIDIA GPU with 6 GB or more | The 7B model on the GPU (picked automatically) |
-| No GPU, or less video memory | The smaller 3B model, with speech recognition on the CPU |
+| NVIDIA GPU with 8 GB or more | Qwen3.5 9B on the GPU |
+| GPU with 4 to 8 GB (RTX 3050, 4050) | Qwen3.5 4B on the GPU, speech recognition on the CPU |
+| No GPU | Qwen2.5 3B, which is the fastest on a CPU |
+
+`python -m red setup` looks at your GPU and memory and picks one. You can change it later with `RED_LLM_MODEL`.
 
 Red loads the model only while you're using it. After 5 minutes without a command (you can change this), the model is unloaded and its memory is freed. When Red exits, everything it started exits too, even if Red crashes.
 
@@ -58,7 +61,7 @@ pip install -r requirements.txt
 New-Item -ItemType Directory -Force "$env:RED_HOME\config"
 Copy-Item .env.example "$env:RED_HOME\config\.env"
 
-python -m red setup    # downloads the model runtime, the language model and the voice models (about 7 GB)
+python -m red setup    # downloads the model runtime, the language model and the voice models (about 6 GB)
 python -m red doctor   # checks that everything is in place, and says how to fix what isn't
 ```
 
@@ -138,7 +141,7 @@ Your settings are in `RED_HOME\config\.env` (copied from `.env.example`). Settin
 | `RED_PIPER_VOICE` | The voice Red speaks with | `en_US-lessac-medium` |
 | `RED_SEARCH_ENGINE` | `google`, `bing` or `duckduckgo` for web searches | `google` |
 | `RED_BROWSER` | The browser pages and searches open in: `chrome`, `edge`, `firefox`, or `default` for the Windows default. If it isn't installed, Red uses the Windows default | `chrome` |
-| `RED_LLM_MODEL` | `qwen2.5-7b-instruct-q4_k_m`, or `qwen2.5-3b-instruct-q4_k_m` for PCs with less video memory | 7B |
+| `RED_LLM_MODEL` | `qwen3.5-4b`, `qwen3.5-9b` (8 GB+ GPU), `qwen2.5-3b-instruct-q4_k_m` (no GPU), `qwen3.5-2b` or `qwen2.5-7b-instruct-q4_k_m` | `qwen3.5-4b` |
 | `RED_LLM_KEEP_ALIVE` | How long the model stays loaded after your last command (`5m`, `30m`, `0`) | `5m` |
 | `RED_LLM_BACKEND` | `auto`, `ollama`, or `llama.cpp` | `auto` |
 | `RED_LLM_URL` | Use your own OpenAI-compatible server (LM Studio, etc.) instead | not set |
@@ -215,7 +218,7 @@ RED_HOME\
     └── contacts.toml  # names for email drafts
 ```
 
-Disk space, roughly: Python packages 2 to 3 GB, Ollama 2.1 GB, the 7B model 4.7 GB, speech and voice models under 1 GB, and room for logs.
+Disk space, roughly: Python packages 2 to 3 GB, Ollama 2.1 GB, the model 2 to 7 GB (Qwen3.5 4B is about 3.4 GB), speech and voice models under 1 GB, and room for logs.
 
 ---
 
@@ -240,7 +243,7 @@ Disk space, roughly: Python packages 2 to 3 GB, Ollama 2.1 GB, the 7B model 4.7 
 **Start with `python -m red doctor`.** It checks Python, the packages, `RED_HOME`, the language model, the microphone and speakers, the GPU, the speech and wake word models, and your `allowlist.toml`, `repos.toml` and `contacts.toml`. It shows a ✅, ⚠️ or ❌ for each, with a fix. It only looks: it doesn't record, play sound or change anything.
 
 - **"Smart App Control blocked llama-server" or exit code `0xC0E90002`:** Windows blocks unsigned programs. Use the default Ollama backend (`RED_LLM_BACKEND=ollama`).
-- **The GPU runs out of memory:** switch to the 3B model with `RED_LLM_MODEL=qwen2.5-3b-instruct-q4_k_m`, and close other heavy apps while Red is loaded.
+- **The GPU runs out of memory:** switch to a smaller model, `RED_LLM_MODEL=qwen3.5-2b` or `qwen2.5-3b-instruct-q4_k_m`, and close other heavy apps while Red is loaded.
 - **Red can't hear you:** allow microphone access for desktop apps in Settings > Privacy & security > Microphone. To use a different microphone, set `RED_MIC_DEVICE` to part of its name.
 - **No status window, only Windows notifications:** the window needs PySide6, which is in `requirements.txt`. Without it, Red shows notifications for questions, answers and errors.
 - **"Voice needs the voice packages":** run `pip install -r requirements.txt` again, or use `python -m red --typed`.
