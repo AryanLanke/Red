@@ -231,21 +231,45 @@ def test_rounded_corners_have_no_seam():
     assert abs(float(d[5, 20]) - float(d[5, 21])) < 1e-4
 
 
-def test_glow_profile_is_a_bright_line_with_a_soft_halo():
+def test_glass_layers():
     np = pytest.importorskip("numpy")
-    halo, line = ov.glow_profile(np.array([0.0, 2.0, 6.0, 20.0, 47.0, 60.0]), 48)
-    assert line[0] == pytest.approx(1.0) and line[2] < 0.01         # the line is narrow
-    assert halo[0] > halo[2] > halo[3] > halo[4] >= 0.0              # the halo fades steadily
-    assert halo[5] == 0.0                                            # and ends at the depth
-    assert halo.max() < line.max()                                   # a soft halo, never louder than the line
+    d = np.array([0.0, 2.0, 6.0, 20.0, 50.0, 90.0])
+    layers = ov.glass_profile(d, 84)
+    assert set(layers) == set(ov.LAYERS)
+    line, haze, shadow = layers["line"], layers["haze"], layers["shadow"]
+    assert line[0] == pytest.approx(1.0) and line[2] < 0.01         # a fine highlight
+    assert shadow[2] == pytest.approx(0.30) and shadow[0] < 0.05     # the grey edge sits just inside it
+    assert haze[0] > haze[3] > haze[4] > 0 and haze[5] == 0          # milky, fading, gone by the depth
+    assert haze.max() < 0.5                                          # translucent, never solid
 
 
-def test_glow_masks_shapes_and_inset():
+def test_soft_distance_rounds_the_corners():
+    np = pytest.importorskip("numpy")
+    ys, xs = np.mgrid[0:300, 0:400].astype(np.float32)
+    soft = ov.soft_edge_distance(xs, ys, 400, 300)
+    assert abs(float(soft[150, 10]) - 10) < 0.5                      # about the plain distance mid-edge
+    # Near a corner it is lower than the plain minimum, which curves the haze.
+    assert float(soft[40, 40]) < 40 - 10
+    # And it changes smoothly across the diagonal: no crease.
+    row = soft[60, 40:81]
+    steps = np.diff(row)
+    assert np.all(np.abs(np.diff(steps)) < 0.2)
+
+
+def test_glass_masks_shapes_and_inset():
     pytest.importorskip("numpy")
-    halo, line = ov.glow_masks(0, 0, 400, 48, 400, 300)
-    assert halo.shape == line.shape == (48, 400)
-    assert line[int(ov.GLOW_INSET), 200] == 255                      # the line sits just inside the edge
-    assert line[30, 200] == 0 and halo[30, 200] > 0
+    masks = ov.glass_masks(0, 0, 400, 84, 400, 300)
+    assert all(m.shape == (84, 400) for m in masks.values())
+    assert masks["line"][int(round(ov.GLOW_INSET)), 200] >= 200      # the highlight just inside the edge
+    assert masks["line"][40, 200] == 0 and masks["haze"][40, 200] > 0
+
+
+def test_the_gleam_travels():
+    a = ov.shine([0.12, 0.5], 0.0)
+    assert a[0] == pytest.approx(1.0) and a[1] < 0.4                 # bright where the gleam is
+    later = ov.shine([0.12], 3.0)[0]
+    assert later < a[0]                                              # it has moved on
+    assert all(0.3 <= v <= 1.0 for v in ov.shine([i / 50 for i in range(50)], 7.0))
 
 
 def test_colours_flow_smoothly_and_wrap_round():
@@ -272,10 +296,6 @@ def test_strip_spans_join_up_round_the_edge():
     # Each span starts at the strip's own top (or left) end, where its gradient starts.
     assert spans["left"][0] == pytest.approx((2 * W + 2 * H - d) / P)  # top end, next to the top strip
     assert spans["left"][1] == pytest.approx((2 * W + H + d) / P)      # bottom end, next to the bottom strip
-
-
-def test_gloss_is_lighter():
-    assert ov.glossy((0, 100, 200), 0.5) == (128, 178, 228)
 
 
 def test_every_active_state_has_a_glow():
@@ -306,7 +326,7 @@ def test_glow_appears_on_listening_and_fades_out_on_idle(app):
     try:
         assert not window.isVisible()
         glow.set_state("listening", "")
-        pump(app, 0.4)
+        pump(app, ov.GLOW_FADE_IN + 0.3)
         assert window.isVisible()
         assert window.level == pytest.approx(1.0)
         assert window.palette == ov.GLOW_PALETTES["listening"]
