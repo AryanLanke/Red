@@ -139,9 +139,38 @@ def test_searxng_keeps_relevant_results_and_skips_wikipedia_and_empty_ones():
 
 
 def test_searxng_caps_the_number_of_results():
-    many = {"results": [{"url": f"https://site{i}.example.com/a", "title": "Siri",
-                         "content": f"Siri fact {i}."} for i in range(10)]}
+    many = {"results": [{"url": f"https://site{i}.com/a", "title": "Siri",
+                         "content": f"Siri fact number {i}, long enough to say something."}
+                        for i in range(10)]}
     assert len(searxng("Siri", FakeOpener({f"{LOCAL}/search": many}), base=LOCAL)) == 4
+
+
+def test_searxng_keeps_one_page_per_website():
+    same = {"results": [
+        {"url": "https://www.microsoft.com/a", "title": "Copilot", "content": "Copilot is Microsoft's assistant on Windows."},
+        {"url": "https://support.microsoft.com/b", "title": "Copilot", "content": "Copilot can be started by saying Hey Copilot."},
+        {"url": "https://www.theverge.com/c", "title": "Copilot", "content": "Copilot gets a wake word on Windows 11 PCs."}]}
+    items = searxng("Copilot", FakeOpener({f"{LOCAL}/search": same}), base=LOCAL)
+    assert [e.source for e in items] == ["microsoft.com", "theverge.com"]
+
+
+def test_searxng_skips_videos_social_posts_and_empty_snippets():
+    noisy = {"results": [
+        {"url": "https://www.youtube.com/watch?v=1", "title": "Siri video", "content": "Siri is ACTUALLY good now, here is how to use it."},
+        {"url": "https://x.com/apple", "title": "Siri", "content": "Siri news from Apple on X, posted today for everyone."},
+        {"url": "https://copilot.com/", "title": "Siri | Sign in", "content": "Sign in"},
+        {"url": "https://www.apple.com/siri/", "title": "Siri", "content": "Siri is Apple's voice assistant on iPhone, iPad and Mac."}]}
+    items = searxng("Siri", FakeOpener({f"{LOCAL}/search": noisy}), base=LOCAL)
+    assert [e.source for e in items] == ["apple.com"]
+
+
+@pytest.mark.parametrize("host, site", [
+    ("support.microsoft.com", "microsoft.com"), ("www.apple.com", "apple.com"),
+    ("science.nasa.gov", "nasa.gov"), ("localhost", "localhost"),
+])
+def test_site_of(host, site):
+    from red.tools.sources import site_of
+    assert site_of(host) == site
 
 
 def test_searxng_without_a_base_asks_nothing(monkeypatch):

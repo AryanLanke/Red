@@ -38,7 +38,11 @@ log = logging.getLogger(__name__)
 BUDGET_SECONDS = 4.0        # the most the look-up waits for the other sources in total
 MAX_TEXT = 700              # characters per item, so the model's prompt stays small
 MAX_RESULTS = 4             # web results used per look-up
+MIN_CONTENT = 40            # a snippet shorter than this says nothing ("Sign in")
 LOOPBACK = {"127.0.0.1", "localhost"}
+# Videos, photos and social posts: their snippets are titles and chatter, not facts.
+SKIP_SITES = {"youtube.com", "youtu.be", "flickr.com", "x.com", "twitter.com", "facebook.com",
+              "instagram.com", "tiktok.com", "pinterest.com", "reddit.com"}
 
 _STOP = {"the", "and", "for", "of", "what", "who", "is", "are", "how", "does", "tell", "me",
          "hey", "okay", "about", "a", "an", "in", "on", "to", "with", "look", "up", "search",
@@ -81,6 +85,12 @@ def _clip(text: str) -> str:
     return text[:MAX_TEXT].rsplit(" ", 1)[0] + "…"
 
 
+def site_of(host: str) -> str:
+    """The website a host belongs to: 'support.microsoft.com' -> 'microsoft.com'."""
+    parts = host.lower().removeprefix("www.").split(".")
+    return ".".join(parts[-2:]) if len(parts) >= 2 else host.lower()
+
+
 def search_url() -> str:
     """RED_SEARCH_URL, if it names a SearXNG on this PC; otherwise "" (no web search)."""
     value = os.environ.get("RED_SEARCH_URL", "").strip().rstrip("/")
@@ -107,6 +117,7 @@ def searxng(topic: str, opener: Opener, base: str = "") -> list[Evidence]:
     except (UnicodeDecodeError, json.JSONDecodeError) as e:
         raise ToolError("The local search sent something I couldn't read.") from e
     found: list[Evidence] = []
+    sites: set[str] = set()                  # one page per website: four microsoft.com pages are one source
     for result in (data.get("results") or []) if isinstance(data, dict) else []:
         if not isinstance(result, dict):
             continue
@@ -114,10 +125,12 @@ def searxng(topic: str, opener: Opener, base: str = "") -> list[Evidence]:
         title = " ".join(str(result.get("title") or "").split())
         content = " ".join(str(result.get("content") or "").split())
         host = (urlsplit(link).hostname or "").removeprefix("www.")
-        if not host or host.endswith("wikipedia.org") or not content:
+        site = site_of(host) if host else ""
+        if not host or site == "wikipedia.org" or site in SKIP_SITES or site in sites:
             continue
-        if not relevant(topic, title, content):
+        if len(content) < MIN_CONTENT or not relevant(topic, title, content):
             continue
+        sites.add(site)
         found.append(Evidence(host, title or host, _clip(content), link))
         if len(found) >= MAX_RESULTS:
             break
