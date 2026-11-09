@@ -868,6 +868,24 @@ def _setup_voice(settings: Settings) -> int:
     return 0
 
 
+def _setup_web_search(settings: Settings) -> None:
+    """Install Red's own SearXNG, so look_up can check web pages. Optional: a
+    failure is reported and Red works without it (Wikipedia only)."""
+    if not settings.web_search:
+        print("Web search is off (RED_WEB_SEARCH=off), so SearXNG isn't installed.")
+        return
+    from subprocess import CalledProcessError
+
+    from .downloads import DownloadError
+    from .searxng import SearxngError, install
+    try:
+        install(settings)
+    except (DownloadError, SearxngError, CalledProcessError, OSError) as e:
+        log.warning("SearXNG install failed: %s", e)
+        print(f"Web search couldn't be installed ({e}). Red works without it, answering from "
+              "Wikipedia. Run python -m red setup again to retry.")
+
+
 def _google_command(cmd: str, settings: Settings) -> int:
     from .google_auth import GoogleError, login, logout
     restart = "Restart Red to use it: python -m red stop, then python -m red background."
@@ -962,13 +980,22 @@ def main(argv: list[str] | None = None) -> int:
     except LLMError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
+    web = None
+    if args.cmd is None and not args.dry_run:
+        # Voice, background and typed mode: Red's own SearXNG, started in the
+        # background so it never slows Red's start (red/searxng.py).
+        from .searxng import WebSearch
+        web = WebSearch(settings)
+        web.begin()
     try:
         if args.cmd == "setup":
             print(f"Ready: {type(llm).__name__} with model {settings.llm_model}")
             if server:
                 server.stop()
                 server = None
-            return _setup_voice(settings)
+            code = _setup_voice(settings)
+            _setup_web_search(settings)
+            return code
         registry = default_registry()
         router = Router(registry, llm)
         if args.cmd == "route":
@@ -993,6 +1020,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         return _voice_mode(settings, router, registry)
     finally:
+        if web is not None:
+            web.stop()
         if server:
             server.stop()
 

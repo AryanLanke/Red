@@ -27,6 +27,21 @@ def _no_window_fronting(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_searxng(monkeypatch):
+    """No test starts Red's SearXNG, even with RED_HOME pointing at a real install."""
+    import red.searxng
+
+    def refuse(settings, **kwargs):
+        raise RuntimeError("tests never start SearXNG")
+
+    def no_install(settings, **kwargs):
+        pass                    # setup tests: no download, no venv, no pip
+
+    monkeypatch.setattr(red.searxng, "start", refuse)
+    monkeypatch.setattr(red.searxng, "install", no_install)
+
+
+@pytest.fixture(autouse=True)
 def _no_real_browser(monkeypatch):
     """No test finds (and so starts) a real browser; the Windows-default opener is a fake."""
     import red.browser

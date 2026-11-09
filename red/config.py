@@ -79,6 +79,10 @@ class Settings:
     piper_voice: str = DEFAULT_PIPER_VOICE
     mic_device: str | None = None
     search_engine: str = "google"
+    # Web pages for look_up through Red's own SearXNG (red/searxng.py). On unless
+    # RED_WEB_SEARCH=off. RED_SEARCH_URL points at another SearXNG on this PC instead.
+    web_search: bool = True
+    search_url: str | None = None
     browser: str = DEFAULT_BROWSER
     overlay: str = DEFAULT_OVERLAY
     end_silence_seconds: float = DEFAULT_END_SILENCE
@@ -191,6 +195,9 @@ def load_settings(home: Path | None = None) -> Settings:
     quick_end = _seconds("RED_QUICK_END_SILENCE", DEFAULT_QUICK_END_SILENCE, 0.0, 5.0)
     max_command = _seconds("RED_MAX_COMMAND_SECONDS", DEFAULT_MAX_COMMAND, 3.0, 120.0)
     follow_up = _seconds("RED_FOLLOW_UP_SECONDS", DEFAULT_FOLLOW_UP, 0.0, 30.0)
+    web_text = (_env("RED_WEB_SEARCH") or "on").lower()
+    if web_text not in {"on", "off", "1", "0", "true", "false", "yes", "no"}:
+        raise ValueError(f"RED_WEB_SEARCH must be on or off, got {web_text!r}")
     match_text = (_env("RED_VOICE_MATCH") or "off").lower()
     if match_text not in {"on", "off", "1", "0", "true", "false", "yes", "no"}:
         raise ValueError(f"RED_VOICE_MATCH must be on or off, got {match_text!r}")
@@ -223,6 +230,8 @@ def load_settings(home: Path | None = None) -> Settings:
         piper_voice=_env("RED_PIPER_VOICE") or DEFAULT_PIPER_VOICE,
         mic_device=_env("RED_MIC_DEVICE"),
         search_engine=engine,
+        web_search=web_text in {"on", "1", "true", "yes"},
+        search_url=_env("RED_SEARCH_URL"),
         browser=browser,
         overlay=overlay,
         end_silence_seconds=end_silence,
