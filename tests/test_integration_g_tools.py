@@ -48,6 +48,17 @@ def contains(key, *words):
     return check
 
 
+def names_or_hears(words):
+    """cancel_reminder: 'which' names it, or says nothing and the tool uses your words."""
+    from red.tools.reminders import _reminder_key
+
+    def check(args):
+        which = args.get("which", "")
+        return words in norm(which) or _reminder_key(which) == ""
+    check.__name__ = f"names_or_hears({words!r})"
+    return check
+
+
 def timer_seconds(total):
     def check(args):
         return args.get("minutes", 0) * 60 + args.get("seconds", 0) == total
@@ -70,7 +81,7 @@ CASES = [
      lambda a: a.get("time") == "09:00" and a.get("day") == "tomorrow"),
     ("what reminders do I have", "list_reminders", ANY),
     ("cancel the timer", "cancel_reminder", contains("which", "timer")),
-    ("cancel my reminder to call mom", "cancel_reminder", contains("which", "call mom")),
+    ("cancel my reminder to call mom", "cancel_reminder", names_or_hears("call mom")),
     ("cancel the shutdown", "cancel_shutdown", ANY),
     ("shut down in 10 minutes", "shutdown", has(minutes=10)),
     # offline answers

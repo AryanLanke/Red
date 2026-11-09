@@ -242,3 +242,16 @@ def test_registry_build_starts_no_scheduler(monkeypatch):
     monkeypatch.setattr(sched_mod, "_default", None)
     default_registry()
     assert sched_mod._default is None
+
+
+def test_cancel_falls_back_to_your_words(sched, clock):
+    # The model said only "reminder" for "cancel my reminder to call mom".
+    _, remind, _, cancel = tools(sched, clock)
+    remind.run(text="call mom", time="15:00")
+    remind.run(text="water the plants", time="16:00")
+    cancel.set_command("cancel my reminder to call mom")
+    assert cancel.run(which="reminder") == "Cancelled call mom."
+    cancel.set_command("cancel it")                         # names nothing: ask, as before
+    remind.run(text="feed the cat", time="17:00")
+    with pytest.raises(ToolError, match="Which one"):
+        cancel.run(which="reminder")

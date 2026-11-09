@@ -163,6 +163,12 @@ class ListReminders(_ReminderTool):
         return f"You have {count}: {spoken}{more}."
 
 
+def _reminder_key(text: str) -> str:
+    """'my reminder to call mom' -> 'call mom'."""
+    text = re.sub(r"[^\w' ]+", " ", text.lower())
+    return " ".join(re.sub(r"\b(the|my|a|reminder|reminders|for|about|to)\b", " ", text).split())
+
+
 class CancelReminder(_ReminderTool):
     name = "cancel_reminder"
     description = ("Cancel a timer or reminder (not a shutdown). Set which to words from it, "
@@ -173,13 +179,23 @@ class CancelReminder(_ReminderTool):
         "additionalProperties": False,
     }
 
+    def set_command(self, command: str) -> None:
+        self._said = command            # the user's own words (Executor)
+
     def run(self, which: str = "") -> str:
+        said = self.__dict__.pop("_said", "")
         sched = self._scheduler()
         items = sched.pending()
         if not items:
             return "You don't have any timers or reminders."
-        key = " ".join(re.sub(r"\b(the|my|a|reminder|reminders|for|about|to)\b", " ",
-                              which.lower()).split())
+        key = _reminder_key(which)
+        if not key and said:
+            # The model sometimes says only "reminder"; "cancel my reminder to
+            # call mom" still names the one to cancel.
+            words = _reminder_key(re.sub(r"\b(cancel|delete|remove|clear|stop|forget|please|"
+                                         r"can you|could you|red)\b", " ", said.lower()))
+            if words and any(words in text.lower() for _, _, text in items):
+                key = words
         if key in {"all", "everything", "all of them", "all timers", "all timer"}:
             for rid, _, _ in items:
                 sched.cancel(rid)
