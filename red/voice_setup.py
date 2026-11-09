@@ -8,10 +8,14 @@ versions are saved in RED_HOME\\models\\wakeword\\hey_red_profile.json and
 count as "Hey Red" from then on. It also learns how long you take to say
 it, so a slower "Hey Red" isn't cut off.
 
-What it doesn't do yet: tell your voice apart from other people's. Anyone
-who says "Hey Red" the same way still wakes Red.
+It also learns your voice: each recording becomes a voice embedding (512
+numbers, red/voice_match.py), and their average is saved in
+RED_HOME\models\wakeword\owner_voice.json with a threshold worked out from
+how alike your own recordings are. With RED_VOICE_MATCH=on, Red then answers
+only your "Hey Red". It's off until you turn it on.
 
-The recordings themselves are never saved, only the words Whisper heard.
+The recordings themselves are never saved, only the words Whisper heard and
+the voice numbers, which can't be turned back into sound.
 """
 
 from __future__ import annotations
@@ -25,8 +29,8 @@ from typing import Callable
 from .audio import SAMPLE_RATE
 from .wakeword import MAX_CLIP_SECONDS, PROFILE_NAME, _words, match_score, phrase_key
 
-SAMPLES = 6
-MAX_ATTEMPTS = 10
+SAMPLES = 10              # "about 10 phrases" (plan.md task 8): words and voice
+MAX_ATTEMPTS = 15
 RECORD_SECONDS = 4.0
 END_SILENCE = 0.6
 START_TIMEOUT = 6.0
@@ -88,13 +92,18 @@ def save_profile(model_dir: Path, profile: dict) -> Path:
 def run_setup(model_dir: Path, *, record: Callable[..., object], transcribe: Callable[[object], str],
               say: Callable[[str], None], chime: Callable[[], None],
               out: Callable[[str], None] = print, samples: int = SAMPLES,
-              max_attempts: int = MAX_ATTEMPTS) -> dict | None:
-    """Record `samples` "Hey Red"s, learn the profile and save it. None if too few were heard."""
+              max_attempts: int = MAX_ATTEMPTS,
+              embed: Callable[[object], object] | None = None) -> dict | None:
+    """Record `samples` "Hey Red"s, learn the profile and save it. None if too few were heard.
+
+    embed (red.voice_match.VoiceModel.embed) also learns your voice from the same recordings.
+    """
     intro = (f"Let's teach me your voice. After each beep, say \"Hey Red\" the way you "
              f"normally would. We'll do it {samples} times.")
     out(intro)
     say(intro)
     got: list[tuple[str, float]] = []
+    voices: list = []
     attempts = 0
     while len(got) < samples and attempts < max_attempts:
         attempts += 1
@@ -111,6 +120,14 @@ def run_setup(model_dir: Path, *, record: Callable[..., object], transcribe: Cal
         mark = "OK" if match_score(text) >= 0.5 else "learning"
         out(f"  Heard: \"{text}\" ({seconds:.1f} s) [{mark}]")
         got.append((text, seconds))
+        if embed is not None:
+            try:
+                vec = embed(audio)
+            except Exception as e:  # noqa: BLE001 - the words still count
+                out(f"  (Couldn't learn the voice from this one: {e})")
+                vec = None
+            if vec is not None:
+                voices.append(vec)
     if len(got) < max(3, samples // 2):
         msg = "I couldn't hear you well enough. Check your microphone and try again."
         out(msg)
@@ -122,6 +139,8 @@ def run_setup(model_dir: Path, *, record: Callable[..., object], transcribe: Cal
     if profile["phrases"]:
         out("I'll also answer to how I heard you: " + ", ".join(f'"{p}"' for p in profile["phrases"]))
     out(f"Recognized {profile['recognized']} of {profile['samples']} tries.")
+    if embed is not None:
+        _save_voice(model_dir, voices, out)
     if profile["recognized"] >= profile["samples"] - 1:
         done = "All set. I know how you say Hey Red now."
     else:
@@ -130,6 +149,17 @@ def run_setup(model_dir: Path, *, record: Callable[..., object], transcribe: Cal
     out(done)
     say(done)
     return profile
+
+
+def _save_voice(model_dir: Path, voices: list, out: Callable[[str], None]) -> None:
+    from .voice_match import make_profile, save_profile
+    if len(voices) < 3:
+        out("I couldn't learn your voice from these recordings, so voice match stays off.")
+        return
+    voice = make_profile(voices)
+    path = save_profile(model_dir, voice)
+    out(f"Saved your voice ({voice['samples']} recordings, threshold {voice['threshold']:.2f}) to {path}.")
+    out("To have Red answer only you, set RED_VOICE_MATCH=on in your .env and restart Red.")
 
 
 def main(settings) -> int:
@@ -146,6 +176,14 @@ def main(settings) -> int:
     print("Loading the speech models...")
     whisper = make_wake_transcriber(model_dir)
     whisper.load()
+    embed = None
+    try:
+        from .voice_match import VoiceModel
+        voice_model = VoiceModel(model_dir)
+        voice_model.download()
+        embed = voice_model.embed
+    except Exception as e:  # noqa: BLE001 - no voice model: the words are still learned
+        print(f"Voice match isn't available ({e}); learning only how you say it.")
     speaker = Speaker(settings.models_dir / "piper", settings.piper_voice)
     try:
         speaker.load()
@@ -154,7 +192,7 @@ def main(settings) -> int:
         say = lambda text: None  # noqa: E731
     try:
         profile = run_setup(model_dir, record=record_command, transcribe=whisper.transcribe,
-                            say=say, chime=chime)
+                            say=say, chime=chime, embed=embed)
     finally:
         if was_running:
             background.start(settings.home)
