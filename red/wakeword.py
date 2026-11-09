@@ -44,6 +44,8 @@ MAX_CLIP_SECONDS = 1.6
 PAUSE_BEFORE_SECONDS = 0.25        # quiet needed before the phrase
 PAUSE_AFTER_SECONDS = 0.3          # quiet that ends the phrase
 PRE_ROLL_SECONDS = 0.2
+LONG_PHRASE_SECONDS = 1.25         # a "Hey Red" alone is shorter; longer has a command after it
+HEAD_SECONDS = 1.3                 # the start of a longer burst that is checked for "Hey Red"
 
 _HEY = {"hey", "hay", "hei", "heh", "hej"}
 _HEY_CLOSE = {"hi", "eh", "ay"}     # not "a": "a red car" must not match
@@ -61,7 +63,22 @@ def phrase_key(text: str) -> str:
     return " ".join(_words(text)[:2])
 
 
-def match_score(text: str, personal: frozenset[str] = frozenset()) -> float:
+def collapse_repeats(words: list[str]) -> list[str]:
+    """'hey red red red red' and 'hey red hey red hey red' (Whisper repeats the phrase) -> 'hey red'."""
+    out: list[str] = []
+    for w in words:
+        if not (out and out[-1] == w):
+            out.append(w)
+    i = 0
+    while i + 4 <= len(out):
+        if out[i:i + 2] == out[i + 2:i + 4]:
+            del out[i + 2:i + 4]
+        else:
+            i += 1
+    return out
+
+
+def match_score(text: str, personal: frozenset[str] = frozenset(), head: bool = False) -> float:
     """How much a short transcript sounds like "Hey Red": 1.0, partial, or 0.
 
     Only the start of the clip counts, so "I read the red book" or "they said
@@ -69,7 +86,9 @@ def match_score(text: str, personal: frozenset[str] = frozenset()) -> float:
     wake phrase either. `personal` holds how Whisper hears *your* "Hey Red"
     (from python -m red voice-setup); those count as a strong match.
     """
-    words = _words(text)
+    words = collapse_repeats(_words(text))
+    if head:
+        words = words[:2]                # the rest of the sentence was cut off; only its start counts
     if not words or len(words) > 4:
         return 0.0
     if personal and " ".join(words[:2]) in personal:
@@ -208,16 +227,19 @@ class HeyRedDetector:
     def _chunks_for(self, seconds: float) -> int:
         return int(round(seconds * SAMPLE_RATE / VAD_CHUNK))
 
-    def _evaluate(self) -> float:
-        clip = np.concatenate(self._clip + [np.zeros(int(0.2 * SAMPLE_RATE), np.float32)])
+    def _evaluate(self, chunks: list | None = None, head: bool = False) -> float:
+        """Score a clip. head: only the start of a longer burst ("Hey Red, open YouTube")."""
+        clip = np.concatenate((chunks or self._clip) + [np.zeros(int(0.2 * SAMPLE_RATE), np.float32)])
         t0 = self._clock()
         text = self._transcribe(clip)
         self.busy_seconds += self._clock() - t0
         self.evaluations += 1
         self.last_text = text
-        score = match_score(text, self.personal)
+        score = match_score(text, self.personal, head=head)
         # Logged so a missed "Hey Red" can be explained (RED_HOME\logs\red.log).
-        log.info("Wake check: heard %r (score %.2f)", text[:60], score)
+        # The loudness shows a microphone that is too quiet.
+        log.info("Wake check: heard %r (score %.2f, %s, peak %.2f)", text[:60], score,
+                 "start of a longer phrase" if head else "short phrase", float(np.abs(clip).max()))
         if score > 0 and self.owner is not None and not self.owner(clip):
             return 0.0                       # the right words, but not your voice
         return score
@@ -243,8 +265,14 @@ class HeyRedDetector:
         else:
             self._quiet_run = 0
             self._speech_chunks = len(self._clip) - self._preroll
-        if self._speech_chunks > self._chunks_for(self.max_clip_seconds):
+        if self._speech_chunks > self._chunks_for(self.max_clip_seconds) and not self._too_long:
             self._too_long = True
+            # Said in one breath ("Hey Red, open YouTube"): look at just the start, once.
+            if self._start_quiet >= self._chunks_for(PAUSE_BEFORE_SECONDS):
+                head = self._clip[:self._preroll + self._chunks_for(HEAD_SECONDS)]
+                score = self._evaluate(head, head=True)
+                if score > 0:
+                    return score
         if self._quiet_run < self._chunks_for(PAUSE_AFTER_SECONDS):
             return 0.0
 
@@ -253,7 +281,8 @@ class HeyRedDetector:
         long_enough = self._speech_chunks >= self._chunks_for(MIN_CLIP_SECONDS)
         if (not self._too_long and long_enough
                 and self._start_quiet >= self._chunks_for(PAUSE_BEFORE_SECONDS)):
-            score = self._evaluate()
+            # Over about 1.25 s it is "Hey Red" plus words, not a bare phrase: only its start counts.
+            score = self._evaluate(head=self._speech_chunks > self._chunks_for(LONG_PHRASE_SECONDS))
         self._clip = None
         self._quiet_before = self._quiet_run
         self._history.clear()

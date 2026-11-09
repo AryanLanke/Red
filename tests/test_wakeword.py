@@ -88,10 +88,43 @@ def test_ordinary_words_do_not_fire():
     assert len(whisper.clips) == 1
 
 
-def test_long_speech_is_never_sent_to_whisper():
-    det, _, whisper = make()
+def test_long_speech_only_has_its_start_checked_once():
+    det, _, whisper = make("They said red.")
     assert max(run(det, noise(0.5), tone(5.0), noise(1.0))) == 0.0
-    assert whisper.clips == []
+    assert len(whisper.clips) == 1 and whisper.clips[0] < 2.0     # the first 1.3 s, not 5 s
+
+
+def test_hey_red_said_in_one_breath_with_a_command_wakes():
+    # "Hey Red, open YouTube": 3 s of speech after a pause.
+    det, _, whisper = make("Hey Red, open")
+    scores = run(det, noise(1.0), tone(3.0), noise(1.0))
+    assert max(scores) == 1.0 and len(whisper.clips) == 1
+
+
+def test_a_long_sentence_that_does_not_start_with_hey_red_stays_asleep():
+    det, _, _ = make("I saw a red car, hey red light")
+    assert max(run(det, noise(1.0), tone(3.0), noise(1.0))) == 0.0
+
+
+# What Whisper really wrote in the 2026-11-09 voice test (red.log) when the user said "Hey Red".
+@pytest.mark.parametrize("heard", [
+    "Hey Red Red Red Red Red Red Red", "Hey Red, hey Red, hey Red", "Hey Red, hey Red",
+    "Hey Red Red", "hey red hey red hey red hey red",
+])
+def test_repeated_phrases_still_wake(heard):
+    assert match_score(heard) == 1.0
+
+
+@pytest.mark.parametrize("heard", ["Not waking up", "It's okay", "What is?", "Song by Liz Adafim",
+                                   "Two Satora Lamb", "Red red red", "Invite this was happening"])
+def test_the_other_things_heard_in_that_test_stay_asleep(heard):
+    assert match_score(heard) < 0.5
+
+
+def test_head_mode_looks_only_at_the_first_two_words():
+    assert match_score("Hey Red, open YouTube and search", head=True) == 1.0
+    assert match_score("I said hey red", head=True) == 0.0
+    assert match_score("Hey Red, open YouTube and search") < 0.5
 
 
 def test_too_short_bursts_are_skipped():
@@ -104,7 +137,7 @@ def test_phrase_run_into_previous_speech_is_skipped():
     # Speech, a gap shorter than the pause needed, then a short burst: mid-conversation.
     det, _, whisper = make()
     run(det, noise(0.5), tone(2.5), noise(0.1), tone(0.6), noise(1.0))
-    assert whisper.clips == []
+    assert len(whisper.clips) == 1                         # the start of the long burst, nothing else
 
 
 def test_conversation_with_pauses_checks_only_short_isolated_bursts():
@@ -113,7 +146,8 @@ def test_conversation_with_pauses_checks_only_short_isolated_bursts():
     for length in (2.5, 0.8, 3.0, 1.9, 0.6, 4.0):
         pieces += [tone(length), noise(0.5)]
     run(det, *pieces)
-    assert len(whisper.clips) == 2                          # only the 0.8 s and 0.6 s bursts
+    # The 0.8 s and 0.6 s bursts, and the first 1.3 s of each of the four long ones (cheap, once each).
+    assert len(whisper.clips) == 6 and max(whisper.clips) < 2.0
 
 
 def test_works_with_odd_frame_sizes_and_float_input():
