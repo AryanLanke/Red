@@ -177,12 +177,26 @@ class Weather(Tool):
 WIKI_SEARCH_URL = "https://en.wikipedia.org/w/api.php?"
 WIKI_SUMMARY_URL = "https://en.wikipedia.org/api/rest_v1/page/summary/"
 MAX_EXTRACT = 3000
+MAX_OTHERS = 2                # "compare X with Y and Z": up to two more articles
+MAX_OTHER_EXTRACT = 1200      # each, so a comparison stays quick to read
+# Assistants are named by their wake phrase, which Wikipedia doesn't search
+# well ("Hey Copilot" found Google Assistant, "Ok Google" found Google Search).
+ASSISTANT_ARTICLES = {
+    "hey copilot": "Microsoft Copilot", "copilot": "Microsoft Copilot",
+    "windows copilot": "Microsoft Copilot",
+    "hey siri": "Siri", "siri": "Siri",
+    "ok google": "Google Assistant", "okay google": "Google Assistant",
+    "hey google": "Google Assistant",
+    "alexa": "Amazon Alexa", "hey alexa": "Amazon Alexa",
+    "gemini": "Google Gemini", "hey gemini": "Google Gemini",
+    "cortana": "Cortana (virtual assistant)", "hey cortana": "Cortana (virtual assistant)",
+}
 MAX_DETAIL_EXTRACT = 7000     # the intro plus the plot, about 1,800 tokens
 # Sections that tell the story or explain the thing, best first.
 STORY_SECTIONS = ("premise", "plot", "synopsis", "plot summary", "story", "storyline",
                   "summary", "overview", "series overview", "description", "biography", "history")
 
-SUMMARY_SYSTEM = """You are Red, a voice assistant. Using only the Wikipedia text below, answer the user's question in 2 or 3 short sentences of plain spoken English. No lists, markdown or links. If the text doesn't answer it, say what the article is about instead. Use any earlier conversation only to understand the question; don't repeat it or give advice from it.
+SUMMARY_SYSTEM = """You are Red, a voice assistant. Using only the Wikipedia text below, answer the user's question in 2 or 3 short sentences of plain spoken English (up to 5 when it compares several things). No lists, markdown or links. If the text doesn't answer it, say what the article is about instead, and never add facts that aren't in the text. Use any earlier conversation only to understand the question; don't repeat it or give advice from it.
 Reply with JSON only: {"answer": "<your answer>"}"""
 
 DETAIL_SUMMARY_SYSTEM = """You are Red, a voice assistant. The user wants a long, detailed answer. Using only the Wikipedia text below, tell it like a story in 8 to 12 sentences of plain spoken English: the setup, the main people, what happens and how it turns out (for things that aren't stories, the full explanation). No lists, markdown or links. Don't promise more later: give it now. Use any earlier conversation only to understand the question.
@@ -237,12 +251,17 @@ class LookUp(_UsesLLM):
     name = "look_up"
     description = ("Look something up online on Wikipedia and say a short summary aloud, "
                    "for example 'look up the James Webb telescope' or 'search the web for X "
-                   "and tell me what it is'.")
+                   "and tell me what it is'. For 'compare X with Y', topic is X and others "
+                   "lists Y (and Z).")
     args_schema = {
         "type": "object",
         "properties": {
             "topic": {"type": "string", "minLength": 1, "maxLength": 200,
-                      "description": "The thing to look up, as a short name."},
+                      "description": "The thing to look up, as a short name, e.g. "
+                                     "'Microsoft Copilot' or 'Siri'."},
+            "others": {"type": "array", "maxItems": MAX_OTHERS,
+                       "items": {"type": "string", "minLength": 1, "maxLength": 200},
+                       "description": "Only for comparisons: the other things, as short names."},
             "question": {"type": "string", "maxLength": 300,
                          "description": "The user's question, if they asked one."},
         },
@@ -271,6 +290,60 @@ class LookUp(_UsesLLM):
             return topic
         return better or topic
 
+    def _find(self, topic: str) -> str | None:
+        topic = ASSISTANT_ARTICLES.get(" ".join(topic.lower().replace(",", " ").split()), topic)
+        return self._search(topic)
+
+    def _search(self, topic: str) -> str | None:
+        """The Wikipedia article title for a topic, or None.
+
+        An exact title (or redirect) from the title search wins ("Punisher").
+        Otherwise the full-text search's best hit, which understands loose
+        words: "latest iPhone" finds "IPhone", where the title search found
+        a lake.
+        """
+        found = fetch_json(WIKI_SEARCH_URL + urlencode({
+            "action": "opensearch", "search": topic, "limit": 1, "namespace": 0,
+            "format": "json"}), "Wikipedia", self._open)
+        titles = found[1] if isinstance(found, list) and len(found) > 1 else []
+        first = str(titles[0]) if titles else None
+        if first and first.lower() == topic.lower():
+            return first
+        try:
+            data = fetch_json(WIKI_SEARCH_URL + urlencode({
+                "action": "query", "list": "search", "srsearch": topic, "srlimit": 1,
+                "srnamespace": 0, "format": "json"}), "Wikipedia", self._open)
+            hits = data.get("query", {}).get("search", []) if isinstance(data, dict) else []
+            if hits and hits[0].get("title"):
+                return str(hits[0]["title"])
+        except (ToolError, AttributeError, TypeError):
+            pass
+        return first
+
+    def _summary(self, title: str) -> dict:
+        return fetch_json(WIKI_SUMMARY_URL + quote(title.replace(" ", "_"), safe=""),
+                          "Wikipedia", self._open)
+
+    def _other_articles(self, others) -> tuple[list[str], str]:
+        """For a comparison: (details lines, the other articles' text for the model)."""
+        details, text = [], ""
+        for other in list(others or [])[:MAX_OTHERS]:
+            other = " ".join(str(other).split())
+            if not other:
+                continue
+            try:
+                title = self._find(other)
+                page = self._summary(title) if title else {}
+            except ToolError:
+                continue
+            extract = " ".join(str(page.get("extract", "")).split())[:MAX_OTHER_EXTRACT]
+            if not extract or page.get("type") == "disambiguation":
+                continue
+            name = page.get("title", title)
+            details.append(f"Wikipedia: {name}")
+            text += f"\n\nWikipedia article '{name}':\n{extract}"
+        return details, text
+
     def _article(self, title: str) -> str:
         """The whole article as plain text with == headings ==, or "" if that fails."""
         try:
@@ -283,7 +356,7 @@ class LookUp(_UsesLLM):
         except (ToolError, AttributeError, IndexError, TypeError):
             return ""
 
-    def run(self, topic: str, question: str = "") -> str:
+    def run(self, topic: str, question: str = "", others: list | None = None) -> str:
         self.last_details = ""
         said, self._command = self._command, ""
         topic = " ".join(topic.split())
@@ -292,15 +365,10 @@ class LookUp(_UsesLLM):
         detail = wants_detail(said) or wants_detail(question)
         history = self.history()
         topic = self._topic(topic, said, history)
-        found = fetch_json(WIKI_SEARCH_URL + urlencode({
-            "action": "opensearch", "search": topic, "limit": 1, "namespace": 0,
-            "format": "json"}), "Wikipedia", self._open)
-        titles = found[1] if isinstance(found, list) and len(found) > 1 else []
-        if not titles:
+        title = self._find(topic)
+        if not title:
             raise ToolError(f"Wikipedia has nothing on {topic}.")
-        title = titles[0]
-        page = fetch_json(WIKI_SUMMARY_URL + quote(title.replace(" ", "_"), safe=""),
-                          "Wikipedia", self._open)
+        page = self._summary(title)
         extract = " ".join(str(page.get("extract", "")).split())[:MAX_EXTRACT]
         if not extract:
             raise ToolError(f"Wikipedia has nothing on {topic}.")
@@ -316,8 +384,12 @@ class LookUp(_UsesLLM):
             return "From Wikipedia: " + spoken(extract, DETAIL_SENTENCES if detail else 3,
                                                MAX_DETAIL_ANSWER if detail else 700)
         ask = said or question.strip() or f"What is {topic}?"
+        more_details, more = self._other_articles(others)
+        if more_details:
+            self.last_details += "\n" + "\n".join(more_details)
         answer = ask_model(self._llm, DETAIL_SUMMARY_SYSTEM if detail else SUMMARY_SYSTEM,
-                           with_history(history, f"Question: {ask}\n\nWikipedia article '{title}':\n{extract}"),
+                           with_history(history, f"Question: {ask}\n\nWikipedia article '{title}':\n"
+                                                 f"{extract}{more}"),
                            detail=detail)
         return f"From Wikipedia: {answer}"
 

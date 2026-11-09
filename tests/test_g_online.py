@@ -191,7 +191,7 @@ def test_look_up_nothing_found_and_disambiguation():
 def test_look_up_title_is_encoded_in_the_path():
     opener = wiki_opener(search=["x", ["AC/DC?#"], [], []])
     LookUp(None, opener).run(topic="acdc")
-    assert opener.requests[1][0].endswith("/page/summary/AC%2FDC%3F%23")
+    assert opener.requests[-1][0].endswith("/page/summary/AC%2FDC%3F%23")
 
 
 def test_look_up_offline():
@@ -253,3 +253,88 @@ def test_live_sources():
     assert "Pune" in Weather(home=lambda: "").run(place="Pune")
     assert LookUp(None).run(topic="Alan Turing").startswith("From Wikipedia:")
     assert News().run(topic="technology").startswith("Here are the latest headlines")
+
+
+# --- finding the article, and comparisons (plan.md task 2c) ---------------------------
+
+class Wiki:
+    """Wikipedia by query: the title search, the full-text search and page summaries."""
+
+    def __init__(self, titles=None, fulltext=None, pages=None):
+        self.titles, self.fulltext, self.pages = titles or {}, fulltext or {}, pages or {}
+        self.urls = []
+
+    def __call__(self, req, timeout):
+        url = req.full_url
+        self.urls.append(url)
+        if "/page/summary/" in url:
+            from urllib.parse import unquote
+            title = unquote(url.rsplit("/", 1)[1]).replace("_", " ")
+            body = {"type": "standard", "title": title, "extract": self.pages.get(title, "")}
+        else:
+            q = {k: v[0] for k, v in parse_qs(urlsplit(url).query).items()}
+            if q.get("list") == "search":
+                hit = self.fulltext.get(q["srsearch"])
+                body = {"query": {"search": [{"title": hit}] if hit else []}}
+            else:
+                hit = self.titles.get(q["search"])
+                body = [q["search"], [hit] if hit else [], [], []]
+        return io.BytesIO(json.dumps(body).encode())
+
+
+def test_an_exact_title_is_used_without_a_full_text_search():
+    wiki = Wiki(titles={"Punisher": "Punisher"}, pages={"Punisher": "The Punisher is an antihero."})
+    assert LookUp(None, wiki).run(topic="Punisher") == "From Wikipedia: The Punisher is an antihero."
+    assert not any("list=search" in u for u in wiki.urls)
+
+
+def test_loose_words_use_the_full_text_search():
+    # The title search found a lake for "latest iPhone".
+    wiki = Wiki(titles={"latest iPhone": "Lake Stiphane"}, fulltext={"latest iPhone": "IPhone"},
+                pages={"IPhone": "The iPhone is a line of smartphones by Apple."})
+    assert LookUp(None, wiki).run(topic="latest iPhone").startswith("From Wikipedia: The iPhone is")
+
+
+def test_a_comparison_reads_every_article():
+    wiki = Wiki(titles={"Siri": "Siri", "Google Assistant": "Google Assistant"},
+                fulltext={"Microsoft Copilot": "Microsoft Copilot"},
+                pages={"Microsoft Copilot": "Copilot is Microsoft's assistant on Windows.",
+                       "Siri": "Siri is Apple's assistant.",
+                       "Google Assistant": "Google Assistant was replaced by Gemini."})
+    llm = FakeLLM("Copilot is for Windows, Siri for Apple devices, and Google's is now Gemini.")
+    tool = LookUp(llm, wiki)
+    tool.set_command("compare Hey Copilot with Hey Siri and OK Google")
+    reply = tool.run(topic="Microsoft Copilot", others=["Siri", "Google Assistant"])
+    assert reply.startswith("From Wikipedia: Copilot is for Windows")
+    system, user = llm.calls[0]
+    assert "Question: compare Hey Copilot with Hey Siri and OK Google" in user
+    for text in ("Microsoft's assistant on Windows", "Apple's assistant", "replaced by Gemini"):
+        assert text in user
+    assert tool.last_details.splitlines()[0] == "Wikipedia: Microsoft Copilot"
+    assert tool.last_details.splitlines()[-2:] == ["Wikipedia: Siri", "Wikipedia: Google Assistant"]
+
+
+def test_a_comparison_skips_what_wikipedia_doesnt_have():
+    wiki = Wiki(titles={"Siri": "Siri"}, pages={"Siri": "Siri is Apple's assistant."})
+    llm = FakeLLM("Siri is Apple's assistant.")
+    tool = LookUp(llm, wiki)
+    assert tool.run(topic="Siri", others=["Zzqx", " "]) == "From Wikipedia: Siri is Apple's assistant."
+    assert "Zzqx" not in llm.calls[0][1]
+
+
+def test_others_are_bounded_by_the_schema():
+    from red.router import Router, RouteError
+    from red.tools import ToolRegistry
+    router = Router(ToolRegistry([LookUp(None, Wiki())]))
+    router.parse('{"tool": "look_up", "args": {"topic": "Siri", "others": ["Alexa", "Gemini"]}}')
+    with pytest.raises(RouteError):
+        router.parse('{"tool": "look_up", "args": {"topic": "Siri", "others": ["a", "b", "c"]}}')
+
+
+@pytest.mark.parametrize("said, article", [
+    ("Hey Copilot", "Microsoft Copilot"), ("hey, siri", "Siri"), ("OK Google", "Google Assistant"),
+    ("Alexa", "Amazon Alexa"), ("Gemini", "Google Gemini"),
+])
+def test_wake_phrases_find_the_assistants_article(said, article):
+    wiki = Wiki(titles={article: article}, pages={article: f"{article} is a voice assistant."})
+    assert LookUp(None, wiki).run(topic=said) == f"From Wikipedia: {article} is a voice assistant."
