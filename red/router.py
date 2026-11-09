@@ -38,6 +38,7 @@ Rules:
 - A single word or phrase with no request in it (for example "banana") is unclear: use "none".
 - Talk about Red itself (who are you, tell me about yourself, how are you, what are you thinking), feelings, personal problems, opinions or jokes: use "none". Only facts about the world go to answer.
 - Questions: a general knowledge question or "explain X" goes to answer. "Look up X" or anything ending in "and tell me" goes to look_up, which says the answer aloud. web_search only opens results in the browser ("google X", "search for X", "show me pictures of X"), and never open_url for a search.
+- Playing: a podcast, video, trailer, talk or anything "on YouTube" goes to play_online. A song, artist, album or genre, or just "music", "songs" or "anything", goes to play_music (it finds it online if it isn't on the PC). "Search YouTube for X" only shows results: web_search with site youtube.
 - Pick the most specific tool: open_settings (not open_app) for a Windows Settings page; find_file (not open_folder) when the user says find, locate or where is.
 
 Examples:
