@@ -89,7 +89,7 @@ def is_goodbye(text: str) -> bool:
 
 
 # "Go away", "leave me alone", "I don't need your help": end the conversation
-# at any point, not only after "Anything else?".
+# at any point, not only in a follow-up.
 _DISMISS = re.compile(
     r"\b(?:go away|go off|get lost|leave me alone|leave me|leave now|go from here|"
     r"get out(?: of here)?|shut up|be quiet|stop talking|stop listening|go to sleep|"

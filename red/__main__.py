@@ -32,7 +32,7 @@ from typing import Callable
 from .allowlist import AllowlistError, load_allowlist
 from .confirm import Ask, typed_ask, with_fallback
 from .config import Settings, load_settings
-from .executor import Executor
+from .executor import Executor, run_later
 from .llm import LLMError, connect
 from .router import RouteError, Router
 from .chat import Chat
@@ -43,10 +43,13 @@ log = logging.getLogger("red")
 
 # How long to wait for you to start talking after the beep.
 START_TIMEOUT_SECONDS = 8.0
-# After an answer Red asks "Anything else?" and keeps listening, up to this
-# many follow-ups in a row, so it can never loop forever.
+# After chat, a reply that asks you something, or a failure, Red keeps
+# listening (without "Anything else?": the chime says it's listening), up to
+# this many follow-ups in a row, so it can never loop forever. After an
+# action it just goes quiet.
 MAX_FOLLOW_UPS = 6
-ANYTHING_ELSE = "Anything else you want me to do?"
+# How long the spoken reply may wait for a tool's follow-through work.
+LATER_WAIT_SECONDS = 6.0
 # Ollama unloads an idle model after keep_alive (5 minutes by default), and
 # loading it again takes 10 seconds or more. While Red runs in voice mode it
 # asks Ollama to keep the model loaded a little more often than that.
@@ -95,6 +98,7 @@ def _run(router: Router, executor: Executor, command: str, chat: Chat | None = N
     if not route.is_none:
         print(f"  -> {route.to_json()}")
     reply = executor.execute(command, route)
+    executor.finish()
     if chat is not None:
         reply = chat.reply(command, fallback=reply) if route.is_none else reply
         if not route.is_none:
@@ -296,12 +300,7 @@ class VoiceApp:
         last = ""
         try:
             for turn in range(MAX_FOLLOW_UPS + 1):
-                if turn:
-                    if not last.rstrip().endswith("?"):
-                        self._say(ANYTHING_ELSE)     # a reply that asks a question needs no extra one
-                    last, tool, again = self._exchange(player, tool, follow_up=True)
-                else:
-                    last, tool, again = self._exchange(player, tool, follow_up=False)
+                last, tool, again = self._exchange(player, tool, follow_up=bool(turn))
                 if not again or self.settings.follow_up_seconds <= 0:
                     break
         except Exception as e:  # noqa: BLE001 - one bad command must not stop Red
@@ -352,7 +351,7 @@ class VoiceApp:
             logging.getLogger("red.commands").info("%r -> small talk", text)
             self.chat.remember(text, quick)
             self._say(quick)
-            return quick, tool, True
+            return quick, tool, asks_back(quick)
         self._state("thinking", f"“{text}”")
         try:
             route = self.router.route(text)
@@ -374,10 +373,15 @@ class VoiceApp:
             # Not a command: talk like a friend instead of the router's stock line.
             self._state("thinking", "")
             last = self.chat.reply(text, fallback=last)
+            again = True
         else:
             self.chat.remember(text, last)
-        self._say(last, self.executor.last_details)
-        return last, tool, True
+            # Done is done: after an action Red goes quiet. It keeps listening
+            # only if the reply asks you something or the tool failed.
+            again = asks_back(last) or self.executor.last_status == "error"
+        self._say(last, self.executor.last_details, meanwhile=self.executor.last_later)
+        self.executor.last_later = None
+        return last, tool, again
 
     # --- helpers -------------------------------------------------------------
 
@@ -393,12 +397,19 @@ class VoiceApp:
         except Exception:  # noqa: BLE001 - no speakers: the text is still shown
             log.exception("Couldn't speak")
 
-    def _say(self, reply: str, details: str = "") -> None:
+    def _say(self, reply: str, details: str = "", meanwhile: Callable[[], object] | None = None) -> None:
+        """Show and speak `reply`. `meanwhile` (a tool's follow-through) runs while Red speaks."""
         self.out(f"Red: {reply}")
         for line in details.splitlines():
             self.out(f"     {line}")
         self._state("speaking", f"{reply}\n{details}".strip())
+        worker = None
+        if meanwhile is not None:
+            worker = threading.Thread(target=run_later, args=(meanwhile,), name="red-later", daemon=True)
+            worker.start()
         self._speak(reply)
+        if worker is not None:
+            worker.join(LATER_WAIT_SECONDS)
 
     def _pause_music(self):
         """Pause music while Red listens and talks. Returns the player if it was paused."""
@@ -410,6 +421,11 @@ class VoiceApp:
         except Exception:  # noqa: BLE001
             log.exception("Couldn't pause the music")
         return None
+
+
+def asks_back(reply: str) -> bool:
+    """True when Red's reply asks the user something, so Red should listen for the answer."""
+    return reply.rstrip().rstrip("\"'”’)").endswith("?")
 
 
 def attach_reminders(on_due: Callable[[str], None]):

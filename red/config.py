@@ -34,7 +34,7 @@ DEFAULT_OVERLAY = "glow"
 # that before deciding you've finished.
 DEFAULT_END_SILENCE = 1.5      # seconds of quiet that end a command
 DEFAULT_MAX_COMMAND = 20.0     # seconds; a command is cut off after this
-# After an answer, Red asks if you want anything else and listens this long
+# After chat, a question back or a failure, Red keeps listening this long
 # for a reply. 0 turns follow-ups off.
 DEFAULT_FOLLOW_UP = 7.0
 

@@ -458,36 +458,109 @@ def follow_app(world, monkeypatch, *texts, speech_calls=None, **kw):
     return app, speaker, overlay, record, out
 
 
-def test_asks_for_more_and_stops_on_silence(world, monkeypatch):
+def test_an_action_ends_the_conversation(world, monkeypatch):
+    # Do it, then go quiet: no "Anything else?", no second recording.
     app, speaker, overlay, record, out = follow_app(world, monkeypatch, "Open my downloads.")
     app.handle("wakeword")
-    assert speaker.said == ["Opening Downloads.", cli.ANYTHING_ELSE]
+    assert speaker.said == ["Opening Downloads."]
+    assert record.calls == [{}]
+    assert overlay.names[-1] == "idle"
+
+
+def test_chat_keeps_listening_and_stops_on_silence(world, monkeypatch):
+    app, speaker, overlay, record, out = follow_app(world, monkeypatch, "Banana.")
+    app.handle("wakeword")
+    assert len(speaker.said) == 1                            # the reply, nothing on top
     assert record.calls == [{}, {"start_timeout": 7.0}]      # the follow-up waits 7 s for you
     assert overlay.names[-1] == "idle"
 
 
 def test_says_no_and_red_stops(world, monkeypatch):
-    app, speaker, overlay, record, out = follow_app(world, monkeypatch, "Open my downloads.", "No, that's all.")
+    app, speaker, overlay, record, out = follow_app(world, monkeypatch, "Banana.", "No, that's all.")
     app.handle("wakeword")
-    assert speaker.said == ["Opening Downloads.", cli.ANYTHING_ELSE, "Okay."]
+    assert speaker.said[-1] == "Okay."
     assert len(record.calls) == 2
 
 
-def test_a_second_command_is_run_and_asked_again(world, monkeypatch):
+def test_a_command_after_chat_runs_and_then_red_goes_quiet(world, monkeypatch):
     app, speaker, overlay, record, out = follow_app(
-        world, monkeypatch, "Open my downloads.", "Check my repos.", "Nope.")
+        world, monkeypatch, "Hello.", "Open my downloads.", "Check my repos.")
     app.handle("hotkey")
-    assert speaker.said[:2] == ["Opening Downloads.", cli.ANYTHING_ELSE]
-    assert speaker.said[2] != cli.ANYTHING_ELSE            # the repo answer
-    assert speaker.said[-2:] == [cli.ANYTHING_ELSE, "Okay."]
+    assert speaker.said[0].endswith("What can I do for you?")
+    assert speaker.said[1:] == ["Opening Downloads."]
+    assert len(record.calls) == 2                            # "Check my repos." is never heard
     assert len(world["start"].calls) == 1
+
+
+class Broken(Tool):
+    name = "open_app"
+    description = "Open an app"
+    args_schema = {"type": "object", "properties": {"app": {"type": "string"}}, "additionalProperties": False}
+
+    def run(self, app):
+        from red.tools.base import ToolError
+        raise ToolError(f"I couldn't find an app called {app}.")
+
+
+def test_a_failure_keeps_listening_so_you_can_say_it_again(world, monkeypatch):
+    world["registry"].add(Broken())
+    world["llm"].replies["Open Spotfy."] = {"tool": "open_app", "args": {"app": "Spotfy"}}
+    app, speaker, overlay, record, out = follow_app(world, monkeypatch, "Open Spotfy.", "Open my downloads.")
+    app.handle("wakeword")
+    assert speaker.said == ["I couldn't find an app called Spotfy.", "Opening Downloads."]
+    assert len(record.calls) == 2
+
+
+class Launcher(Tool):
+    """Starts something at once and leaves the slow part (bringing it to the front) for later."""
+    name = "open_app"
+    description = "Open an app"
+    args_schema = {"type": "object", "properties": {"app": {"type": "string"}}, "additionalProperties": False}
+
+    def __init__(self, events):
+        self.events = events
+
+    def run(self, app):
+        self.events.append("launched")
+        self.finish_later(lambda: self.events.append("brought to the front"))
+        return f"Opening {app}."
+
+
+def test_the_reply_is_spoken_while_the_follow_through_runs(world, monkeypatch):
+    events = []
+    world["registry"].add(Launcher(events))
+    world["llm"].replies["Open Edge."] = {"tool": "open_app", "args": {"app": "Edge"}}
+    app, speaker, *_ = make_app(world, "Open Edge.")
+    speaker.say = lambda text, block=True: (events.append(f"said {text}"), speaker.said.append(text))
+    app.handle("wakeword")
+    assert events[0] == "launched"                      # launched before Red speaks
+    assert sorted(events[1:]) == ["brought to the front", "said Opening Edge."]
+    assert app.executor.last_later is None
+
+
+def test_a_failing_follow_through_is_only_logged(world, monkeypatch):
+    class Flaky(Launcher):
+        def run(self, app):
+            self.finish_later(lambda: 1 / 0)
+            return f"Opening {app}."
+    world["registry"].add(Flaky([]))
+    world["llm"].replies["Open Edge."] = {"tool": "open_app", "args": {"app": "Edge"}}
+    app, speaker, *_ = make_app(world, "Open Edge.")
+    app.handle("wakeword")
+    assert speaker.said == ["Opening Edge."]
+
+
+@pytest.mark.parametrize("reply, asks", [("Done.", False), ("Which one?", True), ('He said "why?"', True),
+                                         ("Opening Edge.", False)])
+def test_asks_back(reply, asks):
+    assert cli.asks_back(reply) is asks
 
 
 def test_a_question_in_the_reply_is_not_followed_by_another(world, monkeypatch):
     app, speaker, overlay, record, out = follow_app(world, monkeypatch, "Hello.", "No thanks.")
     app.handle("wakeword")
     assert speaker.said[0].endswith("What can I do for you?")
-    assert speaker.said[1:] == ["Okay."]                    # no "Anything else?" on top
+    assert speaker.said[1:] == ["Okay."]
 
 
 def test_no_follow_up_after_a_failure(world, monkeypatch):
@@ -500,7 +573,7 @@ def test_no_follow_up_after_a_failure(world, monkeypatch):
 
 
 def test_follow_ups_are_capped(world, monkeypatch):
-    texts = ["Open my downloads."] * (cli.MAX_FOLLOW_UPS + 1)
+    texts = ["Banana."] * (cli.MAX_FOLLOW_UPS + 1)   # chat keeps the conversation going
     app, speaker, overlay, record, out = follow_app(world, monkeypatch, *texts, speech_calls=99)
     app.handle("wakeword")
     assert len(record.calls) == cli.MAX_FOLLOW_UPS + 1
@@ -523,7 +596,7 @@ def test_go_away_ends_the_conversation_at_once(world, monkeypatch):
 
 def test_go_away_in_a_follow_up(world, monkeypatch):
     app, speaker, overlay, record, out = follow_app(
-        world, monkeypatch, "Open my downloads.", "Just go from here, I don't need your help.")
+        world, monkeypatch, "Banana.", "Just go from here, I don't need your help.")
     app.handle("wakeword")
     assert speaker.said[-1] == 'Okay. Say "Hey Red" when you need me.'
     assert len(record.calls) == 2
