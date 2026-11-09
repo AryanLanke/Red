@@ -67,7 +67,8 @@ the whole job**, otherwise the user does it themselves.
   - keep the model loaded (already done)
 - Target: "open Edge" finished within about 3 s of the user stopping talking.
 
-### 6. Longer, smarter answers that remember the conversation
+### 6. ✅ Longer, smarter answers that remember the conversation
+**Done:** see progress.md 7.2 "Answers that remember the conversation". The Punisher replay passes against the real model.
 - Give `answer` and `look_up` the conversation (`red/chat.py` `Chat.turns`), so "what's that series
   about" knows it's Punisher.
 - Answer length follows the request. Normal questions get 2–4 sentences. "Big summary", "tell me the

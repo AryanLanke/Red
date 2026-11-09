@@ -227,6 +227,15 @@ projects = 'D:\Projects'
 - Piper voice models live under `RED_HOME\models\piper`, pinned and checksum-verified with `red.downloads.download`.
 - Spoken confirmation: Red speaks the question, records the answer, and passes the transcript to the same yes check as typed input.
 
+#### Answers that remember the conversation (2026-11-08, plan.md task 6)
+
+- The router sees the last 4 lines of the conversation (`Chat.history()`), in the user message only, so with no conversation routing is exactly as before. "What's that series about?" after talking about Punisher goes to `look_up` with "Punisher web series" instead of `none` asking for the name.
+- `answer` and `look_up` get the conversation (`bind_context`) and the user's own words (`set_command`, called by the Executor): the router's `question` can be a paraphrase or even a reply it made up.
+- Length follows the request (`assistant.wants_detail`): 2 to 4 sentences normally; "a big summary", "the whole story", "in detail" get 8 to 12 sentences with `max_tokens` 900. In detail `look_up` reads the article's Premise or Plot section (with its season subsections), not only the summary. Tools have a `max_reply` (the Executor used to cut every reply at 300 characters).
+- `commands.jsonl` now records what Red said in chat (`result`), with the router's placeholder as `router_reply`.
+- Replayed the 2026-11-08 22:21 to 22:24 conversation against the real model: "what's that web series about" now summarises The Punisher (TV series), "I want a big summary ... story thing" gets a 7-sentence story of both seasons (11.5 s), and "what's Punisher about" is about Frank Castle, not the comic character.
+- Qwen2.5 7B isn't "untrained", but it's small: context and longer answers help most. A bigger model doesn't fit a 6 GB GPU at a usable speed.
+
 #### Speed (2026-11-08, plan.md task 5)
 
 Every command writes a `Timing` line to `red.log`: listen, transcribe, route, act (or chat), speak, and how long after you stopped talking the action ran and the reply ended.
