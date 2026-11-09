@@ -159,6 +159,16 @@ class OllamaClient:
         except (KeyError, TypeError) as e:
             raise LLMError(f"Unexpected Ollama response: {str(data)[:500]}") from e
 
+    def warm(self) -> None:
+        """Load the model into memory now, and keep it there for keep_alive.
+
+        Ollama loads a model when it gets a request with no prompt, and
+        generates nothing. Loading takes several seconds the first time, so
+        doing it ahead keeps the first command fast.
+        """
+        _post_json(f"{self.base_url}/api/generate",
+                   {"model": self.model, "keep_alive": self.keep_alive}, timeout=300)
+
     def has_model(self) -> bool:
         try:
             with urllib.request.urlopen(f"{self.base_url}/api/tags", timeout=10) as r:
