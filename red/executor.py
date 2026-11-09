@@ -21,6 +21,16 @@ log = logging.getLogger(__name__)
 MAX_REPLY = 300
 
 
+def run_later(work) -> None:
+    """Run a tool's follow-through work. It is only polish, so a failure is logged, not raised."""
+    if work is None:
+        return
+    try:
+        work()
+    except Exception:  # noqa: BLE001
+        log.exception("A tool's follow-through work failed")
+
+
 def _short(text: str) -> str:
     text = " ".join(str(text).split())
     return text if len(text) <= MAX_REPLY else text[:MAX_REPLY - 3] + "..."
@@ -36,6 +46,10 @@ class Executor:
         self._lock = threading.Lock()
         # Longer text from the last tool run, for the overlay (e.g. one line per repo).
         self.last_details = ""
+        # How the last command ended: "ok", "error", "cancelled" or "none" (not a command).
+        self.last_status = ""
+        # Slow work the last tool left to do while its reply is spoken (Tool.finish_later).
+        self.last_later = None
 
     def execute(self, command: str, route: Route) -> str:
         """Run a route and return the reply for the user.
@@ -45,6 +59,7 @@ class Executor:
         question that says what and when, and need a clear yes.
         """
         self.last_details = ""
+        self.last_later = None
         if route.is_none:
             reply = _short(route.args.get("reply") or "Sorry, I can't do that.")
             self._log(command, route, status="none", confirmed=None, result=reply)
@@ -77,25 +92,35 @@ class Executor:
                           answer=answers[-1] if answers else None)
                 return reply
 
+        tool.take_later()      # nothing left over from an earlier run
         try:
             reply = _short(tool.run(**route.args))
         except ToolError as e:
+            tool.take_later()
             reply = _short(str(e)) or f"{route.tool} failed."
             self._log(command, route, status="error", confirmed=confirmed, result=reply)
             return reply
         except Exception as e:
+            tool.take_later()
             log.exception("%s failed", route.tool)
             reply = _short(f"Sorry, {route.tool.replace('_', ' ')} failed: {e}")
             self._log(command, route, status="error", confirmed=confirmed, result=reply,
                       error=f"{type(e).__name__}: {e}")
             return reply
+        self.last_later = tool.take_later()
         details = getattr(tool, "last_details", "")
         self.last_details = details if isinstance(details, str) else ""
         extra = {"details": self.last_details} if self.last_details else {}
         self._log(command, route, status="ok", confirmed=confirmed, result=reply, **extra)
         return reply
 
+    def finish(self) -> None:
+        """Do the work the last tool left for later, now (typed mode has nothing to speak over)."""
+        work, self.last_later = self.last_later, None
+        run_later(work)
+
     def _log(self, command: str, route: Route, **fields) -> None:
+        self.last_status = fields.get("status", "")
         if self.log_path is None:
             return
         entry = {

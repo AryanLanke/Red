@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import ClassVar, Iterable
+from typing import Callable, ClassVar, Iterable
 
 
 class ToolError(Exception):
@@ -19,6 +19,19 @@ class Tool(ABC):
     @abstractmethod
     def run(self, **kwargs) -> str:
         """Do the action and return a short reply for the user."""
+
+    def finish_later(self, work: Callable[[], object]) -> None:
+        """Called from run(): slow work that can happen while Red says the reply.
+
+        For example, open_app starts Edge, returns "Opening Edge." at once, and
+        waits for Edge's window to bring it to the front while Red is speaking.
+        """
+        self._later = work
+
+    def take_later(self) -> Callable[[], object] | None:
+        """The work run() left for later, if any (each call to run() leaves its own)."""
+        work = self.__dict__.pop("_later", None)
+        return work
 
     def describe(self, **kwargs) -> str:
         """The action in plain words, used for the confirmation question.
