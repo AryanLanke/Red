@@ -6,6 +6,7 @@
     python -m red setup                    download the LLM backend, the model and the voice models
     python -m red doctor                   check that everything Red needs is in place
     python -m red voice-setup              say "Hey Red" a few times so Red learns your voice
+    python -m red wake-test                see what the wake word hears from your microphone
     python -m red background               run Red with no window (closing PowerShell won't stop it)
     python -m red stop                     stop the hidden Red; status says whether it runs
     python -m red startup on|off           start Red when you sign in, or stop doing that
@@ -906,6 +907,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd")
     sub.add_parser("setup", help="download the LLM backend, the model and the voice models")
     sub.add_parser("doctor", help="check that everything Red needs is in place")
+    sub.add_parser("wake-test", help="see what the wake word hears from your microphone")
     sub.add_parser("voice-setup", help="say \"Hey Red\" a few times so Red learns your voice")
     sub.add_parser("google-login", help="optional: let Red use your Gmail, Calendar and Contacts")
     sub.add_parser("google-logout", help="sign Red out of Google")
@@ -928,6 +930,11 @@ def main(argv: list[str] | None = None) -> int:
 
     settings = load_settings()
     settings.ensure_dirs()
+    if args.cmd == "wake-test":
+        logging.basicConfig(filename=settings.logs_dir / "red.log", level=logging.INFO,
+                            format="%(asctime)s %(name)s %(levelname)s %(message)s")
+        from .wake_test import main as wake_test_main
+        return wake_test_main(settings)
     if args.cmd == "voice-setup":
         logging.basicConfig(filename=settings.logs_dir / "red.log", level=logging.INFO,
                             format="%(asctime)s %(name)s %(levelname)s %(message)s")
