@@ -9,8 +9,9 @@ import pytest
 
 from red.tools.base import ToolError
 from red.tools.online import LookUp, cross_check_system
-from red.tools.sources import (Evidence, Gather, default_sources, relevant, search_url,
-                               searxng, topic_words)
+from red.tools.sources import (Evidence, Gather, best_passages, default_sources, fetch_page,
+                               page_paragraphs, read_top_pages, relevant, search_url, searxng,
+                               topic_words)
 
 LOCAL = "http://127.0.0.1:8888"
 
@@ -255,6 +256,108 @@ def test_look_up_cross_checks_wikipedia_with_the_web(searx_on):
         "Wikipedia: Hugging Face", "https://en.wikipedia.org/wiki/Hugging_Face",
         "huggingface.co: Hugging Face docs", "https://huggingface.co/docs",
         "techcrunch.com: Hugging Face raises money", "https://techcrunch.com/hf"]
+
+
+class FakeStream:
+    def __init__(self):
+        self.spoken, self.cancelled = [], False
+
+    def say(self, sentence):
+        self.spoken.append(sentence)
+
+
+def test_look_up_says_let_me_check_while_the_web_is_asked(searx_on):
+    from red.speech import speaking_to
+    opener = FakeOpener({**wiki_routes(), f"{LOCAL}/search": HF_SEARX})
+    stream = FakeStream()
+    with speaking_to(stream):
+        LookUp(FakeLLM("Hugging Face is an AI company."), opener).run(topic="hugging face")
+    assert stream.spoken == ["Let me check."]
+
+
+def test_look_up_without_the_web_says_nothing_extra(monkeypatch):
+    from red.speech import speaking_to
+    monkeypatch.delenv("RED_SEARCH_URL", raising=False)
+    stream = FakeStream()
+    with speaking_to(stream):
+        LookUp(FakeLLM("Hugging Face is an AI company."), FakeOpener(wiki_routes())).run(topic="hugging face")
+    assert stream.spoken == []
+
+
+def test_look_up_searches_the_web_with_the_users_own_words(searx_on):
+    opener = FakeOpener({**wiki_routes(), f"{LOCAL}/search": HF_SEARX})
+    tool = LookUp(FakeLLM("It was founded in 2016."), opener)
+    tool.set_command("when was Hugging Face founded")
+    tool.run(topic="hugging face")
+    search = next(u for u in opener.urls if u.startswith(LOCAL))
+    assert "q=when+was+Hugging+Face+founded" in search
+
+
+# --- reading the pages, not just the snippets ---------------------------------------------
+
+PAGE = """<html><head><script>var tracking = "Siri Siri Siri";</script><style>p{}</style></head>
+<body><nav><li>Home</li><li>Siri news and more Siri pages from the menu</li></nav>
+<header><p>Subscribe to our newsletter for the latest Apple coverage today</p></header>
+<p>Siri began as a project at SRI International and was spun off as Siri Inc. in 2007.</p>
+<p>Unrelated paragraph about the weather in Cupertino this week, sunny and mild.</p>
+<p>Apple bought Siri Inc. in April 2010 and built Siri into the iPhone 4S in 2011.</p>
+<footer><p>Copyright notice for this site, all rights reserved, 2026 edition</p></footer>
+</body></html>"""
+
+
+def test_page_paragraphs_skip_scripts_menus_headers_and_footers():
+    paragraphs = page_paragraphs(PAGE)
+    assert paragraphs[0].startswith("Siri began as a project at SRI International")
+    assert not any("tracking" in p or "menu" in p or "newsletter" in p or "Copyright" in p
+                   for p in paragraphs)
+
+
+def test_best_passages_keep_the_paragraphs_that_answer_in_page_order():
+    text = best_passages(page_paragraphs(PAGE), "who made Siri and when did Apple buy Siri")
+    assert text.startswith("Siri began as a project")
+    assert "Apple bought Siri Inc. in April 2010" in text
+    assert "weather" not in text
+
+
+def test_best_passages_stay_within_the_limit():
+    long = ["Siri " + "word " * 400]
+    assert len(best_passages(long, "Siri", limit=200)) <= 201
+
+
+def test_read_top_pages_puts_the_page_text_in_place_of_the_snippet():
+    found = [Evidence("apple.com", "Siri", "short snippet", "https://www.apple.com/siri"),
+             Evidence("britannica.com", "Siri", "other snippet", "https://www.britannica.com/siri")]
+    opener = FakeOpener({"https://www.apple.com/siri": PAGE,
+                         "https://www.britannica.com/siri": urllib.error.URLError(OSError("blocked"))})
+    better = read_top_pages(found, "who made Siri", opener)
+    assert "SRI International" in better[0].text             # read from the page
+    assert better[1].text == "other snippet"                   # the page failed: the snippet stays
+
+
+def test_read_top_pages_keeps_the_snippet_when_the_page_says_too_little():
+    found = [Evidence("apple.com", "Siri", "snippet", "https://www.apple.com/siri")]
+    opener = FakeOpener({"https://www.apple.com/siri": "<p>Siri.</p>"})
+    assert read_top_pages(found, "Siri", opener)[0].text == "snippet"
+
+
+def test_read_top_pages_reads_only_the_top_three():
+    found = [Evidence(f"site{i}.com", "Siri", "snippet", f"https://site{i}.com/") for i in range(4)]
+    opener = FakeOpener({f"https://site{i}.com/": PAGE for i in range(4)})
+    better = read_top_pages(found, "who made Siri", opener)
+    assert len(opener.urls) == 3 and better[3].text == "snippet"
+
+
+def test_fetch_page_refuses_plain_http():
+    opener = FakeOpener({})
+    assert fetch_page("http://example.com/", opener) == "" and opener.urls == []
+
+
+def test_searxng_answers_with_page_text(searx_on):
+    results = {"results": [{"url": "https://www.apple.com/siri", "title": "Siri history",
+                            "content": "Siri is Apple's assistant, with a long history behind it."}]}
+    opener = FakeOpener({f"{LOCAL}/search": results, "https://www.apple.com/siri": PAGE})
+    items = searxng("Siri", opener, base=LOCAL, query="who made Siri")
+    assert "Apple bought Siri Inc. in April 2010" in items[0].text
 
 
 def test_look_up_answers_from_the_web_when_wikipedia_has_nothing(searx_on):
