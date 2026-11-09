@@ -147,3 +147,24 @@ def test_destructive_command_asks_before_running(llm):
     assert [q for q, _ in ask.questions] == ["Shut down in 2 hours (at 11:40 PM)?"] * 2
     assert "11:40 PM" in reply
     assert runner.flags == [["/a"], ["/s", "/t", "7200"]]
+
+
+# --- several commands in one sentence (plan.md task 9) ----------------------------------
+
+@pytest.mark.parametrize("command, tools", [
+    ("Open Chrome and search flights to Delhi", ["open_app", "web_search"]),
+    ("mute and lock the PC", ["volume", "lock_pc"]),
+    ("open my downloads folder and then play Believer", ["open_folder", "play_online"]),
+    ("set a timer for 5 minutes and remind me to call mom at 6 pm", ["set_timer", "set_reminder"]),
+    ("search for cats and dogs", ["web_search"]),
+    ("search online for the mars rover and tell me about it", ["look_up"]),
+])
+def test_several_commands(router, command, tools):
+    steps = router.route_many(command)
+    assert [r.tool for _, r in steps] == tools, steps
+
+
+def test_several_commands_with_mail_and_calendar(llm):
+    from red.tools import default_registry as registry
+    steps = Router(registry(google=True), llm).route_many("check my mail and read today's calendar")
+    assert [r.tool for _, r in steps] == ["check_mail", "calendar_events"], steps
