@@ -163,6 +163,26 @@ def is_casual_yes(text: str | None) -> bool:
     return bool(text) and _CASUAL_YES.fullmatch(normalize(text)) is not None
 
 
+# Sounds and fillers that ask for nothing: "you know", "hmm", "okay so".
+# Not "yeah", "okay", "what" or "hey": those answer a question or greet.
+_FILLER_WORDS = (
+    r"you know|y'know|i mean|i guess|let me see|let's see|let me think|hold on|one sec|"
+    r"um+|uh+|uhm|uh huh|er+|erm|hmm+|hm+|mm+|mhm|ah+|oh+|huh|eh|"
+    r"okay so|ok so|so|well|like|and|but|anyway|actually|basically|wait"
+)
+_FILLER = re.compile(rf"(?:(?:{_FILLER_WORDS})\s*)+")
+
+
+def is_filler(text: str) -> bool:
+    """True when `text` is only filler ("you know", "hmm", "okay so"), with no request in it.
+
+    Whisper also turns breaths and room noise into these, so Red ignores them
+    instead of answering.
+    """
+    said = normalize(text)
+    return not said or _FILLER.fullmatch(said) is not None
+
+
 # Words a sentence doesn't end on: "open Edge and...", "um", "play the".
 _UNFINISHED_END = re.compile(
     r"\b(?:and|or|but|so|then|also|plus|because|cause|if|when|while|that|which|who|to|for|of|"

@@ -37,7 +37,7 @@ from .executor import Executor, run_later
 from .llm import LLMError, connect
 from .router import RouteError, Router
 from .chat import Chat
-from .smalltalk import dismissal_reply, is_goodbye, quick_reply, sounds_finished
+from .smalltalk import dismissal_reply, is_filler, is_goodbye, quick_reply, sounds_finished
 from .tools import default_registry
 
 log = logging.getLogger("red")
@@ -86,6 +86,9 @@ def _show(router: Router, command: str) -> None:
 
 
 def _run(router: Router, executor: Executor, command: str, chat: Chat | None = None) -> None:
+    if is_filler(command):
+        print("  (nothing to do)")
+        return
     quick = dismissal_reply(command) or quick_reply(command)
     if quick is not None:
         logging.getLogger("red.commands").info("%r -> small talk", command)
@@ -376,6 +379,11 @@ class VoiceApp:
             self._say(last)
             return last, tool, False
         self.out(f"You said: {text}")
+        if is_filler(text):
+            # "you know", "hmm": nothing to do. Said first, you're probably
+            # still thinking, so listen once more; in a follow-up, go quiet.
+            logging.getLogger("red.commands").info("%r -> filler, ignored", text)
+            return "", tool, not follow_up
         if follow_up and is_goodbye(text):
             last = "Okay."
             self._say(last)

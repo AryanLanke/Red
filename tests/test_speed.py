@@ -93,3 +93,18 @@ def test_timing_counts_from_the_end_of_speech(tmp_path, monkeypatch):
     assert "listen 3.00 s, transcribe 0.00 s, route 1.10 s, act 0.10 s, speak 1.20 s" in line
     assert "pause waited 1.00 s" in line
     assert "done 2.20 s after you stopped" in line and "reply spoken by 3.40 s" in line
+
+
+# --- filler (plan.md task 7) -------------------------------------------------------
+
+from red.smalltalk import is_filler  # noqa: E402
+
+
+@pytest.mark.parametrize("said, filler", [
+    ("you know", True), ("Hmm.", True), ("okay so", True), ("Um, uh...", True), ("So, well, like", True),
+    ("I mean", True), ("", True),
+    ("I mean, what is it?", False), ("yeah", False), ("okay", False), ("hey", False), ("what?", False),
+    ("open Edge", False), ("you know what, open Edge", False), ("no", False),
+])
+def test_is_filler(said, filler):
+    assert is_filler(said) is filler

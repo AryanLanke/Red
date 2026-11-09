@@ -259,8 +259,8 @@ def test_silence_and_empty_transcript(world):
 
 def test_route_error_and_none(world):
     from red.llm import LLMError
-    world["llm"].replies["Hmm."] = LLMError("server down")
-    app, speaker, _, _, _ = make_app(world, "Hmm.", "Banana.")
+    world["llm"].replies["Banana split."] = LLMError("server down")
+    app, speaker, _, _, _ = make_app(world, "Banana split.", "Banana.")
     app.handle("hotkey")
     app.handle("hotkey")
     assert speaker.said == ["Sorry, I didn't understand that.", "What should I do?"]
@@ -645,3 +645,18 @@ def test_an_unfinished_pause_check_is_transcribed_again(world):
     app.voice.record = record
     app.handle("wakeword")
     assert speaker.said == ["Opening Downloads."] and transcriber.calls == 2
+
+
+def test_filler_runs_nothing_and_listens_once_more(world, monkeypatch):
+    # 22:26 in the log: "you know" went to the answer tool.
+    app, speaker, overlay, record, out = follow_app(world, monkeypatch, "you know", "Open my downloads.")
+    app.handle("wakeword")
+    assert speaker.said == ["Opening Downloads."]          # nothing said for "you know"
+    assert record.timeouts == [{}, {"start_timeout": 7.0}]
+
+
+def test_filler_in_a_follow_up_just_ends(world, monkeypatch):
+    app, speaker, overlay, record, out = follow_app(world, monkeypatch, "Banana.", "hmm", "Open my downloads.")
+    app.handle("wakeword")
+    assert len(speaker.said) == 1 and len(record.calls) == 2
+    assert world["start"].calls == []
