@@ -730,18 +730,66 @@ Manual checks for the user:
 
 Done when saying "Hey Red" triggers Red with the default settings, a normal conversation or video doesn't trigger it, "Hey Jarvis" is gone from defaults, docs and tests, and the tests pass.
 
-- [ ] **A "Hey Red" detector that works today, without training.** For example: voice-activity gating plus a small pinned Whisper model (such as `tiny.en` or `base.en`) on short clips, matching "hey red" and close variants ("hey, red", "hay red"). Use the existing `Listener` detector interface. Measure CPU use while idle and while people are talking, and keep it low
-- [ ] `RED_WAKEWORD=hey_red` is the default. `RED_WAKEWORD_THRESHOLD` (or a sensible equivalent) tunes it. Remove `hey_jarvis` as a default and from docs. Other openWakeWord names and `.onnx` paths can stay as options
-- [ ] `voice_demo.py`: use `"Hey Red"` everywhere, and replace `_is_yes` with `red.confirm.is_yes`, which now exists on `main`
-- [ ] Real-model tests: Piper saying "Hey Red" (several voices and speeds) triggers it; a set of ordinary sentences, including ones with "red" in them ("I read the red book"), doesn't
-- [ ] **A custom openWakeWord "hey_red" model,** if it's feasible on this machine before 13:15. Put the scripts in `scripts/train_hey_red/` and the training deps in `requirements-train.txt`. Generate synthetic speech with Piper voices, add noise, and train. Compare false accepts and misses against the detector above, and make whichever is better the default. If training isn't feasible (Windows-only tooling, time, or data size), write down exactly why and what it would take
-- [ ] Manual checks for the user, with exact commands
+- [x] **A "Hey Red" detector that works today, without training.** For example: voice-activity gating plus a small pinned Whisper model (such as `tiny.en` or `base.en`) on short clips, matching "hey red" and close variants ("hey, red", "hay red"). Use the existing `Listener` detector interface. Measure CPU use while idle and while people are talking, and keep it low
+- [x] `RED_WAKEWORD=hey_red` is the default. `RED_WAKEWORD_THRESHOLD` (or a sensible equivalent) tunes it. Remove `hey_jarvis` as a default and from docs. Other openWakeWord names and `.onnx` paths can stay as options
+- [x] `voice_demo.py`: use `"Hey Red"` everywhere, and replace `_is_yes` with `red.confirm.is_yes`, which now exists on `main`
+- [x] Real-model tests: Piper saying "Hey Red" (several voices and speeds) triggers it; a set of ordinary sentences, including ones with "red" in them ("I read the red book"), doesn't
+- [x] **A custom openWakeWord "hey_red" model,** if it's feasible on this machine before 13:15. Put the scripts in `scripts/train_hey_red/` and the training deps in `requirements-train.txt`. Generate synthetic speech with Piper voices, add noise, and train. Compare false accepts and misses against the detector above, and make whichever is better the default. If training isn't feasible (Windows-only tooling, time, or data size), write down exactly why and what it would take
+- [x] Manual checks for the user, with exact commands
+
+**Result (2026-11-08):** "Hey Red" works with the default settings, and no Jarvis remains in Track E's code, demo or tests.
+- **Built-in detector** (`red/wakeword.py`): Silero VAD feeds short, isolated bursts of speech to a pinned Whisper `tiny.en` model on the CPU.
+  - With Piper speech it triggered on every "Hey Red": 78 of 78, across 13 voices and speeds from 0.8× to 1.3×.
+  - It ignored ordinary speech, including "I read the red book", "Hey, Fred" and "Hey, ready?".
+  - CPU use is about 1% of one core in a quiet room. During continuous conversation it's about 20% of one core, because Whisper only runs on short, isolated bursts.
+- **Trained openWakeWord model:** 6,000 positives and 26,000 negatives, generated on this machine in about 20 minutes. On voices it never heard, it got 29/36 hits and 10/102 close-call false accepts, against 36/36 and 0/102 for the built-in detector. So the built-in detector stays the default.
+- **Tests:** 386 unit tests pass with real models skipped. With `RED_INTEGRATION=1`, the 38 real-model voice tests pass, all on the CPU.
+- **Late finish:** the training run's completion notice reached this session after 13:15, so the step was finished at about 17:30 and nothing new was started after it.
 
 Decisions:
+- **How the detector works.** Silero VAD (`silero_vad_v6.onnx`, bundled with faster-whisper) runs on every 32 ms. Whisper is only asked about a burst of speech that meets all three conditions:
+  - it lasts 0.35–1.6 s
+  - at least 0.25 s of quiet comes before it
+  - 0.3 s of quiet comes after it
+
+  Long speech is never transcribed. This is what keeps CPU use low in conversations and videos. The cost is that you have to say "Hey Red" on its own, pause, and give the command after the beep. "Hey Red, open Downloads" in one breath doesn't trigger.
+- **Whisper `tiny.en`** (`Systran/faster-whisper-tiny.en` at `0d3d19a`, 75 MB) with `hotwords="Hey Red"`, beam size 1, 2 CPU threads, and a 12-token cap. It takes about 0.3 s per check. Without the hotword bias it misheard about 1 in 12 phrases ("He read", "Hey, Fred"); with it, 60/60 were right. `base.en` was just as accurate but twice as slow. Faster-whisper's `chunk_length` gives no speed-up, because CTranslate2 always encodes a 30-second window.
+- **The score `RED_WAKEWORD_THRESHOLD` applies to,** default 0.5:
+  - "hey red" scores 1.0
+  - "heyred" scores 0.9
+  - "hi red" scores 0.7
+  - "hey read" scores 0.6
+  - any extra words score 0.45, which is below the default
+
+  The extra-words rule is there because the hotword bias can turn "a red light" into "Hey Red Light". The phrase must start the clip, so "they said red" never matches. "a" is not accepted as "hey". Raise the threshold to 0.65 to accept only clear "hey red" or "heyred".
+- **Known confusion:** "Hey, Ed" can sound exactly like "Hey Red", and nothing at the transcript level can tell them apart.
+- **`hey_jarvis` is removed** from the pinned wake words. `hey_mycroft`, `hey_rhasspy`, `alexa` and `.onnx` paths remain as options. Its model file from Phase 1 is still in `D:\RED\models\wakeword`, unused.
+- **Six more Piper voices are pinned:** amy, ryan, joe, alan, jenny_dioco, and libritts_r, which has 904 speakers. They're for tests and training, and also work as `RED_PIPER_VOICE` values.
+- **Training approach:** reduced, on Windows, with no datasets. Synthetic Piper clips are augmented and turned into openWakeWord embeddings, then openWakeWord's standard small classifier head is trained with CPU PyTorch. The ONNX graph is written directly. Why it's weaker, and what a better model would take (real negative speech such as the ~17 GB ACAV100M features, real room recordings, recordings of you), is in `scripts/train_hey_red/README.md`. The GPU wasn't used: the head trains in under a minute on the CPU, and that left the GPU to Ollama.
 
 Integration notes:
+- **Nothing to change in Track D's code.** `Listener(..., wakeword="hey_red")` and `download_wakeword(models\wakeword, "hey_red")` now work, and `python -m red setup` will fetch Whisper `tiny.en`, 75 MB, into `models\whisper\tiny.en`. Until E is merged, `main` falls back to hotkey only, as designed.
+- **Tell users to pause** after "Hey Red", in the README "how to talk to Red" section. `README.md` is Track D's file, so I haven't changed it.
+- **New Transcriber keyword arguments:** `vad_filter`, `hotwords`, `max_new_tokens`. New in `listener`: `make_detector()`, now the default `detector_factory`, and `HEY_RED`. New module: `red/wakeword.py`.
+- **New files:** `requirements-train.txt` (torch 2.15.0 CPU, onnx 1.23.2) and `scripts/train_hey_red/`. Neither is needed to run Red. `tests/test_train_hey_red.py` skips its ONNX test where torch isn't installed.
+- **Idea for later:** a two-stage detector. The trained model, at a low threshold, would decide which clips Whisper checks. That would bring CPU use during conversation down towards the trained model's 3% while keeping Whisper's accuracy.
 
-Manual checks for the user:
+Manual checks for the user (from `D:\RED\worktrees\b`; after the merge, from `D:\RED\red` with the shared venv):
+
+```powershell
+$env:RED_HOME = "D:\RED"
+.\.venv\Scripts\Activate.ps1
+python -m red.voice_demo --setup
+python -m red.voice_demo
+```
+
+1. **Trigger:** wait for `Ready. Press Ctrl+Alt+R or say "Hey Red"...`. Say "Hey Red" on its own and pause. You should hear the beep within about a second; then say a command. Try it 10 times at normal, quiet and fast speech, and from across the room. Note how many work.
+2. **Phrase and command in one breath:** "Hey Red, open Downloads" said without a pause should not trigger. That's the known trade-off described above.
+3. **No false triggers:** leave it running for 10 minutes while you talk normally, including sentences like "I read the red book" and "hey, ready?", and play a YouTube video or podcast. Count any false beeps.
+4. **CPU:** with the demo running, watch `python.exe` in Task Manager. It should use about 1% or less in a quiet room, and stay below about 10% of total CPU while a video plays.
+5. **Tuning:** if it misses you, set `$env:RED_WAKEWORD_THRESHOLD = "0.4"`. If it fires falsely, set it to `"0.65"`. Restart the demo and report the value that works.
+6. **Trained model (optional):** `$env:RED_WAKEWORD = "D:\RED\models\wakeword\hey_red_v0.1.onnx"`, then `python -m red.voice_demo`. Compare it with check 1. Expect more misses and false triggers. To get the default back, run `Remove-Item Env:RED_WAKEWORD`.
+7. **In the full app, after the merge:** `python -m red`. Saying "Hey Red" should show the overlay and start listening, as the hotkey does.
 
 ### 8.15 Track F: everyday PC abilities
 
