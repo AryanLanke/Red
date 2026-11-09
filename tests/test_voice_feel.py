@@ -219,28 +219,19 @@ def test_glow_alpha_breathes_within_bounds():
     assert ov.glow_alpha(0.0, "listening", 0.3) == 0.0
 
 
-def test_rounded_corners_have_no_seam():
+def test_glass_layers_have_no_hard_line():
     np = pytest.importorskip("numpy")
-    ys, xs = np.mgrid[0:100, 0:200].astype(np.float32)
-    d = ov.rounded_edge_distance(xs, ys, 200, 100, 20)
-    assert d[50, 0] == 0 and d[0, 100] == 0 and d[50, 7] == 7        # straight edges
-    assert d[0, 0] < 0                                                # the square corner is outside the arc
-    # Moving along the arc keeps the same distance: no diagonal crease.
-    assert d[20 - 14, 20 - 14] == pytest.approx(20 - np.hypot(14, 14), abs=1e-4)
-    # The field is continuous where a corner meets a straight edge.
-    assert abs(float(d[5, 20]) - float(d[5, 21])) < 1e-4
-
-
-def test_glass_layers():
-    np = pytest.importorskip("numpy")
-    d = np.array([0.0, 2.0, 6.0, 20.0, 50.0, 90.0])
-    layers = ov.glass_profile(d, 84)
-    assert set(layers) == set(ov.LAYERS)
-    line, haze, shadow = layers["line"], layers["haze"], layers["shadow"]
-    assert line[0] == pytest.approx(1.0) and line[2] < 0.01         # a fine highlight
-    assert shadow[2] == pytest.approx(0.30) and shadow[0] < 0.05     # the grey edge sits just inside it
-    assert haze[0] > haze[3] > haze[4] > 0 and haze[5] == 0          # milky, fading, gone by the depth
-    assert haze.max() < 0.5                                          # translucent, never solid
+    d = np.arange(0, 120, dtype=np.float32)
+    layers = ov.glass_profile(d, 96)
+    assert set(layers) == set(ov.LAYERS) == {"haze", "swell", "clouds", "sheen"}
+    for name, v in layers.items():
+        # Soft everywhere: no layer jumps by much from one pixel to the next.
+        assert np.abs(np.diff(v)).max() < 0.05, name
+        assert v[96:].max() == 0.0, name                             # gone by the depth
+    haze, swell = layers["haze"], layers["swell"]
+    assert haze.max() < 0.5 and (haze + swell).max() < 0.6           # translucent, never solid
+    assert swell[40] > haze[40]                                      # a swell reaches further in
+    assert layers["sheen"].argmax() > 5                              # the sheen sits inside the haze, not at the rim
 
 
 def test_soft_distance_rounds_the_corners():
@@ -256,20 +247,40 @@ def test_soft_distance_rounds_the_corners():
     assert np.all(np.abs(np.diff(steps)) < 0.2)
 
 
-def test_glass_masks_shapes_and_inset():
+def test_glass_masks_shapes():
     pytest.importorskip("numpy")
-    masks = ov.glass_masks(0, 0, 400, 84, 400, 300)
-    assert all(m.shape == (84, 400) for m in masks.values())
-    assert masks["line"][int(round(ov.GLOW_INSET)), 200] >= 200      # the highlight just inside the edge
-    assert masks["line"][40, 200] == 0 and masks["haze"][40, 200] > 0
+    masks = ov.glass_masks(0, 0, 400, 96, 400, 300)
+    assert all(m.shape == (96, 400) for m in masks.values())
+    assert masks["haze"][0, 200] > masks["haze"][40, 200] > 0
+
+
+def test_liquid_waves_flow_and_stay_in_range():
+    a = ov.liquid([i / 40 for i in range(40)], 0.0)
+    b = ov.liquid([i / 40 for i in range(40)], 10.0)
+    assert all(0.0 <= v <= 1.0 for v in a + b)
+    assert max(a) - min(a) > 0.5                                     # real swells and dips
+    assert a != b                                                    # and they move
+    assert abs(ov.liquid([0.0], 3.0)[0] - ov.liquid([1.0], 3.0)[0]) < 1e-9   # seamless all the way round
+
+
+def test_corner_snap_makes_strips_agree_in_corners():
+    W, H, d = 800, 800, 96
+    P = 2 * (W + H)
+    # Top strip at x=20 and left strip at y=96 cover the same corner patch.
+    top, left = ov.corner_snap([20 / P, (2 * W + 2 * H - d) / P], W, H, d)
+    assert abs(top - left) < 1e-9 or abs(abs(top - left) - 1) < 1e-9
+    # Far from corners nothing changes, and just past the hold it catches up smoothly.
+    assert ov.corner_snap([0.125], W, H, d) == [0.125]
+    edge = [ov.corner_snap([(d + k) / P], W, H, d)[0] for k in range(0, 2 * d, 4)]
+    assert all(b >= a for a, b in zip(edge, edge[1:]))
 
 
 def test_the_gleam_travels():
     a = ov.shine([0.12, 0.5], 0.0)
-    assert a[0] == pytest.approx(1.0) and a[1] < 0.4                 # bright where the gleam is
+    assert a[0] == pytest.approx(1.0) and a[1] < 0.1                 # bright only where the gleam is
     later = ov.shine([0.12], 3.0)[0]
     assert later < a[0]                                              # it has moved on
-    assert all(0.3 <= v <= 1.0 for v in ov.shine([i / 50 for i in range(50)], 7.0))
+    assert all(0.0 <= v <= 1.0 for v in ov.shine([i / 50 for i in range(50)], 7.0))
 
 
 def test_colours_flow_smoothly_and_wrap_round():
