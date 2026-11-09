@@ -76,6 +76,9 @@ class FakeListener:
         self.pauses = getattr(self, "pauses", 0) + 1
         yield
 
+    def allow_interrupt(self, on):
+        self.interrupt_calls = getattr(self, "interrupt_calls", []) + [on]
+
 
 class FakeOverlay:
     def __init__(self):
@@ -702,3 +705,99 @@ def test_a_broken_allowlist_still_gives_a_vocabulary(world):
     (home / "config").mkdir(exist_ok=True)
     (home / "config" / "allowlist.toml").write_text("[apps\n", encoding="utf-8")
     assert cli.vocabulary(load_settings(home)).startswith("Hey Copilot")
+
+
+# --- speak while the model writes; "Hey Red" cuts in (plan.md task 6) -----------------
+
+class StreamingLLM:
+    """Writes {"answer": "..."} a few characters at a time, and can wait for Red to speak."""
+
+    def __init__(self, answer, wait_for=None, events=None):
+        self.raw = json.dumps({"answer": answer})
+        self.wait_for, self.events = wait_for, events if events is not None else []
+        self.waited_ok = None
+
+    def complete_json(self, system, user, schema, **kw):
+        return self.raw
+
+    def stream_json(self, system, user, schema, **kw):
+        for i in range(0, len(self.raw), 5):
+            piece = self.raw[i:i + 5]
+            self.events.append(f"wrote {piece}")
+            if self.wait_for is not None and "Second" in self.raw[:i + 5] and self.waited_ok is None:
+                # Don't write the rest until the first sentence has been said.
+                self.waited_ok = self.wait_for.wait(3)
+            yield piece
+
+
+class EventSpeaker(FakeSpeaker):
+    def __init__(self, events, on_say=None):
+        super().__init__()
+        self.events, self.on_say = events, on_say
+
+    def say(self, text, block=True):
+        self.events.append(f"said {text}")
+        super().say(text, block)
+        if self.on_say:
+            self.on_say(text)
+
+
+def streaming_app(world, monkeypatch, llm, *texts, on_say=None):
+    from red.tools.assistant import Answer
+    world["registry"].add(Answer(llm))
+    world["llm"].replies["Tell me about Everest."] = {"tool": "answer",
+                                                       "args": {"question": "Tell me about Everest."}}
+    app, speaker, overlay, record, out = follow_app(world, monkeypatch, "Tell me about Everest.", *texts)
+    events = llm.events
+    app.voice.speaker = EventSpeaker(events, on_say)
+    return app, app.voice.speaker, overlay, record
+
+
+ANSWER = "First sentence here. Second sentence here. Third one."
+
+
+def test_an_answer_is_spoken_while_the_model_is_still_writing(world, monkeypatch, caplog):
+    said_first = threading.Event()
+    llm = StreamingLLM(ANSWER, wait_for=said_first)
+    app, speaker, overlay, record = streaming_app(
+        world, monkeypatch, llm, on_say=lambda t: t.startswith("First") and said_first.set())
+    with caplog.at_level("INFO"):
+        app.handle("wakeword")
+    assert llm.waited_ok is True                    # sentence 1 was spoken before sentence 2 was written
+    assert speaker.said == ["First sentence here.", "Second sentence here.", "Third one.",
+                            "Anything more you want to know about it?"]
+    assert any("first word at" in r.getMessage() for r in caplog.records)
+    assert len(record.calls) == 2                    # then it listens for more
+
+
+def test_the_log_and_memory_have_the_whole_answer(world, monkeypatch):
+    llm = StreamingLLM(ANSWER)
+    app, speaker, overlay, record = streaming_app(world, monkeypatch, llm)
+    app.handle("wakeword")
+    entry = log_lines(world)[-1]
+    assert entry["result"] == ANSWER and entry["tool"] == "answer"
+    assert "Third one." in app.chat.history(4) and "Anything more" not in app.chat.history(4)
+
+
+def test_hey_red_while_talking_stops_and_listens(world, monkeypatch):
+    llm = StreamingLLM(ANSWER)
+    holder = {}
+
+    def cut_in(text):
+        if text.startswith("First"):
+            holder["app"].interrupt()                # as the listener would on "Hey Red"
+    app, speaker, overlay, record = streaming_app(world, monkeypatch, llm, "Open my downloads.",
+                                                  on_say=cut_in)
+    holder["app"] = app
+    app.start_listener()
+    app.handle("wakeword")
+    assert speaker.said[0] == "First sentence here."
+    assert "Third one." not in speaker.said and "Anything more you want to know about it?" not in speaker.said
+    assert speaker.said[-1] == "Opening Downloads."   # it listened, and ran the next command
+    assert app.listener.interrupt_calls[:2] == [True, False]
+
+
+def test_interrupt_does_nothing_when_red_isnt_talking(world):
+    app, speaker, *_ = make_app(world)
+    app.interrupt()
+    assert app._interrupted is False and not speaker.stopped

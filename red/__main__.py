@@ -38,6 +38,7 @@ from .llm import LLMError, connect
 from .router import RouteError, Router
 from .chat import Chat
 from .smalltalk import dismissal_reply, is_filler, is_goodbye, quick_reply, sounds_finished
+from .speech import SpeechStream, speaking_to
 from .tools import default_registry
 
 log = logging.getLogger("red")
@@ -242,6 +243,9 @@ class VoiceApp:
         self.reminders = None   # red.scheduler's Scheduler, when it exists
         self._turn = threading.RLock()  # one command or reminder at a time
         self._next_question = 0         # which FOLLOW_UP_QUESTIONS comes next
+        self._stream: SpeechStream | None = None   # what Red is saying right now, if streamed
+        self._interrupted = False       # "Hey Red" (or the hotkey) while Red was talking
+        self._interruptible = False
 
     # --- starting and stopping ------------------------------------------------
 
@@ -256,6 +260,7 @@ class VoiceApp:
                                                        threshold=s.wakeword_threshold)
                 listener.start()
                 self.listener = listener
+                self._wire_interrupt(listener)
                 return listener
             except Exception as e:  # noqa: BLE001 - unknown name, missing model, no microphone
                 log.warning("Wake word %r unavailable: %s", s.wakeword, e)
@@ -269,7 +274,38 @@ class VoiceApp:
                                                threshold=s.wakeword_threshold)
         listener.start()
         self.listener = listener
+        self._wire_interrupt(listener)
         return listener
+
+    def _wire_interrupt(self, listener) -> None:
+        if hasattr(listener, "on_interrupt"):
+            listener.on_interrupt = self.interrupt
+
+    def interrupt(self) -> None:
+        """Hey Red (or the hotkey) while Red is talking: stop talking and listen."""
+        if not self._interruptible:
+            return
+        log.info("Interrupted while speaking")
+        self._interrupted = True
+        stream = self._stream
+        if stream is not None:
+            stream.cancel()
+        try:
+            self.voice.speaker.stop()
+        except Exception:  # noqa: BLE001
+            log.exception("Couldn't stop speaking")
+
+    def _allow_interrupt(self, on: bool) -> None:
+        """While Red talks, the wake word listens again, so you can cut in."""
+        if on == self._interruptible:
+            return
+        self._interruptible = on
+        allow = getattr(self.listener, "allow_interrupt", None)
+        if allow is not None:
+            try:
+                allow(on)
+            except Exception:  # noqa: BLE001 - only a nicety; Red still answers
+                log.exception("Couldn't change the wake word while speaking")
 
     def ready_text(self) -> str:
         ways = []
@@ -428,36 +464,73 @@ class VoiceApp:
         tool = route.tool
         if tool == "check_repos":
             self._state("thinking", "Checking your repos...")
-        last = self.executor.execute(text, route, talk=self._talk)
-        if route.is_none:
-            timer.mark("chat")
-            again = True
-        else:
-            timer.mark("act")
-            self.chat.remember(text, last)
-            if tool in INFO_TOOLS and self.executor.last_status == "ok":
-                # An answer: ask if they want more, and listen for it.
-                last = self._with_follow_up(last)
+        # Answers and chat are spoken sentence by sentence while the model
+        # writes them (red/speech.py); actions just return their reply.
+        stream = SpeechStream(self.voice.speaker, on_text=self._speaking)
+        self._stream = stream
+        try:
+            with speaking_to(stream):
+                last = self.executor.execute(text, route, talk=self._talk)
+            question = ""
+            if route.is_none:
+                timer.mark("chat")
                 again = True
             else:
-                # Done is done: after an action Red goes quiet. It keeps listening
-                # only if the reply asks you something or the tool failed.
-                again = asks_back(last) or self.executor.last_status == "error"
-        self._say(last, self.executor.last_details, meanwhile=self.executor.last_later)
+                timer.mark("act")
+                self.chat.remember(text, last)
+                if tool in INFO_TOOLS and self.executor.last_status == "ok":
+                    # An answer: ask if they want more, and listen for it.
+                    question = self._follow_up_question(last)
+                    last = f"{last.rstrip()} {question}" if question else last
+                    again = True
+                else:
+                    # Done is done: after an action Red goes quiet. It keeps listening
+                    # only if the reply asks you something or the tool failed.
+                    again = asks_back(last) or self.executor.last_status == "error"
+            if stream.used:
+                self._finish_stream(stream, last, question, timer)
+            else:
+                timer.first_word()
+                self._say(last, self.executor.last_details, meanwhile=self.executor.last_later)
+        finally:
+            self._allow_interrupt(False)
+            self._stream = None
         self.executor.last_later = None
         timer.mark("speak")
         timer.log(text, route.tool)
+        if self._interrupted:
+            # Cut off by "Hey Red": listen for what you say next, right away.
+            self._interrupted = False
+            again = True
         return last, tool, again
 
     # --- helpers -------------------------------------------------------------
 
-    def _with_follow_up(self, answer: str) -> str:
-        """'<answer> Anything more you want to know about it?', unless it already asks something."""
+    def _follow_up_question(self, answer: str) -> str:
+        """'Anything more you want to know about it?', or "" when the answer already asks something."""
         if asks_back(answer) or self.settings.follow_up_seconds <= 0:
-            return answer
+            return ""
         question = FOLLOW_UP_QUESTIONS[self._next_question % len(FOLLOW_UP_QUESTIONS)]
         self._next_question += 1
-        return f"{answer.rstrip()} {question}"
+        return question
+
+    def _speaking(self, text: str) -> None:
+        """The first streamed sentence is on its way: show it, and let you cut in."""
+        self._allow_interrupt(True)
+        self._state("speaking", text)
+
+    def _finish_stream(self, stream: SpeechStream, last: str, question: str, timer) -> None:
+        """The answer is (being) spoken already: add the follow-up question, then wait."""
+        self.out(f"Red: {last}")
+        for line in self.executor.last_details.splitlines():
+            self.out(f"     {line}")
+        if self.executor.last_status == "error" and not stream.cancelled:
+            stream.say(last)                  # it broke off part way: say why
+        elif question and not stream.cancelled:
+            stream.say(question)
+        self._state("speaking", f"{last}\n{self.executor.last_details}".strip())
+        stream.finish(timeout=120)
+        timer.first_word(stream.first_word_at)
 
     def _talk(self, said: str, fallback: str) -> str:
         """Not a command: talk like a friend instead of the router's stock line."""
@@ -470,11 +543,16 @@ class VoiceApp:
         except Exception:  # noqa: BLE001 - the overlay is only a display
             log.exception("Overlay update failed")
 
-    def _speak(self, text: str) -> None:
+    def _speak(self, text: str, interruptible: bool = False) -> None:
+        if interruptible:
+            self._allow_interrupt(True)
         try:
             self.voice.speaker.say(text, block=True)
         except Exception:  # noqa: BLE001 - no speakers: the text is still shown
             log.exception("Couldn't speak")
+        finally:
+            if interruptible:
+                self._allow_interrupt(False)
 
     def _say(self, reply: str, details: str = "", meanwhile: Callable[[], object] | None = None) -> None:
         """Show and speak `reply`. `meanwhile` (a tool's follow-through) runs while Red speaks."""
@@ -486,7 +564,7 @@ class VoiceApp:
         if meanwhile is not None:
             worker = threading.Thread(target=run_later, args=(meanwhile,), name="red-later", daemon=True)
             worker.start()
-        self._speak(reply)
+        self._speak(reply, interruptible=True)
         if worker is not None:
             worker.join(LATER_WAIT_SECONDS)
 
@@ -521,10 +599,17 @@ class Timing:
         self.done_at[step] = now - self.speech_end
         self._last = now
 
+    def first_word(self, at: float | None = None) -> None:
+        """When Red started speaking (a streamed answer's first sentence, or the reply)."""
+        at = self._clock() if at is None else at
+        self.done_at["first word"] = at - self.speech_end
+
     def summary(self, text: str, tool: str) -> str:
         steps = ", ".join(f"{name} {secs:.2f} s" for name, secs in self.steps)
         done = self.done_at.get("act", self.done_at.get("chat"))
         tail = f"; done {done:.2f} s after you stopped" if done is not None else ""
+        first = self.done_at.get("first word")
+        tail += f", first word at {first:.2f} s" if first is not None else ""
         spoken = self.done_at.get("speak")
         tail += f", reply spoken by {spoken:.2f} s" if spoken is not None else ""
         return f"Timing {text[:60]!r} -> {tool}: {steps} (pause waited {self.pause:.2f} s){tail}"
