@@ -29,6 +29,8 @@ Last updated: 2026-11-08.
 
 ## 2. Goals and scope
 
+**The bigger goal (2026-11-08):** a voice assistant for Windows as good as "Hey Siri" and "OK Google", which Windows doesn't have. That means a wake word that reliably hears its owner, a pleasant, polished look, natural conversation (follow-ups, knowing when to stop), and a settings app instead of editing `.env`.
+
 **The aim:** a Jarvis for your own PC. You tell Red to do something and it does it, locally and safely.
 
 | You say | What Red does | Where it is in the plan |
@@ -1261,6 +1263,11 @@ The doctor should show no ❌. Expect a ⚠️ for any of `allowlist.toml`, `rep
 
 ## 12. Future plans
 
+- **Next for the voice experience (asked for 2026-11-08):**
+  - **A settings app:** a small window to change the voice, wake word, glow, microphone and follow-ups, with no `.env` editing.
+  - **Owner voice match:** answer only your voice, like "Hey Siri". Needs a speaker-embedding model; `voice-setup` already records the samples it would learn from.
+  - **Glow reacting to your voice**, and "Hey Red, open Downloads" in one breath.
+  - **A more natural conversation:** better replies to chat, and tone when the user is upset.
 - **v0.2:** `find_file`, `web_search` and `compose_mail` (see the table in section 2), plus Gmail read and mark-as-read through the Gmail API, with confirmation for each batch.
 - **v0.3:** Multi-step automations, such as "open my project, check the repo sync, and tell me what's unpushed", with a short plan shown before running.
 - **v0.4:** A plugin system so others can add tools without editing core code, with tool discovery from a `tools/` folder.

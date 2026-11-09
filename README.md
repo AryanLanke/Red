@@ -191,6 +191,8 @@ Red plays `mp3`, `ogg`, `opus`, `flac` and `wav` files from your Music folder, o
 
 ---
 
+**Teach Red your voice.** Run `python -m red voice-setup` and say "Hey Red" six times after the beeps, like setting up "Hey Siri". Red learns how it hears your voice and accent, so it notices you reliably. Run it again any time, for example with a new microphone. Only the words it heard are saved, never the recordings. It doesn't yet tell your voice apart from other people's.
+
 **Keeping Red running.** The microphone is only on while Red runs. `python -m red background` starts Red with no window, so closing PowerShell doesn't stop it, and `python -m red stop` stops it and turns the microphone off. `python -m red startup on` starts it when you sign in. If you'd rather have the microphone open only after you press Ctrl+Alt+R, set `RED_WAKEWORD=off`.
 
 ## Where Red keeps its files
