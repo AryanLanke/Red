@@ -341,6 +341,17 @@ Every command writes a `Timing` line to `red.log`: listen, transcribe, route, ac
 
 **Checked.** `tests/test_voice_app.py` (an answer asks and keeps listening; no repeat in a row; no second question; "no" ends it; actions still go quiet), `tests/test_stt.py` (hotwords reach Whisper, the Copilot fix-up), `tests/test_g_online.py` (title and full-text search, comparisons, wake phrases). Real model: all 145 integration cases pass, with the 23:41 comparison and "What is Hey CD?" added. The Everest case had a test bug (it checked `question` when `look_up` puts the name in `topic`), fixed.
 
+#### Instant common commands (2026-11-09, plan.md task 5, second plan)
+
+`red/fastpath.py` runs first in `Router.route()`. When the whole sentence (after "hey Red", "can you", "please", "for me" and the like are taken off) is one of a fixed set of forms, it returns the tool call itself; anything else goes to the model as before. The call goes through `Router.parse()` with the same schema checks, and the Executor asks the same confirmations, but no destructive tool is in the fast path at all (shutdown, restart, sleep and the Recycle Bin always go to the model).
+
+- "open X" (also launch, start, go to, "open X in/from Chrome"): an allowlisted app, a known app (`apps.KNOWN_APPS`), a Windows or allowlisted folder, a site from a fixed list (YouTube, GitHub, Gmail, Netflix and so on) or something that looks like a domain ("github.com"). "Open YouTube in Edge" only works for sites. "Open it", "open my resume", "open Bluetooth settings" go to the model.
+- volume up, down, mute, unmute, "set the volume to 30"; pause, resume, play (alone), next, previous, stop the music; lock; what time is it, the date, the battery; take a screenshot.
+- "play X" and "put on X" (to `play_online`); "search youtube for X", "search X on YouTube", "google X", "search the web for X", with "in Edge". A search with "my", "file", "tell me", "and", or a question word goes to the model, so "search online for the mars rover and tell me about it" still becomes `look_up`.
+- Names keep the user's capitals ("Opening Edge."); known folders get Windows' names ("Documents").
+- Speed: about 0.03 ms a sentence. Measured with the real `VoiceApp` (Piper audio of "Open YouTube.", real `base.en` with the pause check, the real router and action, a silent speaker): done about 1.26 s after you stop talking with the fast path (0.8 s of quiet, 0.45 s pause check, 0.00 s route, 0.01 s act), about 2.5 s through Qwen3.5 4B, and 2.65 s in the 23:37 test with the 7B. The pause check's transcription (0.45 to 0.9 s on the CPU) is now the biggest part.
+- Real model: all 149 integration cases pass through the fast path plus the model, in 64 s against 116 s for the model alone.
+
 ### 7.3 Overlay (Track C)
 
 - PySide6. Frameless, always on top, translucent, and doesn't take keyboard focus. Sits in the bottom-right corner of the primary screen.
