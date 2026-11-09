@@ -15,6 +15,7 @@ class Tool(ABC):
     description: ClassVar[str]   # shown to the LLM so it knows when to use it
     args_schema: ClassVar[dict]  # JSON schema for arguments
     destructive: ClassVar[bool] = False  # if True, Red asks for confirmation first
+    max_reply: ClassVar[int] = 300       # the Executor shortens longer replies
 
     @abstractmethod
     def run(self, **kwargs) -> str:

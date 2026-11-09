@@ -11,6 +11,7 @@ import logging
 import threading
 from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 from .confirm import DEFAULT_TIMEOUT, Ask, confirm, typed_ask
 from .router import Route
@@ -31,9 +32,9 @@ def run_later(work) -> None:
         log.exception("A tool's follow-through work failed")
 
 
-def _short(text: str) -> str:
+def _short(text: str, limit: int = MAX_REPLY) -> str:
     text = " ".join(str(text).split())
-    return text if len(text) <= MAX_REPLY else text[:MAX_REPLY - 3] + "..."
+    return text if len(text) <= limit else text[:limit - 3] + "..."
 
 
 class Executor:
@@ -51,18 +52,27 @@ class Executor:
         # Slow work the last tool left to do while its reply is spoken (Tool.finish_later).
         self.last_later = None
 
-    def execute(self, command: str, route: Route) -> str:
+    def execute(self, command: str, route: Route,
+                talk: Callable[[str, str], str] | None = None) -> str:
         """Run a route and return the reply for the user.
 
         Harmless tools just run, even when asked as "can you open YouTube?".
         Risky ones (shutdown, restart, sleep, emptying the Recycle Bin) ask one
         question that says what and when, and need a clear yes.
+
+        For a "none" route, `talk(command, router_reply)` (Chat.reply) makes
+        the real answer, and that is what the command log records.
         """
         self.last_details = ""
         self.last_later = None
         if route.is_none:
-            reply = _short(route.args.get("reply") or "Sorry, I can't do that.")
-            self._log(command, route, status="none", confirmed=None, result=reply)
+            placeholder = _short(route.args.get("reply") or "Sorry, I can't do that.")
+            if talk is None:
+                self._log(command, route, status="none", confirmed=None, result=placeholder)
+                return placeholder
+            reply = talk(command, placeholder)
+            self._log(command, route, status="none", confirmed=None, result=reply,
+                      router_reply=placeholder)
             return reply
 
         if route.tool not in self.registry:
@@ -93,8 +103,12 @@ class Executor:
                 return reply
 
         tool.take_later()      # nothing left over from an earlier run
+        set_command = getattr(tool, "set_command", None)
+        if callable(set_command):
+            set_command(command)            # the user's own words, for tools that want them
+        limit = max(MAX_REPLY, int(getattr(tool, "max_reply", MAX_REPLY)))
         try:
-            reply = _short(tool.run(**route.args))
+            reply = _short(tool.run(**route.args), limit)
         except ToolError as e:
             tool.take_later()
             reply = _short(str(e)) or f"{route.tool} failed."
