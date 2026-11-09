@@ -349,7 +349,7 @@ def test_main_voice_mode_end_to_end(world, monkeypatch, capsys):
     monkeypatch.setattr(cli, "connect", lambda settings: (world["llm"], None))
     speaker = FakeSpeaker()
     transcriber = FakeTranscriber("Open my downloads.")
-    voice = cli.Voice(transcriber=transcriber, speaker=speaker, record=lambda: Audio(8000),
+    voice = cli.Voice(transcriber=transcriber, speaker=speaker, record=lambda **kw: Audio(8000),
                       chime=lambda: None, listener_factory=FakeListener,
                       make_ask=lambda s, t: FakeAsk("no"))
     monkeypatch.setattr(cli, "load_voice", lambda settings: voice)
@@ -448,6 +448,11 @@ class SilentThenWords:
         self.calls.append(kw)
         return Audio(16000 if len(self.calls) <= self.speech_calls else 0)
 
+    @property
+    def timeouts(self):
+        """The calls without the pause check (VoiceApp always passes one)."""
+        return [{k: v for k, v in kw.items() if k != "is_complete"} for kw in self.calls]
+
 
 def follow_app(world, monkeypatch, *texts, speech_calls=None, **kw):
     monkeypatch.setenv("RED_FOLLOW_UP_SECONDS", "7")
@@ -463,7 +468,7 @@ def test_an_action_ends_the_conversation(world, monkeypatch):
     app, speaker, overlay, record, out = follow_app(world, monkeypatch, "Open my downloads.")
     app.handle("wakeword")
     assert speaker.said == ["Opening Downloads."]
-    assert record.calls == [{}]
+    assert record.timeouts == [{}]
     assert overlay.names[-1] == "idle"
 
 
@@ -471,7 +476,7 @@ def test_chat_keeps_listening_and_stops_on_silence(world, monkeypatch):
     app, speaker, overlay, record, out = follow_app(world, monkeypatch, "Banana.")
     app.handle("wakeword")
     assert len(speaker.said) == 1                            # the reply, nothing on top
-    assert record.calls == [{}, {"start_timeout": 7.0}]      # the follow-up waits 7 s for you
+    assert record.timeouts == [{}, {"start_timeout": 7.0}]   # the follow-up waits 7 s for you
     assert overlay.names[-1] == "idle"
 
 
@@ -600,3 +605,43 @@ def test_go_away_in_a_follow_up(world, monkeypatch):
     app.handle("wakeword")
     assert speaker.said[-1] == 'Okay. Say "Hey Red" when you need me.'
     assert len(record.calls) == 2
+
+
+# --- the quick end of speech ------------------------------------------------------
+
+class CountingTranscriber(FakeTranscriber):
+    def __init__(self, *texts):
+        super().__init__(*texts)
+        self.calls = 0
+
+    def transcribe(self, audio):
+        self.calls += 1
+        return super().transcribe(audio)
+
+
+def test_the_pause_check_transcript_is_used_once(world, caplog):
+    transcriber = CountingTranscriber("Open my downloads.")
+    app, speaker, *_ = make_app(world, transcriber=transcriber)
+    clip = Audio(16000)
+
+    def record(**kw):
+        assert kw["is_complete"](clip) is True      # "Open my downloads." sounds finished
+        return clip
+    app.voice.record = record
+    with caplog.at_level("INFO", logger="red"):
+        app.handle("wakeword")
+    assert speaker.said == ["Opening Downloads."]
+    assert transcriber.calls == 1                    # not transcribed a second time
+    assert any("Timing 'Open my downloads.' -> open_folder" in r.message for r in caplog.records)
+
+
+def test_an_unfinished_pause_check_is_transcribed_again(world):
+    transcriber = CountingTranscriber("Open my", "Open my downloads.")
+    app, speaker, *_ = make_app(world, transcriber=transcriber)
+
+    def record(**kw):
+        assert kw["is_complete"](Audio(8000)) is False    # "Open my": keep listening
+        return Audio(16000)                               # more audio came after
+    app.voice.record = record
+    app.handle("wakeword")
+    assert speaker.said == ["Opening Downloads."] and transcriber.calls == 2

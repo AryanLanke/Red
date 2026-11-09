@@ -25,6 +25,7 @@ import os
 import shutil
 import sys
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -36,7 +37,7 @@ from .executor import Executor, run_later
 from .llm import LLMError, connect
 from .router import RouteError, Router
 from .chat import Chat
-from .smalltalk import dismissal_reply, is_goodbye, quick_reply
+from .smalltalk import dismissal_reply, is_goodbye, quick_reply, sounds_finished
 from .tools import default_registry
 
 log = logging.getLogger("red")
@@ -153,6 +154,7 @@ def load_voice(settings: Settings) -> Voice:
         record=functools.partial(record_command,
                                  max_seconds=settings.max_command_seconds,
                                  silence_seconds=settings.end_silence_seconds,
+                                 quick_silence=settings.quick_end_silence_seconds,
                                  start_timeout=START_TIMEOUT_SECONDS),
         chime=chime,
         listener_factory=Listener,
@@ -316,14 +318,39 @@ class VoiceApp:
                     log.exception("Couldn't resume the music")
             self._state("idle", last)
 
+    def _record(self, follow_up: bool):
+        """Record one command.
+
+        Returns (audio, its transcript if a pause check already made one, how long that check took).
+        """
+        heard: dict = {}
+
+        def is_complete(audio) -> bool:
+            # A short pause: if what you said so far is a whole sentence,
+            # stop now and keep this transcript instead of making another.
+            start = time.perf_counter()
+            text = (self.voice.transcriber.transcribe(audio) or "").strip()
+            heard.update(size=getattr(audio, "size", None), text=text,
+                         seconds=time.perf_counter() - start)
+            return sounds_finished(text)
+
+        kwargs: dict = {}
+        if follow_up:
+            kwargs["start_timeout"] = self.settings.follow_up_seconds
+        if self.settings.quick_end_silence_seconds > 0:
+            kwargs["is_complete"] = is_complete
+        audio = self.voice.record(**kwargs)
+        if heard and heard["size"] == getattr(audio, "size", None):
+            return audio, heard["text"], heard["seconds"]
+        return audio, None, 0.0
+
     def _exchange(self, player, tool, *, follow_up: bool):
         """Listen once and answer. Returns (last reply, tool, whether to keep listening)."""
         self._state("listening", "Listening...")
         self.voice.chime()
-        if follow_up:
-            audio = self.voice.record(start_timeout=self.settings.follow_up_seconds)
-        else:
-            audio = self.voice.record()
+        timer = Timing(self.settings)
+        audio, early, check_seconds = self._record(follow_up)
+        timer.recorded(quick=early is not None, check_seconds=check_seconds)
         if getattr(audio, "size", 0) == 0:
             if follow_up:
                 return "", tool, False       # nothing more to do: just go quiet
@@ -331,7 +358,8 @@ class VoiceApp:
             self._say(last)
             return last, tool, False
         self._state("thinking", "")
-        text = (self.voice.transcriber.transcribe(audio) or "").strip()
+        text = early if early is not None else (self.voice.transcriber.transcribe(audio) or "").strip()
+        timer.mark("transcribe")
         if not text:
             last = "Sorry, I didn't catch that."
             self._say(last)
@@ -355,6 +383,7 @@ class VoiceApp:
         self._state("thinking", f"“{text}”")
         try:
             route = self.router.route(text)
+            timer.mark("route")
         except (RouteError, LLMError) as e:
             log.warning("Couldn't route %r: %s", text, e)
             last = "Sorry, I didn't understand that."
@@ -373,14 +402,18 @@ class VoiceApp:
             # Not a command: talk like a friend instead of the router's stock line.
             self._state("thinking", "")
             last = self.chat.reply(text, fallback=last)
+            timer.mark("chat")
             again = True
         else:
+            timer.mark("act")
             self.chat.remember(text, last)
             # Done is done: after an action Red goes quiet. It keeps listening
             # only if the reply asks you something or the tool failed.
             again = asks_back(last) or self.executor.last_status == "error"
         self._say(last, self.executor.last_details, meanwhile=self.executor.last_later)
         self.executor.last_later = None
+        timer.mark("speak")
+        timer.log(text, route.tool)
         return last, tool, again
 
     # --- helpers -------------------------------------------------------------
@@ -421,6 +454,47 @@ class VoiceApp:
         except Exception:  # noqa: BLE001
             log.exception("Couldn't pause the music")
         return None
+
+
+class Timing:
+    """How long each step of one command took, for red.log (task: make Red faster).
+
+    "After you stopped" counts from the end of your speech: the pause Red
+    waited (and the pause check, if one ran) is taken off the recording time.
+    """
+
+    def __init__(self, settings: Settings, clock: Callable[[], float] = time.perf_counter):
+        self._settings, self._clock = settings, clock
+        self.start = self._last = clock()
+        self.speech_end = self.start
+        self.pause = 0.0
+        self.steps: list[tuple[str, float]] = []
+        self.done_at: dict[str, float] = {}
+
+    def recorded(self, quick: bool, check_seconds: float = 0.0) -> None:
+        now = self._clock()
+        s = self._settings
+        self.pause = (s.quick_end_silence_seconds + check_seconds) if quick else s.end_silence_seconds
+        self.speech_end = max(self.start, now - self.pause)
+        self.steps.append(("listen", now - self.start))
+        self._last = now
+
+    def mark(self, step: str) -> None:
+        now = self._clock()
+        self.steps.append((step, now - self._last))
+        self.done_at[step] = now - self.speech_end
+        self._last = now
+
+    def summary(self, text: str, tool: str) -> str:
+        steps = ", ".join(f"{name} {secs:.2f} s" for name, secs in self.steps)
+        done = self.done_at.get("act", self.done_at.get("chat"))
+        tail = f"; done {done:.2f} s after you stopped" if done is not None else ""
+        spoken = self.done_at.get("speak")
+        tail += f", reply spoken by {spoken:.2f} s" if spoken is not None else ""
+        return f"Timing {text[:60]!r} -> {tool}: {steps} (pause waited {self.pause:.2f} s){tail}"
+
+    def log(self, text: str, tool: str) -> None:
+        log.info(self.summary(text, tool))
 
 
 def asks_back(reply: str) -> bool:
