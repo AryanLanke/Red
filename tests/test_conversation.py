@@ -1,4 +1,4 @@
-"""Talking like a friend (red.chat), "can you ...?" offers, and reading the screen."""
+"""Talking like a friend (red.chat), "can you ...?" requests, yes and no, and reading the screen."""
 
 import json
 from datetime import datetime
@@ -10,9 +10,9 @@ import pytest
 from fakes import FakeAsk, FakeRunner
 from red import screen as sc
 from red.chat import CHAT_SYSTEM, Chat
-from red.executor import DECLINED, NO_ANSWER, OFFER, Executor
+from red.executor import Executor
 from red.router import Route
-from red.smalltalk import is_ability_question, is_casual_yes
+from red.smalltalk import is_ability_question, is_casual_yes, yes_intent
 from red.tools.base import Tool, ToolRegistry
 from red.tools.screen import DescribeScreen
 from red.tools.system import Shutdown
@@ -150,38 +150,72 @@ def executor(answers, *tools):
     return Executor(ToolRegistry(list(tools)), ask=ask), ask
 
 
-def test_offer_then_run_on_a_casual_yes():
+@pytest.mark.parametrize("said, yes", [
+    ("Yeah, you don't need my permission. Go ahead.", True),   # said 2026-11-08 22:24
+    ("yes", True), ("Yep, do it", True), ("Sure, why not", True), ("No problem, go for it", True),
+    ("okay", True), ("Of course you can", True),
+    ("No.", False), ("Nah, don't", False), ("Stop", False), ("Cancel that", False),
+    ("Yes, no wait, don't", False), ("Don't do it", False), ("I don't know", False),
+    ("maybe", None), ("", None), (None, None),
+])
+def test_yes_intent_reads_the_whole_sentence(said, yes):
+    assert yes_intent(said) is yes
+
+
+@pytest.mark.parametrize("said, yes", [("okay", None), ("please", None), ("Yeah, go ahead", True),
+                                       ("Sure.", True), ("y", True), ("No, don't.", False)])
+def test_strict_yes_intent_for_risky_actions(said, yes):
+    assert yes_intent(said, strict=True) is yes
+
+
+@pytest.mark.parametrize("said", ["Could you open YouTube?", "Can you open YouTube?", "Open YouTube"])
+def test_harmless_requests_just_run(said):
     tool = Opener()
-    ex, ask = executor(["Yeah, go ahead."], tool)
-    assert ex.execute("Could you open YouTube?", Route("open_url", {"url": "x"}, False), offer=True) == "Opening YouTube."
-    assert [q for q, _ in ask.questions] == [f"{OFFER} Should I go ahead?"]
+    ex, ask = executor([], tool)
+    assert ex.execute(said, Route("open_url", {"url": "x"}, False)) == "Opening YouTube."
+    assert ask.questions == []                         # no "Should I go ahead?"
     assert tool.ran == [{"url": "x"}]
 
 
-@pytest.mark.parametrize("answer, reply", [("No.", DECLINED), (None, NO_ANSWER)])
-def test_offer_declined_or_unanswered(answer, reply):
+def test_the_podcast_request_from_the_log_runs_without_asking():
+    # 22:24: Red asked "Should I go ahead?", heard "Yeah, you don't need my
+    # permission. Go ahead." and answered "Okay, I won't." Now it just runs.
     tool = Opener()
-    ex, ask = executor([answer], tool)
-    assert ex.execute("Can you open YouTube?", Route("open_url", {"url": "x"}, False), offer=True) == reply
-    assert tool.ran == []
+    ex, ask = executor(["Yeah, you don't need my permission. Go ahead."], tool)
+    ex.execute("Can you open a podcast to me that will make my loneliness go away?",
+               Route("open_url", {"url": "x"}, False))
+    assert ask.questions == [] and tool.ran == [{"url": "x"}]
 
 
-def test_a_risky_offer_says_what_and_when_and_needs_a_plain_yes():
+def shutdown_executor(*answers):
     runner = FakeRunner()
     now = lambda: datetime(2026, 11, 8, 21, 40)  # noqa: E731
-    ex, ask = executor(["sure"], Shutdown(runner=runner, now=now))
-    route = Route("shutdown", {"minutes": 180}, True)
-    assert ex.execute("Can you turn off my laptop after 3 hours?", route, offer=True) == DECLINED
-    assert [q for q, _ in ask.questions] == [f"{OFFER} Shut down in 3 hours (at 12:40 AM tomorrow). Should I go ahead?"]
-    assert runner.calls == []                          # "sure" isn't enough for a shutdown
-    ex, ask = executor(["Yes."], Shutdown(runner=runner, now=now))
-    reply = ex.execute("Can you turn off my laptop after 3 hours?", route, offer=True)
-    assert "12:40 AM" in reply and len(ask.questions) == 1   # asked once, not twice
+    ex, ask = executor(list(answers), Shutdown(runner=runner, now=now))
+    return ex, ask, runner
+
+
+SHUTDOWN_3H = Route("shutdown", {"minutes": 180}, True)
+
+
+def test_a_risky_request_asks_once_saying_what_and_when():
+    ex, ask, runner = shutdown_executor("Yeah, go ahead.")
+    reply = ex.execute("I'll tell you to turn off my laptop after 3 hours, will you do that?", SHUTDOWN_3H)
+    assert [q for q, _ in ask.questions] == ["Shut down in 3 hours (at 12:40 AM tomorrow)?"]
+    assert "12:40 AM" in reply and runner.calls          # asked once, then scheduled
+
+
+@pytest.mark.parametrize("answer, reply", [("okay", "Cancelled."), ("No, don't.", "Cancelled."),
+                                           ("Yes, no wait.", "Cancelled."),
+                                           (None, "No answer, so I cancelled it.")])
+def test_a_risky_request_needs_a_clear_yes(answer, reply):
+    ex, ask, runner = shutdown_executor(answer)
+    assert ex.execute("Shut down in 3 hours", SHUTDOWN_3H) == reply
+    assert runner.calls == []
 
 
 def test_look_ups_are_just_answered():
     ex, ask = executor([], Weather())
-    assert ex.execute("Can you check the weather?", Route("weather", {}, False), offer=True) == "Sunny."
+    assert ex.execute("Can you check the weather?", Route("weather", {}, False)) == "Sunny."
     assert ask.questions == []
 
 

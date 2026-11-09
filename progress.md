@@ -201,7 +201,7 @@ Days 2 to 5 now run as three parallel tracks (section 8) followed by one integra
 
 **Confirmation:**
 - Red repeats the action in plain words: `Shut down in 2 hours (at 11:40 PM)? [y/N]`
-- Only `y` or `yes` confirms (case-insensitive; surrounding spaces and trailing punctuation are ignored, so a spoken "Yes." works). Anything else, or no answer within 30 seconds, cancels.
+- Only a clear yes confirms: `y`, `yes`, or a yes inside a sentence ("yeah, go ahead", "sure, do it") with no no-word in it. "No", "don't", "stop" or "cancel" anywhere cancels, and so do unclear answers ("okay", "maybe") and no answer within 30 seconds. Harmless tools never ask, even for "can you ...?" (changed 2026-11-08 after the voice test).
 - Typed confirmation comes first. The spoken version (Track B) plugs into the same `ask` function.
 
 **Allowlist:** `RED_HOME\config\allowlist.toml`, copied from `allowlist.example.toml`:

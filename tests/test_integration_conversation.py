@@ -7,7 +7,6 @@ import pytest
 from red.config import load_settings
 from red.llm import connect
 from red.router import Router
-from red.smalltalk import is_ability_question
 from red.tools import default_registry
 
 pytestmark = [
@@ -43,8 +42,8 @@ def test_screen_questions(router, said):
     assert router.route(said).tool == "describe_screen"
 
 
-def test_the_shutdown_question_is_offered_first(router):
-    said = "Can you help me with turning off my laptop after 3 hours?"
-    route = router.route(said)
+def test_the_shutdown_question_routes_to_shutdown(router):
+    # Red then asks once, "Shut down in 3 hours (at ...)?", because shutdown is risky.
+    route = router.route("Can you help me with turning off my laptop after 3 hours?")
     assert (route.tool, route.args) == ("shutdown", {"minutes": 180})
-    assert is_ability_question(said)          # so Red asks "Should I go ahead?" before scheduling it
+    assert route.destructive

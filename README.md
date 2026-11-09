@@ -84,7 +84,7 @@ python -m red startup on               # start Red when you sign in (off to undo
 
 **"Hey Red":** if the wake word can't start on your PC, Red says so once when it starts and keeps working with the shortcut.
 
-**Confirming:** for a shutdown, restart, sleep or emptying the Recycle Bin, Red repeats the action with the exact time, for example "Shut down in 2 hours (at 11:40 PM)? Say yes to confirm." Only "yes" goes ahead. Anything else, or silence for 30 seconds, cancels. If your microphone fails at that moment, Red asks in the PowerShell window instead. In typed mode, you type `y` or `yes`.
+**Confirming:** for a shutdown, restart, sleep or emptying the Recycle Bin, Red repeats the action with the exact time, for example "Shut down in 2 hours (at 11:40 PM)? Say yes to confirm." A clear yes goes ahead ("yes", "yeah, go ahead", "sure, do it"). "No", "don't" or "stop" anywhere in your answer cancels, and so does a vague "okay" or 30 seconds of silence. Everything else, like opening an app, just happens: "can you open YouTube?" opens YouTube. If your microphone fails at that moment, Red asks in the PowerShell window instead. In typed mode, you type `y` or `yes` (or a sentence like "yeah, go ahead").
 
 **Music:** Red pauses the music while it listens and talks, then resumes it.
 
@@ -193,7 +193,7 @@ Red plays `mp3`, `ogg`, `opus`, `flac` and `wav` files from your Music folder, o
 
 **Teach Red your voice.** Run `python -m red voice-setup` and say "Hey Red" six times after the beeps, like setting up "Hey Siri". Red learns how it hears your voice and accent, so it notices you reliably. Run it again any time, for example with a new microphone. Only the words it heard are saved, never the recordings. It doesn't yet tell your voice apart from other people's.
 
-**Talk to Red like a friend.** Anything that isn't a command ("what's on your mind?", "I had a rough day") gets a real answer, not a stock line, and Red remembers the conversation for a while. Ask "what's on my screen?" and Red tells you what you're looking at. Ask "can you turn off my laptop in 3 hours?" and Red says it can and asks before doing it; say it as an order ("turn off my laptop in 3 hours") and it just does it, still confirming anything risky.
+**Talk to Red like a friend.** Anything that isn't a command ("what's on your mind?", "I had a rough day") gets a real answer, not a stock line, and Red remembers the conversation for a while. Ask "what's on my screen?" and Red tells you what you're looking at. "Can you open YouTube?" just opens YouTube, like an order would. Only risky things (shutdown, restart, sleep, emptying the Recycle Bin) get one question first.
 
 **Keeping Red running.** The microphone is only on while Red runs. `python -m red background` starts Red with no window, so closing PowerShell doesn't stop it, and `python -m red stop` stops it and turns the microphone off. `python -m red startup on` starts it when you sign in. If you'd rather have the microphone open only after you press Ctrl+Alt+R, set `RED_WAKEWORD=off`.
 

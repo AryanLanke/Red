@@ -87,7 +87,7 @@ The voice and UI modules are imported lazily, through `load_voice()` and inside 
 ## Rules that come from the design
 
 - A tool must never pass LLM text to a shell or command line. App and folder names are only lookup keys into Windows' standard folders or `RED_HOME\config\allowlist.toml`. If nothing matches, say so instead of guessing.
-- `destructive = True` tools (shutdown, restart, anything that changes files) must get a `y` or `yes`, typed or spoken, before they run. Anything else, or 30 seconds with no answer, cancels. `cancel_shutdown` never asks.
+- `destructive = True` tools (shutdown, restart, anything that changes files) must get a clear yes, typed or spoken, before they run (`confirm.is_clear_yes`: "yes", or "yeah, go ahead" with no no-word in it). A no-word anywhere ("no", "don't", "stop", "cancel"), an unclear answer like "okay", or 30 seconds with no answer cancels. Harmless tools never ask, even for "can you ...?". `cancel_shutdown` never asks.
 - Tests must never open windows, use the microphone or speakers, hook the keyboard, or schedule a real shutdown. Inject fakes through constructors, and follow the existing test patterns:
   - `FakeLLM` in `tests/test_router.py`
   - `FakeRunner`, `FakeStartfile`, `FakePopen` and `FakeAsk` in `tests/fakes.py`, and the voice fakes in `tests/voice_fakes.py`

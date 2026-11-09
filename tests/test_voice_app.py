@@ -216,7 +216,8 @@ def test_command_flow_states_and_reply(world):
 
 
 @pytest.mark.parametrize("answer, ran", [("Yes.", True), ("No.", False), (None, False),
-                                         ("yes please", False)])
+                                         ("yes please", True), ("Yeah, go ahead.", True),
+                                         ("okay", False), ("Yes, no, wait.", False)])
 def test_destructive_asks_aloud(world, answer, ran):
     app, speaker, overlay, asked, _ = make_app(world, "Shut down in 2 hours.", answers=[answer])
     app.handle("wakeword")

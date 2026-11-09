@@ -36,7 +36,7 @@ from .executor import Executor
 from .llm import LLMError, connect
 from .router import RouteError, Router
 from .chat import Chat
-from .smalltalk import dismissal_reply, is_ability_question, is_goodbye, quick_reply
+from .smalltalk import dismissal_reply, is_goodbye, quick_reply
 from .tools import default_registry
 
 log = logging.getLogger("red")
@@ -94,7 +94,7 @@ def _run(router: Router, executor: Executor, command: str, chat: Chat | None = N
     logging.getLogger("red.commands").info("%r -> %s", command, route.to_json())
     if not route.is_none:
         print(f"  -> {route.to_json()}")
-    reply = executor.execute(command, route, offer=is_ability_question(command))
+    reply = executor.execute(command, route)
     if chat is not None:
         reply = chat.reply(command, fallback=reply) if route.is_none else reply
         if not route.is_none:
@@ -369,7 +369,7 @@ class VoiceApp:
             # Red paused the music only to listen. Let the tool pause it for
             # real, so it says "Paused." and not "already paused".
             player.resume()
-        last = self.executor.execute(text, route, offer=is_ability_question(text))
+        last = self.executor.execute(text, route)
         if route.is_none:
             # Not a command: talk like a friend instead of the router's stock line.
             self._state("thinking", "")
