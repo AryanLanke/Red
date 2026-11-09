@@ -153,7 +153,10 @@ it?" and keep listening.
   still goes quiet.
 - Replay the 23:41 line through the real model (`RED_INTEGRATION=1`).
 
-### 3. No local music: every "play …" goes online
+### 3. ✅ No local music: every "play …" goes online
+**Done (2026-11-09):** `play_music`, `red/tools/music.py`, pygame-ce and `RED_MUSIC_DIR` are gone; every
+"play …" goes to `play_online` in `RED_BROWSER`, fronting the window titled "… - YouTube". The media tools
+are plain media keys (and `stop_music` is Media Stop). Details in progress.md 7.4.
 - The user doesn't want local music. Route every "play X" (songs, artists, podcasts, videos) to
   `play_online`, and take `play_music` out of the registry and the router rule.
 - Pause, resume, next and previous keep working through the media keys, so they control YouTube in the
