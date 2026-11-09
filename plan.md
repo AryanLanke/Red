@@ -319,7 +319,10 @@ Details in progress.md 7.2.
 - **Check:** unit tests with saved audio fixtures, never the microphone. Ask the user to test it with
   another person speaking.
 
-### 9. Several things in one sentence
+### 9. ✅ Several things in one sentence
+**Done (2026-11-09):** `split_commands()` and `Router.route_many()` (each part routed and checked like one),
+`VoiceApp._run_steps` (in order; stops at the first failure or "no" and says which). All the plan's examples
+work with the real model. Details in progress.md 7.2.
 - "Open Chrome and search flights to Delhi", "mute and lock the PC", "check my mail and read today's
   calendar".
 - The router returns up to about 4 tool calls. Each one is validated and confirmed like a single call,
