@@ -13,7 +13,8 @@ the whole job**, otherwise the user does it themselves.
 
 ## Tasks, in order
 
-### 1. Stop asking permission for harmless things
+### 1. ✅ Stop asking permission for harmless things
+**Done:** `smalltalk.yes_intent()`, `confirm.is_clear_yes()`; the offer is gone from `Executor`.
 - Remove the "can you…?" offer for non-risky tools. "Can you open YouTube?" means "open YouTube", like
   Siri. Keep a confirmation only for risky tools (shutdown, restart, sleep_pc, empty_recycle_bin): one
   question that says what and when.
@@ -25,7 +26,8 @@ the whole job**, otherwise the user does it themselves.
 - Check: unit tests in `tests/test_conversation.py`, and the log line above replayed through
   `Executor`.
 
-### 2. Do it, then go quiet
+### 2. ✅ Do it, then go quiet
+**Done:** `VoiceApp._exchange` decides `again` from the turn (`asks_back`, `Executor.last_status`); tools hand slow follow-through to `Tool.finish_later()`, which runs while Red speaks.
 - No "Anything else?" after an action. Follow-ups only after chat or an answer that asks the user
   something back (the reply ends with "?"), or after a failure Red needs help with.
   File: `red/__main__.py` (`VoiceApp._handle`: base `again` on the kind of turn).
