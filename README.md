@@ -14,7 +14,7 @@ A local voice and action assistant for your Windows laptop. Say "Hey Red" or pre
 - **Searches the web** in your browser: the web, YouTube, images, maps, news or Wikipedia
 - **Writes email drafts** in your mail app, ready for you to check and send
 - **Controls your PC:** volume, media keys, screenshots, lock, sleep, shutdown and restart (with a delay), and emptying the Recycle Bin
-- **Plays music** from a folder on your PC
+- **Plays anything on YouTube:** songs, artists, podcasts, videos and trailers, in your browser
 - **Checks your Git repos** against GitHub and tells you what's unpushed or behind
 - **Tells you** the time, the date and the battery level
 - **Answers out loud** and shows its status in a small floating window
@@ -86,8 +86,6 @@ python -m red startup on               # start Red when you sign in (off to undo
 
 **Confirming:** for a shutdown, restart, sleep or emptying the Recycle Bin, Red repeats the action with the exact time, for example "Shut down in 2 hours (at 11:40 PM)? Say yes to confirm." A clear yes goes ahead ("yes", "yeah, go ahead", "sure, do it"). "No", "don't" or "stop" anywhere in your answer cancels, and so does a vague "okay" or 30 seconds of silence. Everything else, like opening an app, just happens: "can you open YouTube?" opens YouTube. If your microphone fails at that moment, Red asks in the PowerShell window instead. In typed mode, you type `y` or `yes` (or a sentence like "yeah, go ahead").
 
-**Music:** Red pauses the music while it listens and talks, then resumes it.
-
 ---
 
 ## What you can say
@@ -107,8 +105,7 @@ You don't need exact words; these are examples.
 | Cancel it | "cancel the shutdown", "cancel the restart" |
 | Sleep | "put the computer to sleep" |
 | Lock | "lock my PC" |
-| Play music | "play some music", "play Daft Punk", "play my jazz folder" |
-| Play podcasts and videos | "play a podcast about loneliness", "play the Punisher trailer", "play lofi on YouTube" |
+| Play songs, podcasts and videos | "play Believer", "play some Arijit Singh", "play some music", "play a podcast about loneliness", "play the Punisher trailer" |
 | Control playback | "pause the music", "resume", "next song", "previous track", "stop the music" |
 | Change the volume | "volume up", "turn it down", "mute", "unmute", "set the volume to 30 percent" |
 | Open a Windows setting | "open Bluetooth settings", "open display settings", "check for Windows updates" |
@@ -117,7 +114,7 @@ You don't need exact words; these are examples.
 | Empty the Recycle Bin | "empty the recycle bin" |
 | Check your repos | "check my repos", "check the red repo", "is my red repo pushed" |
 
-Pause, resume and next work for Red's own music and also for Spotify or a YouTube tab. Screenshots go to Pictures\Screenshots. Email drafts are never sent by Red: you check them and press Send.
+Pause, resume, next, previous and stop are your keyboard's media keys, so they work for YouTube in the browser, Spotify and other players. Screenshots go to Pictures\Screenshots. Email drafts are never sent by Red: you check them and press Send.
 
 ---
 
@@ -139,7 +136,6 @@ Your settings are in `RED_HOME\config\.env` (copied from `.env.example`). Settin
 | `RED_WHISPER_DEVICE` | Speech recognition on `cpu`, `cuda` (NVIDIA GPU) or `auto` | `cpu` |
 | `RED_WHISPER_MODEL` | Speech recognition model | `small` |
 | `RED_PIPER_VOICE` | The voice Red speaks with | `en_US-lessac-medium` |
-| `RED_MUSIC_DIR` | The folder Red plays music from | your Music folder |
 | `RED_SEARCH_ENGINE` | `google`, `bing` or `duckduckgo` for web searches | `google` |
 | `RED_BROWSER` | The browser pages and searches open in: `chrome`, `edge`, `firefox`, or `default` for the Windows default. If it isn't installed, Red uses the Windows default | `chrome` |
 | `RED_LLM_MODEL` | `qwen2.5-7b-instruct-q4_k_m`, or `qwen2.5-3b-instruct-q4_k_m` for PCs with less video memory | 7B |
@@ -188,11 +184,9 @@ mom = "mom@example.com"
 "alex kim" = "alex.kim@example.com"
 ```
 
-### Music
+### Playing music and videos
 
-Red plays `mp3`, `ogg`, `opus`, `flac` and `wav` files from your Music folder, or from `RED_MUSIC_DIR`. It doesn't play `m4a`, `aac` or `wma`. Songs are matched by file and folder names, so "play Daft Punk" works if there's a folder or file with that name. If the song isn't on your PC (or your Music folder is empty), Red plays it on YouTube instead of something random.
-
-Podcasts, videos and trailers play on YouTube: Red searches YouTube for your words, opens the first video in your browser, and says its title. Only the search words leave your PC, and no account or API key is used. If YouTube can't be read, Red opens the search results instead.
+Everything you ask Red to play, songs and artists as well as podcasts, videos and trailers, plays on YouTube: Red searches YouTube for your words, opens the first video in your browser (`RED_BROWSER`), brings it to the front, and says its title. "Play some music" starts a mix of popular songs. Red doesn't play music files from your PC. Only the search words leave your PC, and no account or API key is used. If YouTube can't be read, Red opens the search results instead.
 
 ---
 

@@ -49,15 +49,14 @@ There is no build step, linter or formatter set up. Dependencies are pinned exac
 
 The flow in `red/__main__.py`: `load_settings()` → `llm.connect(settings)` → `Router(default_registry(), llm)`. Then, by mode:
 - **Voice (the default):** `run_with_overlay(worker)` gives Qt the main thread. The worker builds a `VoiceApp`, which starts a `Listener`: the hotkey plus the wake word, or the hotkey only if the wake word fails. Each trigger runs `VoiceApp.handle()` on the listener's thread, with `overlay.set_state()` at each step:
-  1. pause the music
-  2. `chime()` and `record_command()`
-  3. `Transcriber.transcribe()`
-  4. `router.route()`
-  5. `Executor.execute()`
-  6. `Speaker.say()`
+  1. `chime()` and `record_command()`
+  2. `Transcriber.transcribe()`
+  3. `router.route()`
+  4. `Executor.execute()`
+  5. `Speaker.say()`
 - **Typed, `run`, `--dry-run` and `route`** need no voice packages and no Qt.
 
-The voice and UI modules are imported lazily, through `load_voice()` and inside functions, so the core and its tests work without them. `VoiceApp` takes every part in its constructor (`Voice`, the overlay, the music player, the typed fallback), and `tests/test_voice_app.py` drives it with fakes.
+The voice and UI modules are imported lazily, through `load_voice()` and inside functions, so the core and its tests work without them. `VoiceApp` takes every part in its constructor (`Voice`, the overlay, the typed fallback), and `tests/test_voice_app.py` drives it with fakes.
 
 - **Tools** (`red/tools/`): each one subclasses `Tool` and has `name`, `description`, `args_schema` and `destructive`. Register it in `default_registry()` in `tools/__init__.py`. The `description` and `args_schema` are inserted directly into the LLM's system prompt, so their wording changes routing. The schema bounds are also the safety limits; for example, `MAX_DELAY_MINUTES` caps shutdown delays. `none` is a reserved pseudo-tool for "no tool fits" (its args are `{"reply": ...}`), and the registry rejects a tool with that name.
 - **Router** (`red/router.py`): builds an `anyOf` JSON schema from the registry. The backend uses it to constrain generation, and `Router.parse()` checks it again with `jsonschema`, because a server may ignore the schema. `parse()` needs no LLM, so most router tests call it directly.
