@@ -34,7 +34,8 @@ the whole job**, otherwise the user does it themselves.
 - Speak short confirmations ("Opening Edge.") *while* the action runs, not before it.
 - Check: `tests/test_voice_app.py`. Opening an app ends the conversation with no question.
 
-### 3. Play podcasts, YouTube videos and songs online
+### 3. ✅ Play podcasts, YouTube videos and songs online
+**Done:** `red/tools/youtube.py` (`play_online`), the hand-over in `PlayMusic`, a router rule, `tests/test_youtube.py` and `tests/test_integration_play_online.py`. A YouTube fetch takes about 1 to 2.5 s.
 - New tool `play_online` (`red/tools/online.py` or a new `red/tools/youtube.py`): "play a podcast about
   loneliness", "play Punisher trailer", "play lofi on YouTube". Search YouTube with no API key (fetch
   the results page and read the first `"videoId"`), open `https://www.youtube.com/watch?v=<id>` so it
