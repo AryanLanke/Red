@@ -160,6 +160,20 @@ def test_browser_target_uses_the_browser_red_started(monkeypatch):
     assert w.browser_target().exes == w.BROWSERS
 
 
+def test_the_default_browser_is_what_the_shell_says():
+    chrome = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+    assert w.default_browser_exe(assoc=lambda: chrome, prog_ids=lambda: ["MSEdgeHTM"]) == "chrome.exe"
+
+
+def test_the_newest_registry_choice_wins_over_a_stale_one():
+    # This PC: UserChoiceLatest says Chrome, the old UserChoice still says Edge.
+    assert w.default_browser_exe(assoc=lambda: None,
+                                 prog_ids=lambda: ["ChromeHTML", "MSEdgeHTM"]) == "chrome.exe"
+    assert w.default_browser_exe(assoc=lambda: "C:\\x\\notabrowser.exe",
+                                 prog_ids=lambda: ["FirefoxURL-308046B0AF4A39CB"]) == "firefox.exe"
+    assert w.default_browser_exe(assoc=lambda: None, prog_ids=lambda: ["SomethingElse"]) is None
+
+
 @pytest.mark.parametrize("host, name", [
     ("www.youtube.com", "youtube"), ("youtube.com", "youtube"), ("en.wikipedia.org", "wikipedia"),
     ("news.google.com", "google"), ("www.bbc.co.uk", "bbc"), ("github.com", "github"),

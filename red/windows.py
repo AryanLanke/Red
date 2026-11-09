@@ -119,21 +119,70 @@ def site_name(host: str) -> str:
     return name if len(name) >= 3 else ""
 
 
-def default_browser_exe() -> str | None:
-    if sys.platform != "win32":
+_URL_CHOICE = r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https"
+
+
+def default_browser_exe(assoc: Callable[[], str | None] | None = None,
+                        prog_ids: Callable[[], list[str]] | None = None) -> str | None:
+    """The program Windows opens https links with, e.g. "chrome.exe".
+
+    Asks the shell first (AssocQueryStringW), which knows the real answer.
+    Otherwise the registry: newer Windows 11 builds keep the choice in
+    UserChoiceLatest\\ProgId and leave the old UserChoice key stale. On the
+    developer's PC UserChoice still said Edge while links opened in Chrome,
+    so Red fronted an idle Edge window over the YouTube it had opened.
+    """
+    if sys.platform != "win32" and assoc is None and prog_ids is None:
         return None
+    exe = (assoc or _assoc_https_exe)()
+    if exe:
+        name = os.path.basename(exe).lower()
+        if name in BROWSERS:
+            return name
+    for prog_id in (prog_ids or _https_prog_ids)():
+        for prefix, name in _PROG_IDS:
+            if prog_id.startswith(prefix):
+                return name
+    return None
+
+
+def _assoc_https_exe() -> str | None:
+    """The shell's https handler program, through shlwapi's AssocQueryStringW."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        shlwapi = ctypes.WinDLL("shlwapi")
+        query = shlwapi.AssocQueryStringW
+        query.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR,
+                          wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
+        query.restype = ctypes.c_long
+        ASSOCF_IS_PROTOCOL, ASSOCSTR_EXECUTABLE = 0x1000, 2
+        buf = ctypes.create_unicode_buffer(1024)
+        size = wintypes.DWORD(len(buf))
+        if query(ASSOCF_IS_PROTOCOL, ASSOCSTR_EXECUTABLE, "https", "open", buf,
+                 ctypes.byref(size)) == 0:
+            return buf.value or None
+    except (OSError, AttributeError):
+        pass
+    return None
+
+
+def _https_prog_ids() -> list[str]:
+    """ProgIds for https, the newest place first."""
+    found = []
     try:
         import winreg
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                            r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations"
-                            r"\https\UserChoice") as key:
-            prog_id, _ = winreg.QueryValueEx(key, "ProgId")
-    except OSError:
-        return None
-    for prefix, exe in _PROG_IDS:
-        if str(prog_id).startswith(prefix):
-            return exe
-    return None
+    except ImportError:
+        return found
+    for sub in (r"\UserChoiceLatest\ProgId", r"\UserChoice"):
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _URL_CHOICE + sub) as key:
+                value, _ = winreg.QueryValueEx(key, "ProgId")
+        except OSError:
+            continue
+        if isinstance(value, str) and value:
+            found.append(value)
+    return found
 
 
 class Watcher:
