@@ -36,8 +36,12 @@ Rules:
 - Convert durations to the unit the tool asks for (for example "3 hours" is 180 minutes).
 - If the command is ambiguous or missing a required value, use "none" and ask a short question.
 - A single word or phrase with no request in it (for example "banana") is unclear: use "none".
-- A general knowledge question or "explain X" goes to answer. Use web_search only when the user asks to search or to see results in the browser.
-- Pick the most specific tool: web_search (not open_url) to look something up, including pictures; open_settings (not open_app) for a Windows Settings page."""
+- Questions: a general knowledge question or "explain X" goes to answer. "Look up X" or anything ending in "and tell me" goes to look_up, which says the answer aloud. web_search only opens results in the browser ("google X", "search for X", "show me pictures of X"), and never open_url for a search.
+- Pick the most specific tool: open_settings (not open_app) for a Windows Settings page; find_file (not open_folder) when the user says find, locate or where is.
+
+Examples:
+"search online for the mars rover and tell me about it" -> {{"tool": "look_up", "args": {{"topic": "mars rover"}}}}
+"find the folder named taxes" -> {{"tool": "find_file", "args": {{"name": "taxes", "kind": "folder"}}}}"""
 
 
 class RouteError(ValueError):
@@ -72,7 +76,7 @@ class Router:
         self.schema = self._build_schema()
         self._validator = Draft202012Validator(self.schema)
         self.system_prompt = SYSTEM_PROMPT.format(tools="\n".join(
-            f"- {t.name}: {t.description} args schema: {json.dumps(t.args_schema)}"
+            f"- {t.name}: {t.description} args schema: {json.dumps(t.args_schema, separators=(',', ':'), ensure_ascii=False)}"
             for t in registry
         ))
 

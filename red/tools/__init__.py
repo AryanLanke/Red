@@ -6,6 +6,7 @@ from .files import FindFile, OpenFoundFile
 from .git_sync import CheckRepos
 from .mail import ComposeMail
 from .music import PlayMusic, StopMusic
+from .online import LookUp, News, Weather
 from .quick import (EmptyRecycleBin, LockPC, NextMedia, OpenSettings, PauseMedia, PreviousTrack,
                     ResumeMedia, SleepPC, TakeScreenshot, TellStatus, Volume)
 from .reminders import CancelReminder, ListReminders, SetReminder, SetTimer
@@ -18,6 +19,7 @@ def default_registry() -> ToolRegistry:
     # and next fall back to the media keys when Red's own player is idle.
     return ToolRegistry([
         OpenFolder(), OpenApp(), OpenUrl(), WebSearch(), Answer(),
+        LookUp(), Weather(), News(),
         FindFile(), OpenFoundFile(), ComposeMail(),
         Shutdown(), Restart(), CancelShutdown(), SleepPC(), LockPC(),
         PlayMusic(), StopMusic(), PauseMedia(), ResumeMedia(), NextMedia(), PreviousTrack(),

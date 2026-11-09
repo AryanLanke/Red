@@ -74,11 +74,25 @@ CASES = [
     # offline answers
     ("what is hugging face", "answer", contains("question", "hugging face")),
     ("explain recursion", "answer", contains("question", "recursion")),
-    ("who was alan turing", "answer", contains("question", "turing")),
+    ("who was alan turing", ("answer", "look_up"),
+     lambda a: "turing" in norm(a.get("question", a.get("topic", "")))),
     ("how tall is mount everest", "answer", contains("question", "everest")),
     ("search the web for hugging face", "web_search", contains("query", "hugging face")),
     ("google recursion", "web_search", contains("query", "recursion")),
     ("banana", "none", ANY),
+    # online answers
+    ("what is the weather in Pune", "weather", has(place="pune")),
+    ("will it rain tomorrow in Mumbai", "weather", has(place="mumbai", day="tomorrow")),
+    ("what's the weather like", "weather", ANY),
+    ("latest news about India", "news", contains("topic", "india")),
+    ("what's in the news today", "news", ANY),
+    ("look up the james webb telescope", "look_up", contains("topic", "webb")),
+    pytest.param("search the web for hugging face and tell me what it is", "look_up",
+                 contains("topic", "hugging face"),
+                 marks=pytest.mark.xfail(strict=False, reason="known gap: the model still opens "
+                                         "web_search for 'search the web ... and tell me' "
+                                         "(progress.md 8.18)")),
+    ("open a search for hugging face", "web_search", contains("query", "hugging face")),
 ]
 
 

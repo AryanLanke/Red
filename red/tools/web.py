@@ -40,8 +40,8 @@ def search_url(query: str, site: str = "web", engine: str = "google") -> str:
 
 class WebSearch(Tool):
     name = "web_search"
-    description = ("Search the internet for something and show the results in the browser, "
-                   "including pictures, videos, places and news. Use site for YouTube videos, "
+    description = ("Open a search in the browser so the user can read the results, "
+                   "including pictures, videos and places. Use site for YouTube videos, "
                    "images, maps, news or Wikipedia.")
     args_schema = {
         "type": "object",
