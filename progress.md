@@ -40,6 +40,9 @@ Last updated: 2026-11-08.
 | "Search the web for X" | Opens a web search in the browser | ✅ Track F: `web_search` on Google (or `RED_SEARCH_ENGINE`), YouTube, images, maps, news or Wikipedia. Reading results aloud comes later |
 | "Compose a mail to X about Y" | Opens a new draft with the recipient, subject and body filled in | ✅ Track F: `compose_mail` through a `mailto:` link. Names come from `contacts.toml`, and Red never sends. Sending through Gmail stays with the Gmail work, and always asks first |
 | "Lock my PC", "volume up", "pause", "open Bluetooth settings", "what time is it", "take a screenshot", "sleep", "empty the Recycle Bin" | Does it at once; sleep and emptying the Recycle Bin ask first | ✅ Track F: `lock_pc`, `volume`, media keys in `pause_music`, `resume_music`, `next_song` and `previous_track`, `open_settings`, `tell_status`, `take_screenshot`, `sleep_pc` and `empty_recycle_bin` |
+| "Set a timer for 10 minutes", "remind me at 3 pm to call mom", "what reminders do I have", "cancel the timer" | Says it when it's due, even after a restart | ✅ Track G: `set_timer`, `set_reminder`, `list_reminders` and `cancel_reminder` on `red/scheduler.py`. Up to 7 days ahead; Track H wires the voice |
+| "What is Hugging Face", "explain recursion" | Answers aloud in 2 to 4 sentences, offline | ✅ Track G: `answer`, a second call to the local model |
+| "What's the weather in Pune", "latest news about India", "look up the James Webb telescope" | Fetches it online and says it; "I'm offline" with no network | ✅ Track G: `weather` (Open-Meteo), `news` (Google News headlines), `look_up` (Wikipedia, summarised by the local model) |
 | Anything else | Says it can't do that yet | New abilities arrive as tools (section 4), and the plugin system (v0.4) makes adding them easy |
 
 The safety model doesn't change as Red grows: every ability is a tool with a fixed schema, nothing the model says is run as a command, and destructive actions ask first.
@@ -968,16 +971,63 @@ H sets `default_scheduler().on_due` in voice mode. It speaks inside `listener.pa
 
 Done when each tool works with fakes, routes with the real model in `tests/test_integration_g_tools.py`, the earlier routing tests still pass, and the prompt still fits `num_ctx`.
 
-- [ ] **Timers and reminders:** "set a timer for 10 minutes", "remind me at 3 pm to call mom", "what reminders do I have", "cancel the timer". Built on `red/scheduler.py` (8.17). Times are in the local time zone; reject times in the past and anything more than 7 days ahead
-- [ ] **Offline questions:** an `answer` tool for general questions ("what is Hugging Face", "explain recursion"). It makes a second local-LLM call for a short spoken answer (2 to 4 sentences). There's no cloud model
-- [ ] **Online answers:** for "search the web for X and tell me", "what's the weather in Pune", or "latest news about X", fetch a public, keyless source over HTTPS, such as the Wikipedia REST summary API or Open-Meteo for weather, and summarise it with the local model. Use a time limit and say "I'm offline" when there's no network. Keep `web_search` (which opens the browser) for "open a search for X"
-- [ ] Update the section 2 table
+- [x] **Timers and reminders:** "set a timer for 10 minutes", "remind me at 3 pm to call mom", "what reminders do I have", "cancel the timer". Built on `red/scheduler.py` (8.17). Times are in the local time zone; reject times in the past and anything more than 7 days ahead
+- [x] **Offline questions:** an `answer` tool for general questions ("what is Hugging Face", "explain recursion"). It makes a second local-LLM call for a short spoken answer (2 to 4 sentences). There's no cloud model
+- [x] **Online answers:** for "search the web for X and tell me", "what's the weather in Pune", or "latest news about X", fetch a public, keyless source over HTTPS, such as the Wikipedia REST summary API or Open-Meteo for weather, and summarise it with the local model. Use a time limit and say "I'm offline" when there's no network. Keep `web_search` (which opens the browser) for "open a search for X"
+- [x] Update the section 2 table
+
+Result (branch `track-g-assistant`, pushed after each item). **The session missed the 13:15 stop:** its time checks were wrong (Git Bash and PowerShell clocks disagreed), and the last item finished at about 17:35. No new work started after that was noticed; only this section was written.
+- 594 unit tests pass and 121 are skipped (worktree venv with the UI and voice requirements, `QT_QPA_PLATFORM=offscreen`).
+- With `RED_INTEGRATION=1`, 112 real-model tests pass and 1 is an expected failure (see Decisions), across `tests/test_integration_g_tools.py`, `_f_`, `_c_` and `test_integration_llm.py`.
+- `tests/test_g_online.py::test_live_sources` passed once against the real Open-Meteo, Wikipedia and Google News, with `RED_ONLINE=1`. Normal runs never use the network.
+
+**Router at 32 tools** (same scratchpad measurement as 8.15, 98 commands): the prompt is 2,749 tokens of `num_ctx` 4096, leaving about 1,100 tokens for the reply (`num_predict` is 256), so `num_ctx` stays at 4096. Accuracy is 96/98, median 0.9 to 1.2 s with the GPU shared. Before compacting, the prompt was 3,034 tokens.
 
 Decisions:
+- **Scheduler** (`red/scheduler.py`, the exact 8.17 contract):
+  - Reminders are stored in `RED_HOME\data
+eminders.json`, written atomically (temp file, then `os.replace`).
+  - One daemon thread checks every second. Due reminders wait while `on_due` is unset, so none is lost before the app wires its voice. A handler that raises doesn't stop the others.
+  - A reminder that came due while Red was closed is said on the next start as "You missed a reminder at 2:10 PM: …" if it's less than a day late; older ones are dropped.
+  - `add()` raises `ValueError` for past times, more than 7 days ahead, empty text, or more than 100 pending. `cancel()` takes an id, or the soonest reminder whose text contains the words.
+  - `default_scheduler()` creates and starts it on first use only. Building the registry doesn't touch it.
+- **Timers and reminders:**
+  - Timers say "Your 10 minute timer is done." (or "Your pasta timer is done."); reminders say "Reminder: call mom."
+  - `set_reminder` takes `time` (24-hour `HH:MM`), `day` (today, tomorrow or a weekday) or `in_minutes`.
+  - **A time with no day that has already passed today means tomorrow** ("remind me at 9 am", said in the evening). Saying "today" with a past time is rejected, as the spec asks.
+  - `cancel_reminder` takes words, "timer" or "all". With no words and only one reminder, it cancels that one; with several, it asks which.
+- **`answer`:** a second call to the same local model, with its own JSON schema (`{"answer": …}`), so it works with every backend. Markdown, links and list markers are removed and the reply is cut to 4 sentences. The Router now calls `bind_llm(llm)` on every tool that has one, so `default_registry()` still needs no arguments and `__main__` doesn't change. A real answer took 1.5 s.
+- **Online answers** (`red/tools/online.py`):
+  - Fixed https URLs only, with the user's words as one encoded query value. 6-second limit, 1 MB cap, User-Agent `Red/0.1 (local voice assistant; https://github.com/AryanLanke/Red)`. No network means "I'm offline, so I can't reach X right now"; a timeout or an HTTP error gets its own short reply.
+  - `weather`: Open-Meteo geocoding, then the forecast. **The reply is built from the numbers, not by the model,** so temperatures can't be misread. Place defaults to `RED_WEATHER_PLACE`.
+  - `look_up`: Wikipedia opensearch, then the REST page summary, summarised by the local model using only that text, and introduced as "From Wikipedia:". Disambiguation pages say the name means several things. The page URL goes to `last_details`.
+  - `news`: Google News RSS (keyless). The top 3 headlines are read as written, with their source; no model summary, so nothing is invented. Edition `RED_NEWS_EDITION` (for example `IN:en`), default `US:en`.
+  - Only the search words leave the PC.
+- **Router prompt:**
+  - Schemas are now printed as compact JSON, which saved about 380 tokens.
+  - The question rules were rewritten: `answer` for knowledge, `look_up` for "look up X" or "… and tell me", `web_search` only to open results in the browser.
+  - Two short examples were added, worded differently from the tests.
+- **Known misroutes, left visible:**
+  - "search the web for X and tell me" still goes to `web_search` (it opens the browser instead of answering aloud). The test is marked `xfail` with the reason. Rules and an example didn't fix it reliably.
+  - "search youtube for X" sometimes goes to `open_url` with the YouTube results URL. The same page opens, so the test accepts it, as with the pictures case in 8.15.
+  - Accepted as better: "look up the weather in Pune" now goes to `weather`, and "who was Alan Turing" may go to `look_up`.
 
 Integration notes:
+- **New settings:** `RED_WEATHER_PLACE` and `RED_NEWS_EDITION` (in `red/tools/online.py`). New data file: `RED_HOME\data
+eminders.json`, from `scheduler.reminders_file()`. Move them into `Settings`, and add `data` to `ensure_dirs()`.
+- Track H wires `default_scheduler().on_due` (8.17).
+- `look_up`, `news` and `list_reminders` set `last_details`, like `find_file`.
+- `answer` and `look_up` need the Router to have an LLM. In `--dry-run` or without a model, `answer` says the model isn't connected, and `look_up` reads the first sentences of the Wikipedia summary.
+- With 32 tools the prompt is about 2,750 tokens. Before adding many more tools, consider raising `num_ctx` (about 60 MB of VRAM per 1,000 tokens for the 7B model) or choosing tools in two steps.
+- `default_registry()` now has 32 tools.
 
-Manual checks for the user:
+Manual checks for the user (in `D:\RED\worktrees\c`, `.\.venv\Scripts\python.exe`, `$env:RED_HOME = "D:\RED"`, after Track H's wiring is merged):
+- Say or type "set a timer for 1 minute". After a minute, Red should say "Your 1 minute timer is done."
+- Say "remind me in 2 minutes to stretch", then quit Red and restart it after 3 minutes. It should say "You missed a reminder at …: stretch."
+- Say "what reminders do I have", then "cancel the timer".
+- Say "what is Hugging Face" and "explain recursion". Each answer should be 2 to 4 sentences.
+- Say "what's the weather in Pune" (or your city) and check it against a weather site. Say "latest news about India", then "look up the James Webb telescope".
+- With Wi-Fi off, say "what's the weather in Pune". Red should say it's offline within a few seconds.
 
 ### 8.19 Track H: integration notes and release readiness
 
