@@ -47,3 +47,39 @@ def test_the_shutdown_question_routes_to_shutdown(router):
     route = router.route("Can you help me with turning off my laptop after 3 hours?")
     assert (route.tool, route.args) == ("shutdown", {"minutes": 180})
     assert route.destructive
+
+
+# --- the conversation as context (plan.md task 6) ----------------------------------
+
+PUNISHER_TALK = ("User: Do you know Punisher web series?\n"
+                 "Red: Yes, it's the Marvel Netflix series about Frank Castle, the Punisher.")
+
+
+@pytest.mark.parametrize("said", [
+    "Can you just tell me like a summary of that movie? Can you just tell me what's that web series about?",
+    "What's that series about?",
+    "I want a big summary. You are just giving me small summary. I want kind of story thing.",
+])
+def test_that_series_means_the_one_talked_about(router, said):
+    route = router.route(said, context=PUNISHER_TALK)
+    assert route.tool in ("look_up", "answer"), route
+    args = " ".join(str(v) for v in route.args.values()).lower()
+    assert "punisher" in args or route.tool == "answer", route
+
+
+def test_context_doesnt_change_an_unrelated_command(router):
+    route = router.route("Open my downloads.", context=PUNISHER_TALK)
+    assert (route.tool, route.args) == ("open_folder", {"folder": "Downloads"})
+
+
+def test_a_big_summary_is_long(router):
+    from red.tools.assistant import Answer
+    tool = router.registry.get("answer")
+    assert isinstance(tool, Answer)
+    tool.bind_context(lambda: PUNISHER_TALK)
+    tool.set_command("Tell me the whole story of that series in detail.")
+    try:
+        reply = tool.run(question="the whole story of that series")
+    finally:
+        tool.bind_context(lambda: "")
+    assert reply.count(". ") >= 5 and "castle" in reply.lower(), reply

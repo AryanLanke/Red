@@ -111,7 +111,7 @@ class ScriptedLLM:
         self.replies = replies
 
     def complete_json(self, system, user, schema):
-        reply = self.replies[user]
+        reply = self.replies[user.rsplit("\nCommand: ", 1)[-1]]   # without the conversation
         if isinstance(reply, Exception):
             raise reply
         return json.dumps(reply)

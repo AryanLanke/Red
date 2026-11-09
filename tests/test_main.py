@@ -18,7 +18,7 @@ class ScriptedLLM:
         self.replies = replies
 
     def complete_json(self, system, user, schema):
-        return json.dumps(self.replies[user])
+        return json.dumps(self.replies[user.rsplit("\nCommand: ", 1)[-1]])   # without the conversation
 
 
 @pytest.fixture

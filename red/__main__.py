@@ -61,6 +61,9 @@ EXAMPLE_ALLOWLIST = REPO_ROOT / "allowlist.example.toml"
 EXAMPLE_REPOS = REPO_ROOT / "repos.example.toml"
 EXAMPLE_CONTACTS = REPO_ROOT / "contacts.example.toml"
 
+# Lines of the conversation the router sees, to understand "that series".
+CONTEXT_LINES = 4
+
 MUSIC_TOOLS = {"play_music", "stop_music", "pause_music", "resume_music", "next_song"}
 VOICE_HELP = ("Voice needs the voice packages. Install them with "
               "'pip install -r requirements.txt', or use 'python -m red --typed'.")
@@ -91,23 +94,30 @@ def _run(router: Router, executor: Executor, command: str, chat: Chat | None = N
             chat.remember(command, quick)
         return
     try:
-        route = router.route(command)
+        route = router.route(command, context=chat.history(CONTEXT_LINES) if chat else "")
     except (RouteError, LLMError) as e:
         print(f"  Sorry, I didn't get that. ({e})")
         return
     logging.getLogger("red.commands").info("%r -> %s", command, route.to_json())
     if not route.is_none:
         print(f"  -> {route.to_json()}")
-    reply = executor.execute(command, route)
+    talk = (lambda said, fallback: chat.reply(said, fallback=fallback)) if chat else None
+    reply = executor.execute(command, route, talk=talk)
     executor.finish()
-    if chat is not None:
-        reply = chat.reply(command, fallback=reply) if route.is_none else reply
-        if not route.is_none:
-            chat.remember(command, reply)
+    if chat is not None and not route.is_none:
+        chat.remember(command, reply)
     print(f"  Red: {reply}")
     if executor.last_details:
         for line in executor.last_details.splitlines():
             print(f"       {line}")
+
+
+def bind_conversation(registry, chat: Chat) -> None:
+    """Give tools that answer questions the conversation, so "it" and "that" make sense."""
+    for tool in registry:
+        bind = getattr(tool, "bind_context", None)
+        if callable(bind):
+            bind(chat.history)
 
 
 def _typed_loop(handle: Callable[[str], None], banner: str) -> None:
@@ -196,6 +206,7 @@ class VoiceApp:
 
         self.executor = Executor(registry, ask=with_fallback(ask, typed_fallback), log_path=log_path)
         self.chat = Chat(router.llm)        # conversation with memory, for anything that isn't a command
+        bind_conversation(registry, self.chat)
         self.listener = None
         self.notice = ""        # why the wake word is off, if it is
         self.reminders = None   # red.scheduler's Scheduler, when it exists
@@ -382,7 +393,7 @@ class VoiceApp:
             return quick, tool, asks_back(quick)
         self._state("thinking", f"“{text}”")
         try:
-            route = self.router.route(text)
+            route = self.router.route(text, context=self.chat.history(CONTEXT_LINES))
             timer.mark("route")
         except (RouteError, LLMError) as e:
             log.warning("Couldn't route %r: %s", text, e)
@@ -397,11 +408,8 @@ class VoiceApp:
             # Red paused the music only to listen. Let the tool pause it for
             # real, so it says "Paused." and not "already paused".
             player.resume()
-        last = self.executor.execute(text, route)
+        last = self.executor.execute(text, route, talk=self._talk)
         if route.is_none:
-            # Not a command: talk like a friend instead of the router's stock line.
-            self._state("thinking", "")
-            last = self.chat.reply(text, fallback=last)
             timer.mark("chat")
             again = True
         else:
@@ -417,6 +425,11 @@ class VoiceApp:
         return last, tool, again
 
     # --- helpers -------------------------------------------------------------
+
+    def _talk(self, said: str, fallback: str) -> str:
+        """Not a command: talk like a friend instead of the router's stock line."""
+        self._state("thinking", "")
+        return self.chat.reply(said, fallback=fallback)
 
     def _state(self, state: str, text: str = "") -> None:
         try:
@@ -729,6 +742,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.typed:
             reminders = attach_reminders(_print_reminder)
             chat = Chat(router.llm)
+            bind_conversation(registry, chat)
             try:
                 _typed_loop(lambda c: _run(router, executor, c, chat), "Red. Type a command, or 'quit'.")
             finally:

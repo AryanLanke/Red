@@ -95,13 +95,23 @@ class Router:
             for name, args in options
         ]}
 
-    def route(self, command: str) -> Route:
+    def route(self, command: str, context: str = "") -> Route:
+        """Route one command. `context` is the last few lines of the conversation
+        (Chat.history()), so "what's that series about?" knows which series."""
         if self.llm is None:
             raise RuntimeError("Router has no LLM")
         command = command.strip()
         if not command:
             raise RouteError("Empty command")
-        raw = self.llm.complete_json(self.system_prompt, command, self.schema)
+        user = command
+        if context.strip():
+            # In the user message, not the system prompt: with no conversation
+            # the prompt (and so routing) is exactly as before.
+            user = (f"Earlier in this conversation (only to understand words like it, that or "
+                    f"more; route only the command, and a question about something named "
+                    f"earlier goes to look_up or answer with its name):\n{context.strip()}"
+                    f"\n\nCommand: {command}")
+        raw = self.llm.complete_json(self.system_prompt, user, self.schema)
         return self.parse(raw)
 
     def parse(self, raw: str) -> Route:
