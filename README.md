@@ -108,6 +108,7 @@ You don't need exact words; these are examples.
 | Sleep | "put the computer to sleep" |
 | Lock | "lock my PC" |
 | Play music | "play some music", "play Daft Punk", "play my jazz folder" |
+| Play podcasts and videos | "play a podcast about loneliness", "play the Punisher trailer", "play lofi on YouTube" |
 | Control playback | "pause the music", "resume", "next song", "previous track", "stop the music" |
 | Change the volume | "volume up", "turn it down", "mute", "unmute", "set the volume to 30 percent" |
 | Open a Windows setting | "open Bluetooth settings", "open display settings", "check for Windows updates" |
@@ -187,7 +188,9 @@ mom = "mom@example.com"
 
 ### Music
 
-Red plays `mp3`, `ogg`, `opus`, `flac` and `wav` files from your Music folder, or from `RED_MUSIC_DIR`. It doesn't play `m4a`, `aac` or `wma`. Songs are matched by file and folder names, so "play Daft Punk" works if there's a folder or file with that name.
+Red plays `mp3`, `ogg`, `opus`, `flac` and `wav` files from your Music folder, or from `RED_MUSIC_DIR`. It doesn't play `m4a`, `aac` or `wma`. Songs are matched by file and folder names, so "play Daft Punk" works if there's a folder or file with that name. If the song isn't on your PC (or your Music folder is empty), Red plays it on YouTube instead of something random.
+
+Podcasts, videos and trailers play on YouTube: Red searches YouTube for your words, opens the first video in your browser, and says its title. Only the search words leave your PC, and no account or API key is used. If YouTube can't be read, Red opens the search results instead.
 
 ---
 

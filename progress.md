@@ -45,6 +45,7 @@ Last updated: 2026-11-08.
 | "Set a timer for 10 minutes", "remind me at 3 pm to call mom", "what reminders do I have", "cancel the timer" | Says it when it's due, even after a restart | ✅ Track G: `set_timer`, `set_reminder`, `list_reminders` and `cancel_reminder` on `red/scheduler.py`. Up to 7 days ahead; Track H wires the voice |
 | "What is Hugging Face", "explain recursion" | Answers aloud in 2 to 4 sentences, offline | ✅ Track G: `answer`, a second call to the local model |
 | "What's the weather in Pune", "latest news about India", "look up the James Webb telescope" | Fetches it online and says it; "I'm offline" with no network | ✅ Track G: `weather` (Open-Meteo), `news` (Google News headlines), `look_up` (Wikipedia, summarised by the local model) |
+| "Play a podcast about loneliness", "play the Punisher trailer", "play lofi on YouTube" | Starts the first YouTube video in the browser and says its title | ✅ `play_online` (`red/tools/youtube.py`): reads the first `videoRenderer` from the public results page, no API key; opens the results page if that fails. `play_music` hands over when the song isn't on the PC or names a podcast, video or trailer |
 | Anything else | Says it can't do that yet | New abilities arrive as tools (section 4), and the plugin system (v0.4) makes adding them easy |
 
 The safety model doesn't change as Red grows: every ability is a tool with a fixed schema, nothing the model says is run as a command, and destructive actions ask first.
