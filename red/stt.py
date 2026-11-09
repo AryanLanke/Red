@@ -10,6 +10,7 @@ of the session.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from pathlib import Path
 from typing import Callable
@@ -55,6 +56,41 @@ WHISPER_MODELS: dict[str, PinnedFiles] = {
 }
 
 COMPUTE_TYPE = {"cuda": "float16", "cpu": "int8"}
+
+# Names Whisper mishears without help ("Heiko Pilot", "Hey CD"). Given to
+# faster-whisper as hotwords: on Piper test sentences, base.en got 97% of
+# these names right with them and 87% without, in the same time
+# (progress.md 7.2). Kept short: a long prompt slows Whisper down and can
+# make it invent words.
+BASE_VOCABULARY = ("Hey Copilot", "Hey Siri", "Alexa", "OK Google", "Gemini", "YouTube",
+                   "Chrome", "Edge", "Red")
+MAX_VOCABULARY_CHARS = 250
+
+# Split forms of "Copilot" that remain even with the hotwords.
+_COPILOT = re.compile(r"\b(?:hey\s*co|heyco|heiko|haco|haeco)[\s-]*pilot\b", re.IGNORECASE)
+
+
+def command_vocabulary(*names: str) -> str:
+    """The hotwords for commands: the fixed names, then app and contact names, kept short."""
+    seen: set[str] = set()
+    words: list[str] = []
+    size = 0
+    for name in (*BASE_VOCABULARY, *names):
+        name = " ".join(str(name).split())
+        key = name.lower()
+        if not name or key in seen or len(name) > 40:
+            continue
+        if size + len(name) + 2 > MAX_VOCABULARY_CHARS:
+            break
+        seen.add(key)
+        words.append(name)
+        size += len(name) + 2
+    return ", ".join(words)
+
+
+def fix_names(text: str) -> str:
+    """'Heyco Pilot' -> 'Hey Copilot'."""
+    return _COPILOT.sub("Hey Copilot", text)
 
 # (model folder, device, compute type) -> an object with faster-whisper's transcribe()
 ModelFactory = Callable[[str, str, str], object]
@@ -189,7 +225,7 @@ class Transcriber:
         )
         # segments is a generator: decoding (and any CUDA error) happens here.
         text = " ".join(s.text.strip() for s in segments)
-        return " ".join(text.split())
+        return fix_names(" ".join(text.split()))
 
     def transcribe(self, audio) -> str:
         """16 kHz mono audio -> text. Empty audio gives an empty string."""

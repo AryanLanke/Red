@@ -2,7 +2,8 @@ import numpy as np
 import pytest
 
 import red.audio as audio
-from red.stt import WHISPER_MODELS, Transcriber
+from red.stt import (BASE_VOCABULARY, MAX_VOCABULARY_CHARS, WHISPER_MODELS, Transcriber,
+                     command_vocabulary, fix_names)
 from voice_fakes import FakeWhisper, fake_download, tone
 
 
@@ -142,3 +143,36 @@ def test_pins_are_complete():
     for spec in WHISPER_MODELS.values():
         assert "/resolve/" in spec.base_url and "/main/" not in spec.base_url
         assert all(len(a.sha256) == 64 for a in spec.files)
+
+
+# --- the command vocabulary (plan.md task 2b) -----------------------------------------
+
+def test_hotwords_reach_whisper(tmp_path):
+    def factory(path, dev, compute):
+        return FakeWhisper(path, dev, compute, text=" Compare Heiko Pilot with Hey Siri. ")
+
+    t = Transcriber(tmp_path, device="cpu", model_factory=factory, cuda_check=lambda: False,
+                    hotwords=command_vocabulary())
+    assert t.transcribe(tone(1.0)) == "Compare Hey Copilot with Hey Siri."
+    assert t._model.calls[0][1]["hotwords"].startswith("Hey Copilot, Hey Siri")
+
+
+@pytest.mark.parametrize("heard, fixed", [
+    ("Can you compare Heiko Pilot with Hey Siri", "Can you compare Hey Copilot with Hey Siri"),
+    ("compare Heyco Pilot and Alexa", "compare Hey Copilot and Alexa"),
+    ("I heard that heyco-pilot is for Windows", "I heard that Hey Copilot is for Windows"),
+    ("the co-pilot landed the plane", "the co-pilot landed the plane"),     # not the assistant
+    ("open the pilot episode", "open the pilot episode"),
+])
+def test_fix_names(heard, fixed):
+    assert fix_names(heard) == fixed
+
+
+def test_vocabulary_is_short_and_has_no_repeats():
+    words = command_vocabulary("Spotify", "spotify", "YouTube", "  Task   Manager ", "", "x" * 41,
+                               *[f"App {i}" for i in range(100)])
+    names = words.split(", ")
+    assert names[:len(BASE_VOCABULARY)] == list(BASE_VOCABULARY)
+    assert names.count("Spotify") == 1 and "spotify" not in names and names.count("YouTube") == 1
+    assert "Task Manager" in names and "x" * 41 not in names
+    assert len(words) <= MAX_VOCABULARY_CHARS
