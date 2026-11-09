@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import os
-import webbrowser
 from typing import Callable
 from urllib.parse import quote_plus, urlsplit
 
+from .. import browser as _browser
 from .. import windows as _windows
 from .base import Tool, ToolError
 
@@ -25,6 +25,10 @@ SITES = {
 }
 MAX_QUERY = 300
 
+# "open YouTube from Chrome", "search this in Edge". Unset means RED_BROWSER.
+BROWSER_ARG = {"type": "string", "enum": list(_browser.EXES),
+               "description": "Only if the user names a browser, e.g. 'in Edge' or 'from Chrome'."}
+
 
 def web_engine() -> str:
     """RED_SEARCH_ENGINE (google, bing or duckduckgo), default google."""
@@ -39,11 +43,40 @@ def search_url(query: str, site: str = "web", engine: str = "google") -> str:
     return WEB_ENGINES.get(engine, WEB_ENGINES["google"]).format(q=q)
 
 
-class WebSearch(Tool):
+def _browsers(open_browser, browsers) -> _browser.Browsers:
+    """open_browser on its own (tests, older callers) is the Windows-default opener."""
+    return browsers or _browser.Browsers(default_open=open_browser)
+
+
+def _where(asked: str | None, choice: _browser.Choice) -> tuple[str, str]:
+    """(prefix, suffix) for the reply when the user named a browser.
+
+    ("", " in Chrome") when it opened there; ("Edge isn't installed, so ", "")
+    when it isn't installed and the Windows default opened the page instead.
+    """
+    if asked not in _browser.NAMES:
+        return "", ""
+    if choice.path:
+        return "", f" in {choice.name}"
+    return f"{_browser.NAMES[asked]} isn't installed, so ", " in your default browser"
+
+
+class _BrowserTool(Tool):
+    """open_url and web_search: the browser is the one the user named, if any."""
+
+    def set_command(self, command: str) -> None:
+        self._said = command            # the user's own words (Executor)
+
+    def _named(self, asked: str | None) -> str | None:
+        return _browser.from_words(self.__dict__.pop("_said", None), asked)
+
+
+class WebSearch(_BrowserTool):
     name = "web_search"
     description = ("Open a search in the browser so the user can read the results, "
                    "including pictures, videos and places. Use site for YouTube videos, "
-                   "images, maps, news or Wikipedia.")
+                   "images, maps, news or Wikipedia. Set browser only if the user names one "
+                   "('search lofi in Edge').")
     args_schema = {
         "type": "object",
         "properties": {
@@ -51,58 +84,77 @@ class WebSearch(Tool):
                       "description": "What to search for, in the user's words."},
             "site": {"type": "string", "enum": ["web", *SITES],
                      "description": "Where to search. Default web."},
+            "browser": BROWSER_ARG,
         },
         "required": ["query"],
         "additionalProperties": False,
     }
 
-    def __init__(self, open_browser: Callable[[str], bool] = webbrowser.open,
-                 engine: Callable[[], str] = web_engine, watch: Callable | None = None):
-        self._open = open_browser
+    def __init__(self, open_browser: Callable[[str], bool] | None = None,
+                 engine: Callable[[], str] = web_engine, watch: Callable | None = None,
+                 browsers: _browser.Browsers | None = None):
+        self._browsers = _browsers(open_browser, browsers)
         self._engine = engine
         self._watch = watch
 
-    def run(self, query: str, site: str = "web") -> str:
+    def run(self, query: str, site: str = "web", browser: str | None = None) -> str:
+        browser = self._named(browser)
         query = " ".join(query.split())
         if not query:
             raise ToolError("What should I search for?")
         if site not in SITES:
             site = "web"
-        watcher = (self._watch or _windows.watch)(_windows.browser_target())
-        if not self._open(search_url(query, site, self._engine())):
+        choice = self._browsers.pick(browser)
+        # Results pages put the search words in the title: "lofi - YouTube".
+        watcher = (self._watch or _windows.watch)(_windows.browser_target(choice.exe, query))
+        if not self._browsers.open(search_url(query, site, self._engine()), choice):
             raise ToolError("I couldn't open the browser.")
         self.finish_later(watcher)
         where = "the web" if site == "web" else SITES[site][0]
-        return f"Searching {where} for {query}."
+        prefix, suffix = _where(browser, choice)
+        if prefix:
+            return f"{prefix}I searched {where} for {query}{suffix}."
+        return f"Searching {where} for {query}{suffix}."
 
 
-class OpenUrl(Tool):
+class OpenUrl(_BrowserTool):
     name = "open_url"
-    description = ("Open a website the user names in the default browser. Give a full URL "
+    description = ("Open a website the user names in the browser. Give a full URL "
                    "starting with https://, for example https://www.youtube.com for 'open "
-                   "YouTube'. Never build a search URL; use web_search to look things up.")
+                   "YouTube'. Set browser only if the user names one ('open YouTube from "
+                   "Chrome'). Never build a search URL; use web_search to look things up.")
     args_schema = {
         "type": "object",
-        "properties": {"url": {"type": "string", "pattern": "^https?://[^ ]+$", "maxLength": 2000}},
+        "properties": {
+            "url": {"type": "string", "pattern": "^https?://[^ ]+$", "maxLength": 2000},
+            "browser": BROWSER_ARG,
+        },
         "required": ["url"],
         "additionalProperties": False,
     }
 
-    def __init__(self, open_browser: Callable[[str], bool] = webbrowser.open,
-                 watch: Callable | None = None):
-        self._open = open_browser
+    def __init__(self, open_browser: Callable[[str], bool] | None = None,
+                 watch: Callable | None = None, browsers: _browser.Browsers | None = None):
+        self._browsers = _browsers(open_browser, browsers)
         self._watch = watch
 
-    def run(self, url: str) -> str:
+    def run(self, url: str, browser: str | None = None) -> str:
+        browser = self._named(browser)
         url = url.strip()
-        # The schema checks this too; check again so no other scheme ever reaches the shell.
+        # The schema checks this too; check again so no other scheme, and nothing
+        # that could pass for a command-line switch, ever reaches the browser.
         parts = urlsplit(url)
         if (parts.scheme.lower() not in {"http", "https"} or not parts.hostname
-                or any(c.isspace() or ord(c) < 32 for c in url)):
+                or not _browser.safe_url(url)):
             raise ToolError("I can only open web addresses that start with http or https.")
-        watcher = (self._watch or _windows.watch)(_windows.browser_target())
-        if not self._open(url):
+        host = parts.hostname.removeprefix("www.")
+        choice = self._browsers.pick(browser)
+        target = _windows.browser_target(choice.exe, _windows.site_name(parts.hostname))
+        watcher = (self._watch or _windows.watch)(target)
+        if not self._browsers.open(url, choice):
             raise ToolError("I couldn't open the browser.")
         self.finish_later(watcher)
-        host = parts.hostname.removeprefix("www.")
-        return f"Opening {host}."
+        prefix, suffix = _where(browser, choice)
+        if prefix:
+            return f"{prefix}I opened {host}{suffix}."
+        return f"Opening {host}{suffix}."

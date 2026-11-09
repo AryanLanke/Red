@@ -12,6 +12,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(__file__))
 from fakes import FakeAsk, FakeRunner  # noqa: E402
 
+from red.browser import from_words  # noqa: E402
 from red.config import load_settings  # noqa: E402
 from red.executor import Executor  # noqa: E402
 from red.llm import connect  # noqa: E402
@@ -58,6 +59,37 @@ def test_routes(router, command, tool, args):
     assert route.tool == tool, route
     if args is not None:
         assert route.args == args
+
+
+# The user's words from the 23:37 voice test (commands.jsonl), and naming a browser.
+@pytest.mark.parametrize("command, browser", [
+    ("Open YouTube.", None),
+    ("open YouTube", None),
+    ("open YouTube from Chrome", "chrome"),
+    ("Can you open YouTube for me from Chrome?", "chrome"),
+    ("open YouTube in Edge", "edge"),
+    ("Red you just open chrome. I told you to open YouTube", ...),   # either is fine
+])
+def test_open_youtube_and_the_browser(router, command, browser):
+    route = router.route(command)
+    assert route.tool == "open_url", route
+    assert "youtube.com" in route.args["url"], route
+    if browser is not ...:
+        # What the tool will use: the model's pick only if the user named it.
+        assert from_words(command, route.args.get("browser")) == browser, route
+
+
+@pytest.mark.parametrize("command, browser", [
+    ("search lofi in Edge", "edge"),
+    ("search the web for lofi beats in Chrome", "chrome"),
+    ("search the web for lofi beats", None),
+])
+def test_search_in_a_named_browser(router, command, browser):
+    route = router.route(command)
+    assert route.tool == "web_search", route
+    assert "lofi" in route.args["query"].lower(), route
+    assert "edge" not in route.args["query"].lower() and "chrome" not in route.args["query"].lower()
+    assert from_words(command, route.args.get("browser")) == browser, route
 
 
 def test_unclear_command_uses_none(router):
