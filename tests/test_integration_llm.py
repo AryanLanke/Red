@@ -86,9 +86,14 @@ def test_open_youtube_and_the_browser(router, command, browser):
 ])
 def test_search_in_a_named_browser(router, command, browser):
     route = router.route(command)
-    assert route.tool == "web_search", route
-    assert "lofi" in route.args["query"].lower(), route
-    assert "edge" not in route.args["query"].lower() and "chrome" not in route.args["query"].lower()
+    if route.tool == "open_url":
+        # A search page through open_url opens the same results (as in test_integration_f_tools).
+        url = route.args["url"].lower()
+        assert ("search" in url or "results" in url) and "lofi" in url, route
+    else:
+        assert route.tool == "web_search", route
+        query = route.args["query"].lower()
+        assert "lofi" in query and "edge" not in query and "chrome" not in query, route
     assert from_words(command, route.args.get("browser")) == browser, route
 
 

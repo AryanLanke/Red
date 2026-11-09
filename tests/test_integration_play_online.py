@@ -1,5 +1,5 @@
-"""Routes "play ..." commands through the real local model: YouTube things go to
-play_online, songs on this PC to play_music. Nothing is executed.
+"""Routes "play ..." commands through the real local model: every one goes to
+play_online, songs too (there's no local music). Nothing is executed.
 
 Slow and needs the model, so it only runs with RED_INTEGRATION=1.
 """
@@ -45,14 +45,18 @@ CASES = [
     # Said in the 2026-11-08 voice test (22:24 and 22:26):
     ("Can you open a podcast to me that will make my loneliness go away?", "play_online",
      query_has("podcast")),
-    # play_music sends anything with "podcast" in it online too (music.wants_online).
     ("Can you just open a podcast for me from this screen? I don't wanna watch this song. "
-     "A podcast that will make my loneliness go away.", ("play_online", "play_music"),
-     query_has("podcast")),
-    # Local music stays local (it hands over by itself when nothing matches).
-    ("play daft punk", "play_music", query_has("daft punk")),
-    ("shuffle my songs", "play_music", None),
+     "A podcast that will make my loneliness go away.", "play_online", query_has("podcast")),
+    # Songs and artists go online too (plan.md task 3, second plan).
+    ("play Believer", "play_online", query_has("believer")),
+    ("play some Arijit Singh", "play_online", query_has("arijit")),
+    ("play daft punk", "play_online", query_has("daft punk")),
+    ("shuffle my songs", "play_online", None),
 ]
+
+
+def test_play_music_is_gone(router):
+    assert "play_music" not in router.registry
 
 
 @pytest.mark.parametrize("command, tool, check", CASES)
