@@ -423,9 +423,9 @@ def test_pause_music_command_pauses_for_real(world):
 
 
 def test_small_talk_is_answered_without_the_model(world):
-    app, speaker, overlay, asked, out = make_app(world, "What are you doing right now?")
+    app, speaker, overlay, asked, out = make_app(world, "Thanks, Red.")
     app.handle("wakeword")
-    assert speaker.said == ["Just here on your PC, listening for you. What do you need?"]
+    assert speaker.said == ["You're welcome!"]
     # "thinking" once while Whisper transcribes, then straight to the answer:
     # no second "thinking" while the model works.
     assert overlay.names == ["listening", "thinking", "speaking", "idle"]

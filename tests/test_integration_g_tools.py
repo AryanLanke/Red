@@ -76,7 +76,7 @@ CASES = [
     ("explain recursion", "answer", contains("question", "recursion")),
     ("who was alan turing", ("answer", "look_up"),
      lambda a: "turing" in norm(a.get("question", a.get("topic", "")))),
-    ("how tall is mount everest", "answer", contains("question", "everest")),
+    ("how tall is mount everest", ("answer", "look_up"), contains("question", "everest")),   # both answer it
     ("search the web for hugging face", "web_search", contains("query", "hugging face")),
     ("google recursion", "web_search", contains("query", "recursion")),
     ("banana", "none", ANY),

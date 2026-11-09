@@ -22,9 +22,6 @@ EVENING = datetime(2026, 11, 9, 20, 0)
 # --- small talk ---------------------------------------------------------------
 
 @pytest.mark.parametrize("said, expected", [
-    ("What are you doing right now?", "Just here on your PC, listening for you. What do you need?"),
-    ("what are you up to", "Just here on your PC, listening for you. What do you need?"),
-    ("How are you?", "I'm doing great, thanks for asking. What can I do for you?"),
     ("Hello.", "Good morning! What can I do for you?"),
     ("Hey Red!", "Good morning! What can I do for you?"),
     ("Good evening", "Good morning! What can I do for you?"),   # greets by the clock
@@ -59,9 +56,10 @@ def test_normalize():
     assert normalize("How are you, please?") == "how are you"
 
 
-def test_small_talk_never_claims_to_see_the_screen():
-    reply = quick_reply("what are you doing right now", MORNING)
-    assert "screen" not in reply.lower()
+def test_how_are_you_goes_to_the_conversation_not_a_canned_line():
+    # The friend persona (red.chat) answers these, so they're not quick replies any more.
+    for said in ("How are you?", "What are you doing right now?", "What's going on in your mind?"):
+        assert quick_reply(said, MORNING) is None
 
 
 @pytest.mark.parametrize("said", ["No.", "Nope", "No, that's all.", "Nothing else, thanks.", "That's it", "I'm good",
