@@ -73,3 +73,43 @@ def test_both_backends_failing_reports_both(monkeypatch, settings):
 def test_every_model_has_an_ollama_tag():
     for spec in llm.MODELS.values():
         assert spec.ollama_tag
+
+
+def test_every_model_is_pinned_by_sha256():
+    for name, spec in llm.MODELS.items():
+        assert spec.revision and len(spec.revision) == 40, name
+        assert spec.files and all(len(a.sha256) == 64 for a in spec.files), name
+        assert spec.best_for, name
+
+
+def capture_post(monkeypatch, reply):
+    sent = []
+
+    def post(url, body, headers=None, timeout=120):
+        sent.append((url, body))
+        return reply
+    monkeypatch.setattr(llm, "_post_json", post)
+    return sent
+
+
+def test_qwen35_answers_without_thinking(monkeypatch):
+    sent = capture_post(monkeypatch, {"message": {"content": "{}"}})
+    spec = llm.MODELS["qwen3.5-4b"]
+    llm.OllamaClient("http://x", spec.ollama_tag, thinking=spec.thinking).complete_json("s", "u", {})
+    assert sent[0][1]["think"] is False
+    llm.OllamaClient("http://x", "qwen2.5:7b-instruct-q4_K_M").complete_json("s", "u", {})
+    assert "think" not in sent[1][1]                 # older models don't know the option
+
+
+def test_ollama_options_pass_through(monkeypatch):
+    sent = capture_post(monkeypatch, {"message": {"content": "{}"}})
+    llm.OllamaClient("http://x", "m", options={"num_gpu": 0}).complete_json("s", "u", {})
+    assert sent[0][1]["options"]["num_gpu"] == 0 and sent[0][1]["options"]["num_ctx"] == 4096
+
+
+def test_llama_server_gets_enable_thinking_false(monkeypatch):
+    sent = capture_post(monkeypatch, {"choices": [{"message": {"content": "{}"}}]})
+    llm.OpenAICompatClient("http://x/v1", "qwen3.5-4b", thinking=True).complete_json("s", "u", {})
+    assert sent[0][1]["chat_template_kwargs"] == {"enable_thinking": False}
+    llm.OpenAICompatClient("http://x/v1", "other").complete_json("s", "u", {})
+    assert "chat_template_kwargs" not in sent[1][1]

@@ -78,12 +78,53 @@ class ModelSpec:
     repo: str                 # Hugging Face GGUF, for llama-server
     revision: str
     files: tuple[Asset, ...]  # split GGUFs: first file is the one to load
+    # Qwen3.5 thinks before answering unless told not to. Red needs speed, so
+    # it always turns thinking off (Ollama "think": false; llama-server
+    # enable_thinking false).
+    thinking: bool = False
+    vision: bool = False      # Ollama can send it a screenshot (describe_screen)
+    best_for: str = ""        # one line for setup and the settings app
 
     def url(self, filename: str) -> str:
         return f"https://huggingface.co/{self.repo}/resolve/{self.revision}/{filename}"
 
 
+# Qwen publishes no GGUF repo of its own for Qwen3.5; Unsloth's is the usual
+# one. Ollama's tags are its own builds (with the vision part), pulled by tag.
 MODELS: dict[str, ModelSpec] = {
+    "qwen3.5-4b": ModelSpec(
+        ollama_tag="qwen3.5:4b-q4_K_M",
+        repo="unsloth/Qwen3.5-4B-GGUF",
+        revision="e87f176479d0855a907a41277aca2f8ee7a09523",
+        files=(
+            Asset("Qwen3.5-4B-Q4_K_M.gguf",
+                  "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4"),
+        ),
+        thinking=True, vision=True,
+        best_for="fast and smart: 4 to 6 GB GPUs, or no GPU with 16 GB of RAM",
+    ),
+    "qwen3.5-9b": ModelSpec(
+        ollama_tag="qwen3.5:9b-q4_K_M",
+        repo="unsloth/Qwen3.5-9B-GGUF",
+        revision="3885219b6810b007914f3a7950a8d1b469d598a5",
+        files=(
+            Asset("Qwen3.5-9B-Q4_K_M.gguf",
+                  "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8"),
+        ),
+        thinking=True, vision=True,
+        best_for="smartest: GPUs with 8 GB or more",
+    ),
+    "qwen3.5-2b": ModelSpec(
+        ollama_tag="qwen3.5:2b-q4_K_M",
+        repo="unsloth/Qwen3.5-2B-GGUF",
+        revision="f6d5376be1edb4d416d56da11e5397a961aca8ae",
+        files=(
+            Asset("Qwen3.5-2B-Q4_K_M.gguf",
+                  "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223"),
+        ),
+        thinking=True, vision=True,
+        best_for="lightest Qwen3.5, but slow on a CPU with Ollama 0.40 (3.3 s a command)",
+    ),
     "qwen2.5-7b-instruct-q4_k_m": ModelSpec(
         ollama_tag="qwen2.5:7b-instruct-q4_K_M",
         repo="Qwen/Qwen2.5-7B-Instruct-GGUF",
@@ -94,6 +135,7 @@ MODELS: dict[str, ModelSpec] = {
             Asset("qwen2.5-7b-instruct-q4_k_m-00002-of-00002.gguf",
                   "539cf93f78e887edea1c04e2d7d8cdaca9d01dae9c9025bcb8accbe29df3d72a"),
         ),
+        best_for="the previous default (2024), 6 GB GPUs",
     ),
     "qwen2.5-3b-instruct-q4_k_m": ModelSpec(
         ollama_tag="qwen2.5:3b-instruct-q4_K_M",
@@ -103,6 +145,7 @@ MODELS: dict[str, ModelSpec] = {
             Asset("qwen2.5-3b-instruct-q4_k_m.gguf",
                   "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d"),
         ),
+        best_for="fastest with no GPU: 1.4 s a command on a laptop CPU (2024)",
     ),
 }
 
@@ -124,6 +167,9 @@ class LLM(Protocol):
                       max_tokens: int | None = None) -> str:
         """Return the model's reply, constrained to the JSON schema.
 
+        Clients whose model can see (vision = True) also take images: a list
+        of base64 pictures that go with the user's message.
+
         Routing uses temperature 0 (the same command, the same tool); chat
         uses a little more, so Red doesn't sound like a form letter.
         max_tokens (default DEFAULT_MAX_TOKENS) is raised for long answers.
@@ -132,10 +178,11 @@ class LLM(Protocol):
 
 
 def complete(llm, system: str, user: str, schema: dict, *, temperature: float = 0.0,
-             max_tokens: int | None = None) -> str:
+             max_tokens: int | None = None, images: list[str] | None = None) -> str:
     """llm.complete_json with options, for clients (and test fakes) that may not take them."""
-    options = {k: v for k, v in (("temperature", temperature), ("max_tokens", max_tokens))
-               if v not in (None, 0.0)}
+    options = {k: v for k, v in (("temperature", temperature), ("max_tokens", max_tokens),
+                                 ("images", images))
+               if v not in (None, 0.0, [])}
     if not options:
         return llm.complete_json(system, user, schema)
     try:
@@ -165,21 +212,31 @@ def _messages(system: str, user: str) -> list[dict]:
 class OllamaClient:
     """Ollama's native /api/chat, with the JSON schema passed as `format`."""
 
-    def __init__(self, base_url: str, model: str, keep_alive: str = "5m"):
+    def __init__(self, base_url: str, model: str, keep_alive: str = "5m", *,
+                 thinking: bool = False, vision: bool = False, options: dict | None = None):
         self.base_url = base_url.rstrip("/")
         self.model, self.keep_alive = model, keep_alive
+        self.thinking = thinking          # a model that thinks unless told not to
+        self.vision = vision              # it can look at images (describe_screen)
+        self.options = dict(options or {})   # extra Ollama options, e.g. {"num_gpu": 0}
 
     def complete_json(self, system: str, user: str, schema: dict, temperature: float = 0.0,
-                      max_tokens: int | None = None) -> str:
-        data = _post_json(f"{self.base_url}/api/chat", {
+                      max_tokens: int | None = None, images: list[str] | None = None) -> str:
+        messages = _messages(system, user)
+        if images and self.vision:
+            messages[-1]["images"] = list(images)
+        body = {
             "model": self.model,
-            "messages": _messages(system, user),
+            "messages": messages,
             "format": schema,
             "stream": False,
             "keep_alive": self.keep_alive,
             "options": {"temperature": temperature, "num_predict": max_tokens or DEFAULT_MAX_TOKENS,
-                        "num_ctx": 4096},
-        })
+                        "num_ctx": 4096, **self.options},
+        }
+        if self.thinking:
+            body["think"] = False         # answer at once; thinking costs seconds
+        data = _post_json(f"{self.base_url}/api/chat", body)
         try:
             return data["message"]["content"]
         except (KeyError, TypeError) as e:
@@ -230,9 +287,11 @@ class OllamaClient:
 class OpenAICompatClient:
     """/v1/chat/completions with JSON-schema output (llama-server, LM Studio, ...)."""
 
-    def __init__(self, base_url: str, model: str, api_key: str | None = None):
+    def __init__(self, base_url: str, model: str, api_key: str | None = None, *,
+                 thinking: bool = False):
         self.base_url = base_url.rstrip("/")
         self.model, self.api_key = model, api_key
+        self.thinking = thinking
 
     def complete_json(self, system: str, user: str, schema: dict, temperature: float = 0.0,
                       max_tokens: int | None = None) -> str:
@@ -244,6 +303,8 @@ class OpenAICompatClient:
             "max_tokens": max_tokens or DEFAULT_MAX_TOKENS,
             "response_format": {"type": "json_schema",
                                 "json_schema": {"name": "route", "strict": True, "schema": schema}},
+            # llama-server reads this for Qwen3.5's chat template; others ignore it.
+            **({"chat_template_kwargs": {"enable_thinking": False}} if self.thinking else {}),
         }, headers)
         try:
             return data["choices"][0]["message"]["content"]
@@ -387,8 +448,9 @@ def connect(settings: Settings) -> tuple[LLM, ManagedServer | None]:
         server = None
         try:
             base_url, server = start_ollama(settings)
-            client = OllamaClient(base_url, _model_spec(settings.llm_model).ollama_tag,
-                                  settings.llm_keep_alive)
+            spec = _model_spec(settings.llm_model)
+            client = OllamaClient(base_url, spec.ollama_tag, settings.llm_keep_alive,
+                                  thinking=spec.thinking, vision=spec.vision)
             if not client.has_model():
                 client.pull()
             return client, server
@@ -405,4 +467,6 @@ def connect(settings: Settings) -> tuple[LLM, ManagedServer | None]:
     except (LLMError, TimeoutError, OSError) as e:
         errors.append(f"llama.cpp: {e}")
         raise LLMError("No LLM backend could start.\n  " + "\n  ".join(errors)) from e
-    return OpenAICompatClient(base_url, settings.llm_model, api_key), server
+    spec = MODELS.get(settings.llm_model)
+    return (OpenAICompatClient(base_url, settings.llm_model, api_key,
+                               thinking=bool(spec and spec.thinking)), server)
