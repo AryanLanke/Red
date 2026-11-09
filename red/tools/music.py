@@ -53,6 +53,16 @@ def wants_everything(query: str | None) -> bool:
     return words in _EVERYTHING or not _tokens(query)
 
 
+# Words that mean "this is online, not a song file": go straight to play_online.
+_ONLINE = re.compile(r"\b(?:podcasts?|videos?|trailers?|youtube|episodes?|ted talks?|talks?|"
+                     r"documentar(?:y|ies)|interviews?|live stream|livestream)\b", re.I)
+
+
+def wants_online(query: str | None) -> bool:
+    """True for "podcast about loneliness" or "Punisher trailer": never a local song."""
+    return bool(query) and _ONLINE.search(query) is not None
+
+
 def music_dir() -> Path:
     """RED_MUSIC_DIR, otherwise the user's Music folder (found through Windows,
     so a Music folder moved to OneDrive still works)."""
@@ -302,8 +312,10 @@ class _MusicTool(Tool):
 
 class PlayMusic(_MusicTool):
     name = "play_music"
-    description = ("Play music from the user's music folder: a named song, artist, album "
-                   "or genre, or shuffle all songs.")
+    description = ("Play a song, artist, album or genre the user names ('play daft punk', 'put "
+                   "on some jazz'), or shuffle all songs. Plays from this PC, or online if it "
+                   "isn't here. For podcasts, videos, trailers or anything 'on YouTube', use "
+                   "play_online.")
     args_schema = {
         "type": "object",
         "properties": {"query": {
@@ -315,24 +327,39 @@ class PlayMusic(_MusicTool):
 
     def __init__(self, player: Player | None = None, library: Library | None = None,
                  folder: Callable[[], Path] = music_dir,
-                 shuffle: Callable[[list], None] = random.shuffle):
+                 shuffle: Callable[[list], None] = random.shuffle,
+                 online: Tool | None = None):
         super().__init__(player)
         self._library = library
         self._folder = folder
         self._shuffle = shuffle
+        self._online = online      # play_online, for anything that isn't on this PC
+
+    def _hand_over(self, query: str | None, reply: str) -> str:
+        """Play it online instead of failing (or playing something random)."""
+        if self._online is None:
+            return reply
+        log.info("No local music for %r (%s); playing it online", query, reply)
+        result = self._online.run(query=query if not wants_everything(query) else "music")
+        later = self._online.take_later()
+        if later is not None:
+            self.finish_later(later)
+        return result
 
     def run(self, query: str | None = None) -> str:
+        if self._online is not None and wants_online(query):
+            return self._hand_over(query, "online")
         library = self._library or Library(self._folder())
         if not library.root.is_dir():
-            return f"I can't find your music folder at {library.root}."
+            return self._hand_over(query, f"I can't find your music folder at {library.root}.")
         tracks = library.scan()
         if not tracks:
-            return f"There's no music I can play in {library.root}."
+            return self._hand_over(query, f"There's no music I can play in {library.root}.")
 
         if not wants_everything(query):
             tracks = library.find(query, tracks)
             if not tracks:
-                return f"I couldn't find any music matching {query}."
+                return self._hand_over(query, f"I couldn't find any music matching {query}.")
         else:
             query = None
 
@@ -342,6 +369,8 @@ class PlayMusic(_MusicTool):
         try:
             first = self.player.play(tracks)
         except PlayerError as e:
+            if query:
+                return self._hand_over(query, f"I couldn't play music: {e}.")
             return f"I couldn't play music: {e}."
         if first is None:
             return "I couldn't play any of those files."
