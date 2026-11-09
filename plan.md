@@ -139,6 +139,83 @@ command (the detector would have to pass its audio to `record_command`).
 - **Check:** render every page offscreen (`QT_QPA_PLATFORM=offscreen`), look at the screenshots, and unit-test
   that saving changes only the keys on the page. Ask the user before changing their `.env`.
 
+### 7. Web search answers that ship with Red (started 2026-11-09, ahead of 2–6, at the user's request)
+**Why:** an assistant is only as good as its answers. With Wikipedia alone Red got 2 of 6 test questions
+right; with the web, 5 of 6 (progress.md, commit cd11878). Users must not have to install anything themselves.
+**Done:** `look_up` asks a local SearXNG (`red/tools/sources.py`, `RED_SEARCH_URL`, loopback only) with the
+user's own words, reads the top three pages, keeps one page per site, skips videos and social posts, and
+answers first. README "Privacy and safety" says what is sent.
+- **Step 1 (now):** say "I'm searching." while it searches. Offline: skip the web at once and answer from
+  the model's own knowledge, with no wait.
+- **Step 2:** `python -m red setup` downloads a pinned SearXNG (commit and SHA-256, like every other
+  download), makes its own venv, writes settings (loopback, JSON on, a random secret per PC) and applies the
+  Windows fix (`pwd` is Linux-only). Red starts it hidden as a `ManagedServer` child that dies with Red,
+  on a free port. If it fails to start, Red carries on with Wikipedia only and `red doctor` says why.
+- **Step 3:** the first-run question in the Red app (task 6): "Search the web for better answers? Your
+  questions' words go to search engines." Default yes.
+- **Before release:** test on clean Windows 10 and 11 PCs with Smart App Control on (SearXNG needs
+  `lxml`, `curl_cffi`, `msgspec`). Ship SearXNG's AGPL license and a link to its source and our patch;
+  Red stays MIT (check with someone who knows licensing). Offer the `pwd` fix upstream to SearXNG.
+- **Speed:** whole answer 5–8 s with the web, 2–4 s without. Keep measuring; "I'm searching." covers the wait.
+
+## Roadmap 2.0: shipping, personality and beating the competition
+
+Merged from the user's plan2.md (2026-11-09). Do these after the tasks above, in the phase order at the end.
+
+### Where Red lags and where it wins
+
+| Competitor | Where they lead (Red lags) | Where Red wins |
+|---|---|---|
+| **Braina** | Big plugin ecosystem, Spotify, maths and dictation mode | Braina is paid, closed, cloud-dependent and stiff. Red is free, local, private, with modern LLMs. |
+| **VoiceAttack** | Very reliable instant voice triggers, macros for games and apps | Rigid keywords, no conversation. Red understands natural speech. |
+| **PyGPT** | Plugins, model switching, RAG on local documents | Feels like a workbench, not a daily voice companion. |
+| **Desktop Mate (Steam)** | Charm: cute mascots on the desktop, high engagement | No intelligence, no PC control. Red has both. |
+| **Copilot / Siri** | Pre-installed, zero setup, polished | Corporate tone, cloud-dependent. Red works offline (web search optional). |
+
+### Gaps to close
+1. **Setup:** Git, Python, venv, command line and 15 GB by hand. Goal: one-line PowerShell installer and a
+   one-click `.exe`, with no Python needed by the user.
+2. **Wake word:** reliable waking, no false wakes, the command in the same breath (task 1).
+3. **Plugins:** a light structure for community tools (Spotify, media players, macros).
+4. **Personality:** Siri, Copilot and ChatGPT Voice are sterile. Most assistants, and companion apps like
+   Desktop Mate, have no real personality with brains behind it. Red's warmth and character are the edge.
+
+### Personality and mascot
+- **Persona modes:** Classic Companion (warm, casual, concise, like Windows XP's Rover), Witty / Banter
+  (sharp, light teasing, never customer-service), Minimal / Focused (one-sentence confirmations for power
+  users), and a custom system prompt in settings. Replaces "Personality: normal or opt-in casual" in Later.
+- **Visual presence, light on GPU memory:**
+  - Phase 1, the living indicator: the frosted milky-glass overlay breathes when idle, ripples when
+    listening, glows in waves when speaking (replaces "a glow that reacts to the voice" in Later).
+  - Phase 2, mascot skins: an optional corner companion (2D pixel-art or vector: a mini robot, a flame, a
+    retro companion) that sleeps, perks up at "Hey Red", thinks and talks.
+- Expressive start and stop chimes instead of system beeps.
+
+### Shipping ($0 budget)
+1. **One-line installer:** `irm https://raw.githubusercontent.com/AryanLanke/Red/main/install.ps1 | iex`.
+   It brings a portable Python, downloads the pinned dependencies, runtimes and models (SearXNG included,
+   task 7), sets `RED_HOME`, and makes shortcuts and the startup entry.
+2. **`Red-Setup.exe`** with Inno Setup or PyInstaller: Start menu entry, microphone test, then the
+   first-run window. Without a code-signing certificate, Windows warns about an unknown publisher.
+3. **Free channels:** GitHub Releases (with SHA-256 hashes), a GitHub Pages site
+   (`aryanlanke.github.io/Red`), `winget` (`winget install AryanLanke.Red`), itch.io, and SourceForge.
+
+### Phases
+- **Phase 1, core reliability:** tasks 1–5 and 7 above.
+- **Phase 2, personality and mascot:** persona switcher in `red/chat.py`; chimes; the PySide6 state widget
+  and optional mascot.
+- **Phase 3, plugins:** a drop-in folder `RED_HOME\plugins\`; tools as plain Python files with the standard
+  `Tool` schema; Spotify control (media keys first).
+- **Phase 4, public release:** `install.ps1`, the GitHub Pages site, `Red-Setup.exe`, the `winget` manifest.
+
+### For the user to decide (these clash with the Rules below)
+- **Spotify Web API** needs a Spotify account and key. The Rules allow only the user's Google account.
+  Media keys need no account.
+- **Plugins and "custom shell macros":** the Rules say never run model text as a command. Plugins must be
+  code the user installed, and the model may only pick a plugin tool and fill its checked arguments.
+- **Mascot shape:** the Rules forbid rounded edges and an outline on the glow. Does that apply to the
+  mascot too?
+
 ## Later: more for the Red app
 
 **Sections:**
@@ -149,15 +226,14 @@ command (the detector would have to pass its audio to `record_command`).
 - **Wake phrase and listening:** "Hey Red", "Yo Red", "Okay Red", "What's up Red" with voice training,
   sensitivity, hotkey, microphone, voice match on/off and re-recording.
 - **Speech-to-text:** Whisper model (`base.en` / `small.en`) and device.
-- **Personality:** normal or opt-in casual (banter that swears back).
+- **Personality:** the persona modes in Roadmap 2.0 (and the opt-in casual banter that swears back).
 - **Browser:** `RED_BROWSER` and the search engine.
+- **Web search:** on or off, with the privacy note (task 7), and whether SearXNG is running.
 - **Accounts:** Google sign-in and sign-out.
 - **General:** start with Windows (`red/startup.py`).
 
 Also later:
-- A one-click Windows installer, so users need no Python or venv. Without a code-signing certificate,
-  Windows warns about an unknown publisher.
-- A glow that reacts to the voice.
+- The one-click installer and the glow that reacts to the voice: now in Roadmap 2.0.
 - Ollama that reuses the cached prompt for Qwen3.5: check each new Ollama release (progress.md 5), and then
   Qwen3.5 can be the model for PCs with no GPU too.
 
