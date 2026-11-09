@@ -3,7 +3,8 @@ import json
 import pytest
 
 from red.router import RouteError, Router
-from red.tools import default_registry
+from red.tools import ToolRegistry, default_registry
+from red.tools.web import OpenUrl
 from red.tools.base import Tool, ToolRegistry
 
 
@@ -114,3 +115,17 @@ def test_registry_rejects_duplicates_and_reserved_name():
 
     with pytest.raises(ValueError):
         reg.add(_None())
+
+
+def test_junk_after_a_complete_call_is_ignored():
+    # Qwen3.5 on Ollama once kept writing after the call (2026-11-09 benchmark).
+    router = Router(ToolRegistry([OpenUrl(open_browser=lambda url: True)]))
+    raw = '{"tool": "open_url", "args": {"url": "https://www.youtube.com"}}\n```json\n{"tool":\n```json\n{"'
+    route = router.parse(raw)
+    assert (route.tool, route.args) == ("open_url", {"url": "https://www.youtube.com"})
+
+
+def test_junk_before_the_call_is_still_refused():
+    router = Router(ToolRegistry([OpenUrl(open_browser=lambda url: True)]))
+    with pytest.raises(RouteError):
+        router.parse('Sure! {"tool": "open_url", "args": {"url": "https://www.youtube.com"}}')

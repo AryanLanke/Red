@@ -120,6 +120,11 @@ def test_an_unknown_name_is_not_made_up(llm):
     assert "macos" not in reply.lower(), reply
 
 
+def test_read_my_screen_from_the_log(router):
+    """22:25 and the plan's task 4 list: it went to none once."""
+    assert router.route("Can you just read my screen? What's going on?").tool == "describe_screen"
+
+
 def test_unclear_command_uses_none(router):
     route = router.route("banana")
     assert route.is_none

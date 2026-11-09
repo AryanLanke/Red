@@ -35,17 +35,22 @@ Rules:
 - Use only the tools listed. Never invent tools or arguments.
 - Convert durations to the unit the tool asks for (for example "3 hours" is 180 minutes).
 - If the command is ambiguous or missing a required value, use "none" and ask a short question.
+- A repeated or corrected request ("I told you to open YouTube") is a command: use the tool. Never reply that you will do something; do it.
 - A single word or phrase with no request in it (for example "banana") is unclear: use "none".
 - Talk about Red itself (who are you, tell me about yourself, how are you, what are you thinking), feelings, personal problems, opinions or jokes: use "none". Only facts about the world go to answer.
 - Questions: a general knowledge question or "explain X" goes to answer. "Look up X" or anything ending in "and tell me" goes to look_up, which says the answer aloud. web_search only opens results in the browser ("google X", "search for X", "show me pictures of X"), and never open_url for a search.
 - Recent things: questions about products, apps, AI assistants or gadgets that may be new (from 2024 on), and "latest", "newest" or "compare" questions about products, go to look_up, so the facts come from a real source.
-- Playing: every "play X" or "put on X" (a song, artist, album, genre, podcast, video, trailer), "shuffle my songs", or just "music" or "anything", goes to play_online. "Search YouTube for X" only shows results: web_search with site youtube.
+- Playing: every "play X", "put on X" or "open a podcast/video" (a song, artist, album, genre, podcast, video, trailer), "shuffle my songs", or just "music" or "anything", goes to play_online. "Search YouTube for X" only shows results: web_search with site youtube.
 - A browser named in the command ("in Edge", "from Chrome") only fills the browser argument; it never changes the tool.
 - Pick the most specific tool: open_settings (not open_app) for a Windows Settings page; find_file (not open_folder) when the user says find, locate or where is.
 
 Examples:
 "search online for the mars rover and tell me about it" -> {{"tool": "look_up", "args": {{"topic": "mars rover"}}}}
-"find the folder named taxes" -> {{"tool": "find_file", "args": {{"name": "taxes", "kind": "folder"}}}}"""
+"find the folder named taxes" -> {{"tool": "find_file", "args": {{"name": "taxes", "kind": "folder"}}}}
+"Open YouTube." -> {{"tool": "open_url", "args": {{"url": "https://www.youtube.com"}}}}
+"Can you just read my screen? What's going on?" -> {{"tool": "describe_screen", "args": {{"question": "What's going on on my screen?"}}}}
+"open the second one" -> {{"tool": "open_found_file", "args": {{"number": 2}}}}
+"mail mom that I'll be late" -> {{"tool": "compose_mail", "args": {{"to": "mom", "subject": "Running late", "body": "I'll be late."}}}}"""
 
 
 class RouteError(ValueError):
@@ -119,9 +124,12 @@ class Router:
     def parse(self, raw: str) -> Route:
         """Validate a raw LLM reply. Raises RouteError if it isn't a valid call."""
         try:
-            data = json.loads(raw)
-        except (json.JSONDecodeError, TypeError) as e:
-            raise RouteError(f"Not valid JSON: {raw!r}") from e
+            # The first JSON value, ignoring anything after it: Qwen3.5 on Ollama
+            # sometimes keeps writing ("```json {...") after a complete call.
+            # What it wrote first is still checked against the schema below.
+            data, _end = json.JSONDecoder().raw_decode(raw.strip())
+        except (json.JSONDecodeError, TypeError, AttributeError) as e:
+            raise RouteError(f"Not valid JSON: {str(raw)[:300]!r}") from e
         if not isinstance(data, dict) or not isinstance(data.get("tool"), str):
             raise RouteError(f"Missing 'tool': {raw!r}")
 
