@@ -83,7 +83,7 @@ def test_prompt_lists_every_tool(router):
 
 def test_route_passes_schema_to_llm():
     llm = FakeLLM(call("open_folder", folder="Downloads"))
-    r = Router(default_registry(), llm)
+    r = Router(default_registry(), llm, fast=None)       # the model's path
     route = r.route("  open downloads  ")
     assert route.tool == "open_folder"
     system, user, schema = llm.calls[0]

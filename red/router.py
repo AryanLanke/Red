@@ -8,12 +8,17 @@ model or server that ignores the schema still can't trigger a bad call.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
+from typing import Callable
 
 from jsonschema import Draft202012Validator
 
+from . import fastpath as _fastpath
 from .llm import LLM
 from .tools.base import ToolRegistry
+
+log = logging.getLogger(__name__)
 
 NONE_TOOL = "none"
 _NONE_ARGS = {
@@ -72,9 +77,13 @@ class Route:
 
 
 class Router:
-    def __init__(self, registry: ToolRegistry, llm: LLM | None = None):
+    def __init__(self, registry: ToolRegistry, llm: LLM | None = None, *,
+                 fast: Callable[[str], dict | None] | None = _fastpath.match):
         self.registry = registry
         self.llm = llm
+        # Clear, common commands ("open YouTube", "pause") skip the model
+        # (red/fastpath.py). None turns that off.
+        self.fast = fast
         # Tools that need the local model themselves (answers, summaries) get it here,
         # so default_registry() needs no arguments.
         if llm is not None:
@@ -105,11 +114,16 @@ class Router:
     def route(self, command: str, context: str = "") -> Route:
         """Route one command. `context` is the last few lines of the conversation
         (Chat.history()), so "what's that series about?" knows which series."""
-        if self.llm is None:
-            raise RuntimeError("Router has no LLM")
         command = command.strip()
         if not command:
             raise RouteError("Empty command")
+        call = self.fast(command) if self.fast is not None else None
+        if call is not None and call.get("tool") in self.registry:
+            route = self.parse(json.dumps(call))      # the same checks as a model's call
+            log.info("Fast path: %r -> %s", command, route.to_json())
+            return route
+        if self.llm is None:
+            raise RuntimeError("Router has no LLM")
         user = command
         if context.strip():
             # In the user message, not the system prompt: with no conversation
