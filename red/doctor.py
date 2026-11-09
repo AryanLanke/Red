@@ -25,7 +25,7 @@ PACKAGES = {
     "core": ("jsonschema", "dotenv"),
     "voice": ("numpy", "sounddevice", "faster_whisper", "ctranslate2", "piper", "onnxruntime",
               "openwakeword", "pynput"),
-    "ui": ("PySide6", "pygame"),
+    "ui": ("PySide6",),
 }
 INSTALL_FIX = "pip install -r requirements.txt (in Red's venv)"
 
@@ -83,14 +83,14 @@ def check_packages(sys_: System) -> list[Check]:
     out = []
     for group, names in PACKAGES.items():
         missing = [n for n in names if _has(sys_, n) is False]
-        label = {"core": "Core packages", "voice": "Voice packages", "ui": "Overlay and music packages"}[group]
+        label = {"core": "Core packages", "voice": "Voice packages", "ui": "Overlay packages"}[group]
         if not missing:
             out.append(Check(OK, label))
         else:
             status = FAIL if group == "core" else WARN
             what = {"core": "Red can't run",
                     "voice": "only typed mode works (python -m red --typed)",
-                    "ui": "no status window (Windows notifications instead) and no music"}[group]
+                    "ui": "no status window (Windows notifications instead)"}[group]
             out.append(Check(status, f"{label} missing: {', '.join(missing)}; {what}", INSTALL_FIX))
     return out
 

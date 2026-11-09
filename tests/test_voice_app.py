@@ -89,23 +89,6 @@ class FakeOverlay:
         return [s for s, _ in self.states]
 
 
-class FakePlayer:
-    def __init__(self, playing=True):
-        self.current = Path("song.mp3") if playing else None
-        self.paused = False
-        self.calls = []
-
-    def pause(self):
-        self.calls.append("pause")
-        self.paused = True
-        return True
-
-    def resume(self):
-        self.calls.append("resume")
-        self.paused = False
-        return True
-
-
 class ScriptedLLM:
     def __init__(self, replies):
         self.replies = replies
@@ -149,7 +132,7 @@ COMMANDS = {
 @pytest.fixture
 def world(tmp_path, monkeypatch):
     for name in ("RED_HOTKEY", "RED_WAKEWORD", "RED_WAKEWORD_THRESHOLD", "RED_WHISPER_DEVICE",
-                 "RED_WHISPER_MODEL", "RED_PIPER_VOICE", "RED_MIC_DEVICE", "RED_MUSIC_DIR",
+                 "RED_WHISPER_MODEL", "RED_PIPER_VOICE", "RED_MIC_DEVICE",
                  "RED_LLM_URL", "RED_LLM_BACKEND", "RED_LLM_GPU", "RED_LLM_MODEL"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("RED_FOLLOW_UP_SECONDS", "0")   # one exchange per trigger, unless a test asks
@@ -166,7 +149,7 @@ def world(tmp_path, monkeypatch):
 
 
 def make_app(world, *texts, answers=("no",), audio_size=16000, ask_error=None, typed=None,
-             player=None, transcriber=None, fail_wakeword=False, settings=None,
+             transcriber=None, fail_wakeword=False, settings=None,
              attach=lambda on_due: None):
     speaker = FakeSpeaker()
     spoken = FakeAsk(*answers)
@@ -193,7 +176,7 @@ def make_app(world, *texts, answers=("no",), audio_size=16000, ask_error=None, t
     out = []
     app = cli.VoiceApp(settings or world["settings"], Router(world["registry"], world["llm"]),
                        world["registry"], voice, overlay, typed_fallback=typed or FakeAsk(),
-                       music_player=lambda: player, log_path=world["home"] / "commands.jsonl",
+                       log_path=world["home"] / "commands.jsonl",
                        out=out.append, attach=attach)
     return app, speaker, overlay, asked, out
 
@@ -281,27 +264,6 @@ def test_repo_details_go_to_overlay_and_log(world):
     assert speaking.startswith("1 of 2 repos needs attention.") and "red: 2 unpushed" in speaking
     assert speaker.said == ["1 of 2 repos needs attention."]   # details are shown, not spoken
     assert log_lines(world)[0]["details"] == "red: 2 unpushed commits\nnotes: clean"
-
-
-def test_music_paused_while_listening_and_resumed(world):
-    player = FakePlayer()
-    app, *_ = make_app(world, "Open my downloads.", player=player)
-    app.handle("hotkey")
-    assert player.calls == ["pause", "resume"]
-
-
-def test_music_not_resumed_after_a_music_command(world):
-    player = FakePlayer()
-    app, *_ = make_app(world, "Stop the music.", player=player)
-    app.handle("hotkey")
-    assert player.calls == ["pause"]
-
-
-def test_no_music_playing_is_left_alone(world):
-    player = FakePlayer(playing=False)
-    app, *_ = make_app(world, "Open my downloads.", player=player)
-    app.handle("hotkey")
-    assert player.calls == []
 
 
 def test_listener_gets_settings(world):
@@ -397,30 +359,6 @@ def test_pretty_hotkey(hotkey, text):
 def test_pretty_wakeword():
     assert cli.pretty_wakeword("hey_red") == "Hey Red"
     assert cli.pretty_wakeword("D:\\models\\hey_red_v0.1.onnx") == "Hey Red"
-
-
-class FakePauseMusic(Tool):
-    name = "pause_music"
-    description = "Pause music"
-    args_schema = {"type": "object", "properties": {}, "additionalProperties": False}
-
-    def __init__(self, player):
-        self.player = player
-
-    def run(self):
-        if self.player.pause():
-            return "Paused."
-        return "The music is already paused."
-
-
-def test_pause_music_command_pauses_for_real(world):
-    player = FakePlayer()
-    world["registry"].add(FakePauseMusic(player))
-    world["llm"].replies["Pause the music."] = {"tool": "pause_music", "args": {}}
-    app, speaker, *_ = make_app(world, "Pause the music.", player=player)
-    app.handle("hotkey")
-    assert speaker.said == ["Paused."]
-    assert player.calls == ["pause", "resume", "pause"] and player.paused
 
 
 def test_small_talk_is_answered_without_the_model(world):

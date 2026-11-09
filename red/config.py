@@ -76,7 +76,6 @@ class Settings:
     whisper_device: str = DEFAULT_WHISPER_DEVICE
     piper_voice: str = DEFAULT_PIPER_VOICE
     mic_device: str | None = None
-    music_dir: Path | None = None
     search_engine: str = "google"
     browser: str = DEFAULT_BROWSER
     overlay: str = DEFAULT_OVERLAY
@@ -172,7 +171,6 @@ def load_settings(home: Path | None = None) -> Settings:
         threshold = -1.0
     if not 0.0 < threshold < 1.0:
         raise ValueError(f"RED_WAKEWORD_THRESHOLD must be between 0 and 1, got {threshold_text!r}")
-    music_dir = _env("RED_MUSIC_DIR")
     # Like web_search itself: an unknown engine means Google, not an error.
     engine = (_env("RED_SEARCH_ENGINE") or "google").lower()
     if engine not in SEARCH_ENGINE_CHOICES:
@@ -208,7 +206,6 @@ def load_settings(home: Path | None = None) -> Settings:
         whisper_device=whisper_device,
         piper_voice=_env("RED_PIPER_VOICE") or DEFAULT_PIPER_VOICE,
         mic_device=_env("RED_MIC_DEVICE"),
-        music_dir=Path(os.path.expandvars(music_dir)).expanduser() if music_dir else None,
         search_engine=engine,
         browser=browser,
         overlay=overlay,

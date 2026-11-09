@@ -64,7 +64,6 @@ EXAMPLE_CONTACTS = REPO_ROOT / "contacts.example.toml"
 # Lines of the conversation the router sees, to understand "that series".
 CONTEXT_LINES = 4
 
-MUSIC_TOOLS = {"play_music", "stop_music", "pause_music", "resume_music", "next_song"}
 # Tools that tell you something. After their answer Red asks if you want
 # more and keeps listening; after an action it goes quiet.
 INFO_TOOLS = frozenset({"answer", "look_up", "weather", "news", "describe_screen"})
@@ -219,7 +218,7 @@ class VoiceApp:
     """Hotkey or wake word -> listen -> transcribe -> route -> confirm aloud -> run -> answer aloud."""
 
     def __init__(self, settings: Settings, router: Router, registry, voice: Voice, overlay, *,
-                 typed_fallback: Ask = typed_ask, music_player: Callable[[], object] | None = None,
+                 typed_fallback: Ask = typed_ask,
                  log_path: Path | None = None, out: Callable[[str], None] = print,
                  attach: Callable[[Callable[[str], None]], object] | None = None):
         self.settings = settings
@@ -227,7 +226,6 @@ class VoiceApp:
         self.voice = voice
         self.overlay = overlay
         self.out = out
-        self._music_player = music_player or _active_music_player
         self._attach = attach  # None: attach_reminders, looked up when run() starts
         spoken = voice.make_ask(voice.speaker, voice.transcriber)
 
@@ -289,7 +287,6 @@ class VoiceApp:
         while speaking so Red doesn't hear itself.
         """
         with self._turn:
-            player = self._pause_music()
             try:
                 self.out(f"Red (reminder): {text}")
                 self._state("speaking", text)
@@ -300,11 +297,6 @@ class VoiceApp:
                 else:
                     self._speak(text)
             finally:
-                if player is not None:
-                    try:
-                        player.resume()
-                    except Exception:  # noqa: BLE001
-                        log.exception("Couldn't resume the music")
                 self._state("idle", text)
 
     def shutdown(self) -> None:
@@ -341,12 +333,11 @@ class VoiceApp:
 
     def _handle(self, source: str) -> None:
         """One conversation: a command, then follow-ups until you say you're done."""
-        player = self._pause_music()
         tool = None
         last = ""
         try:
             for turn in range(MAX_FOLLOW_UPS + 1):
-                last, tool, again = self._exchange(player, tool, follow_up=bool(turn))
+                last, tool, again = self._exchange(tool, follow_up=bool(turn))
                 if not again or self.settings.follow_up_seconds <= 0:
                     break
         except Exception as e:  # noqa: BLE001 - one bad command must not stop Red
@@ -355,11 +346,6 @@ class VoiceApp:
             self._state("error", f"{last} ({e})")
             self._speak(last)
         finally:
-            if player is not None and tool not in MUSIC_TOOLS:
-                try:
-                    player.resume()
-                except Exception:  # noqa: BLE001
-                    log.exception("Couldn't resume the music")
             self._state("idle", last)
 
     def _record(self, follow_up: bool):
@@ -388,7 +374,7 @@ class VoiceApp:
             return audio, heard["text"], heard["seconds"]
         return audio, None, 0.0
 
-    def _exchange(self, player, tool, *, follow_up: bool):
+    def _exchange(self, tool, *, follow_up: bool):
         """Listen once and answer. Returns (last reply, tool, whether to keep listening)."""
         self._state("listening", "Listening...")
         self.voice.chime()
@@ -442,10 +428,6 @@ class VoiceApp:
         tool = route.tool
         if tool == "check_repos":
             self._state("thinking", "Checking your repos...")
-        if tool == "pause_music" and player is not None:
-            # Red paused the music only to listen. Let the tool pause it for
-            # real, so it says "Paused." and not "already paused".
-            player.resume()
         last = self.executor.execute(text, route, talk=self._talk)
         if route.is_none:
             timer.mark("chat")
@@ -508,16 +490,6 @@ class VoiceApp:
         if worker is not None:
             worker.join(LATER_WAIT_SECONDS)
 
-    def _pause_music(self):
-        """Pause music while Red listens and talks. Returns the player if it was paused."""
-        try:
-            player = self._music_player()
-            if player is not None and player.current is not None and not player.paused \
-                    and player.pause():
-                return player
-        except Exception:  # noqa: BLE001
-            log.exception("Couldn't pause the music")
-        return None
 
 
 class Timing:
@@ -583,14 +555,6 @@ def attach_reminders(on_due: Callable[[str], None]):
 
 def _print_reminder(text: str) -> None:
     print(f"\n  Red (reminder): {text}\n> ", end="", flush=True)
-
-
-def _active_music_player():
-    try:
-        from .tools.music import active_player
-    except ImportError:
-        return None
-    return active_player()
 
 
 def _keep_alive_is_zero(keep_alive: str) -> bool:

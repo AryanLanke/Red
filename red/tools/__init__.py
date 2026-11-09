@@ -5,10 +5,9 @@ from .base import Tool, ToolRegistry
 from .files import FindFile, OpenFoundFile
 from .git_sync import CheckRepos
 from .mail import ComposeMail
-from .music import PlayMusic, StopMusic
 from .online import LookUp, News, Weather
 from .quick import (EmptyRecycleBin, LockPC, NextMedia, OpenSettings, PauseMedia, PreviousTrack,
-                    ResumeMedia, SleepPC, TakeScreenshot, TellStatus, Volume)
+                    ResumeMedia, SleepPC, StopMedia, TakeScreenshot, TellStatus, Volume)
 from .reminders import CancelReminder, ListReminders, SetReminder, SetTimer
 from .screen import DescribeScreen
 from .system import CancelShutdown, OpenApp, OpenFolder, Restart, Shutdown
@@ -17,16 +16,14 @@ from .youtube import PlayOnline
 
 
 def default_registry() -> ToolRegistry:
-    # The music tools share one player, created on the first play. Pause, resume
-    # and next fall back to the media keys when Red's own player is idle.
-    # play_music hands over to play_online when the song isn't on this PC.
-    online = PlayOnline()
+    # No local music: every "play ..." goes to play_online (YouTube), and pause,
+    # resume, next, previous and stop are the media keys, which control it.
     return ToolRegistry([
         OpenFolder(), OpenApp(), OpenUrl(), WebSearch(), Answer(), DescribeScreen(),
         LookUp(), Weather(), News(),
         FindFile(), OpenFoundFile(), ComposeMail(),
         Shutdown(), Restart(), CancelShutdown(), SleepPC(), LockPC(),
-        PlayMusic(online=online), online, StopMusic(), PauseMedia(), ResumeMedia(), NextMedia(), PreviousTrack(),
+        PlayOnline(), StopMedia(), PauseMedia(), ResumeMedia(), NextMedia(), PreviousTrack(),
         Volume(), OpenSettings(), TellStatus(), TakeScreenshot(), EmptyRecycleBin(),
         SetTimer(), SetReminder(), ListReminders(), CancelReminder(),
         CheckRepos(),

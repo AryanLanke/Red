@@ -5,7 +5,7 @@ import threading
 import types
 
 from red import __main__ as cli
-from test_voice_app import FakeListener, FakePlayer, make_app, world  # noqa: F401 (fixture)
+from test_voice_app import FakeListener, make_app, world  # noqa: F401 (fixture)
 
 
 class FakeScheduler:
@@ -51,16 +51,14 @@ def test_voice_mode_attaches_and_detaches(world):
     assert sched.on_due is None          # cleared on shutdown
 
 
-def test_announce_speaks_with_wakeword_paused_and_music_paused(world):
-    player = FakePlayer()
-    app, speaker, overlay, _, out = make_app(world, player=player)
+def test_announce_speaks_with_wakeword_paused(world):
+    app, speaker, overlay, _, out = make_app(world)
     app.start_listener()
     app.announce("Time to call mom.")
     assert speaker.said == ["Time to call mom."]
     assert app.listener.pauses == 1
     assert ("speaking", "Time to call mom.") in overlay.states
     assert overlay.states[-1] == ("idle", "Time to call mom.")
-    assert player.calls == ["pause", "resume"]
     assert "Red (reminder): Time to call mom." in out
 
 
