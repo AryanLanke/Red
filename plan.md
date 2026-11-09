@@ -62,7 +62,11 @@ sentence. **Not yet tried by the user:** the Google sign-in, voice match, and cu
 
 ## Tasks, in order
 
-### 1. Make "Hey Red" wake reliably
+### 1. ✅ (mostly) Make "Hey Red" wake reliably
+**Done (2026-11-09):** repeats collapsed, "Hey Red, <command>" wakes, `python -m red wake-test`, peak loudness
+in the log. Details and Piper results in progress.md 7.2. **Left:** (a) the user must try it by voice and, if
+it still fails, send the `wake-test` output; (b) the words after "Hey Red" in one breath are not yet the
+command (the detector would have to pass its audio to `record_command`).
 **Why:** this is the first thing the user does, and it failed in the whole test.
 - In `match_score` (`red/wakeword.py`), collapse repeats before counting words: "hey red red red" and
   "hey red, hey red" become "hey red".
