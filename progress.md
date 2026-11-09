@@ -227,6 +227,24 @@ projects = 'D:\Projects'
 - Piper voice models live under `RED_HOME\models\piper`, pinned and checksum-verified with `red.downloads.download`.
 - Spoken confirmation: Red speaks the question, records the answer, and passes the transcript to the same yes check as typed input.
 
+#### Speed (2026-11-08, plan.md task 5)
+
+Every command writes a `Timing` line to `red.log`: listen, transcribe, route, act (or chat), speak, and how long after you stopped talking the action ran and the reply ended.
+
+- **End of speech:** after a 0.8 s pause (`RED_QUICK_END_SILENCE`) Red transcribes what it has. If `smalltalk.sounds_finished()` says it's a whole sentence, recording stops and that transcript is used, so nothing is transcribed twice. After "and", "um", "the" or a comma it waits the full `RED_END_SILENCE` (1.5 s).
+- **Reply while launching:** tools hand slow follow-through (waiting for the window, bringing it to the front) to `Tool.finish_later()`, which runs while Red speaks.
+- **Whisper base.en against small** (48 clips: 12 of Red's real commands from the log, read by 4 Piper voices; CPU int8, beam 5, VAD on). Not the owner's voice, so accuracy is only indicative:
+
+  | Model | Word errors | Median time | Slowest |
+  |---|---|---|---|
+  | small | 8.7% | 1.36 s | 2.81 s |
+  | base.en | 8.7% | 0.42 s | 0.45 s |
+  | tiny.en | 9.9% | 0.23 s | 0.26 s |
+
+  Most "errors" were `3pm` for "3 pm" and place names (Pune). `small` with beam 1 is no faster (1.31 s): the encoder is the cost. This PC now uses `base.en` (`RED_WHISPER_MODEL` in `D:\RED\config\.env`); the code default stays `small`. The wake check already uses `tiny.en` on the owner's real voice, and its transcripts in `red.log` are good.
+- **Routing** with the model warm: 0.81 to 0.99 s for short commands (12.9k-character system prompt, cached by Ollama).
+- **Budget for "open Edge"** after you stop talking: 0.8 s pause + 0.4 s transcribe + 0.85 s route + 0.06 s launch, about 2.1 s (it was about 3.7 s: 1.5 s pause + 1.3 s + 0.85 s). Check the `Timing` lines after the next voice test.
+
 ### 7.3 Overlay (Track C)
 
 - PySide6. Frameless, always on top, translucent, and doesn't take keyboard focus. Sits in the bottom-right corner of the primary screen.
