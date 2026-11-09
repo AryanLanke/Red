@@ -38,6 +38,8 @@ bin/
 
 # --- Audio ---
 *.wav
+# Synthetic Piper clips for the voice-match tests (no one's real voice).
+!tests/fixtures/voice/*.wav
 *.mp3
 *.flac
 *.ogg
