@@ -56,7 +56,8 @@ the whole job**, otherwise the user does it themselves.
   `red/tools/system.py`, `red/tools/web.py` and `red/tools/apps.py`.
 - Manual check: run hidden (`python -m red background`), say "open Edge". Edge appears in front.
 
-### 5. Make it faster end to end
+### 5. ✅ Make it faster end to end (measure again after the next voice test)
+**Done:** `Timing` lines in `red.log`, the 0.8 s quick end of speech, the reply spoken while launching, and `base.en` on this PC (numbers in progress.md 7.2). Expected "open Edge": about 2.1 s after you stop talking, down from about 3.7 s.
 - Measure first: log the time for each stage (wake → recorded → transcribed → routed → spoken → done)
   in `red.log`.
 - Then improve:
