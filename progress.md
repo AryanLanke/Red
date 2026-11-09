@@ -1264,7 +1264,12 @@ The doctor should show no ❌. Expect a ⚠️ for any of `allowlist.toml`, `rep
 ## 12. Future plans
 
 - **Next for the voice experience (asked for 2026-11-08):**
-  - **A settings app:** a small window to change the voice, wake word, glow, microphone and follow-ups, with no `.env` editing.
+  - **A settings app (Red's own app):** a window to change everything without editing `.env`:
+    - **Wake phrases you choose:** "Hey Red", "Yo Red", "Okay Red", "What's up Red" (any greeting + "Red"), switched on and off in the app.
+    - **Voice training in the app:** the `voice-setup` flow (say the phrase several times, like "Hey Siri"), for every wake phrase you turn on.
+    - **Voices:** several Piper voices to pick from, female and male.
+    - **Personality:** a normal mode and an opt-in casual mode that talks the way you talk, including swearing back when you swear at it (friendly banter, only for its owner, off by default).
+    - The glow, microphone, follow-ups and hotkey.
   - **Owner voice match:** answer only your voice, like "Hey Siri". Needs a speaker-embedding model; `voice-setup` already records the samples it would learn from.
   - **Glow reacting to your voice**, and "Hey Red, open Downloads" in one breath.
   - **A more natural conversation:** better replies to chat, and tone when the user is upset.
