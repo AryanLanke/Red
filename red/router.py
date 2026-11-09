@@ -138,6 +138,8 @@ class Router:
         if not command:
             raise RouteError("Empty command")
         call = self.fast(command) if self.fast is not None else None
+        if call is not None and call.get("tool") == "look_up" and context.strip():
+            call = None          # mid-conversation, "who is the actor" may mean the one just named
         if call is not None and call.get("tool") in self.registry:
             route = self.parse(json.dumps(call))      # the same checks as a model's call
             log.info("Fast path: %r -> %s", command, route.to_json())

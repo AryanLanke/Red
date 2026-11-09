@@ -91,6 +91,43 @@ def test_anything_unclear_goes_to_the_model(said):
     assert match(said) is None
 
 
+@pytest.mark.parametrize("said, topic", [
+    ("who made Siri", "Siri"),
+    ("Who is the CEO of Microsoft?", "CEO of Microsoft"),
+    ("what is Hugging Face", "Hugging Face"),
+    ("What's the latest iPhone?", "latest iPhone"),
+    ("What's Punisher about?", "Punisher"),                  # from the 2026-11-09 log
+    ("Hey Red, tell me about the James Webb telescope", "James Webb telescope"),
+    ("who invented the telephone", "telephone"),
+    ("what are black holes", "black holes"),
+])
+def test_plain_fact_questions_go_straight_to_look_up(said, topic):
+    assert match(said) == call("look_up", topic=topic)
+
+
+@pytest.mark.parametrize("said", [
+    "who are you", "what is your name", "who made you", "what are you doing right now?",
+    "what's going on in your mind right now", "what's up", "What's up Cop?",
+    "what's on my screen right now", "what is my battery", "what is the weather in Pune",
+    "what's the news today", "what is in my calendar", "what is 5 + 5", "what is 12 times 7",
+    "who made it", "what is that", "who is she", "what was the song", "what time is it now",
+    "what's happening", "what is wrong with this",
+])
+def test_personal_or_follow_up_questions_still_go_to_the_model(said):
+    result = match(said)
+    assert result is None or result["tool"] != "look_up"
+
+
+def test_mid_conversation_a_fact_question_goes_to_the_model():
+    model = Model()
+    router = Router(default_registry(), model,
+                    fast=lambda c: fp.match(c, apps=lambda n: False, folders=lambda n: False))
+    router.route("who is the lead actor")
+    assert model.calls == 0                                          # no conversation: fast
+    router.route("who is the lead actor", context="User: tell me about Punisher\nRed: ...")
+    assert model.calls == 1                                          # "the" one just named
+
+
 def test_it_is_far_under_a_millisecond_a_command():
     sentences = ["Open YouTube.", "volume up", "play Believer", "I'm feeling lonely.",
                  "search online for the mars rover and tell me about it"] * 200

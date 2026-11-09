@@ -22,6 +22,7 @@ import sys
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from typing import Callable
 from urllib.parse import quote, urlencode
 
@@ -407,6 +408,9 @@ class LookUp(_UsesLLM):
             return self._from_memory(ask, history, detail, "I'm offline, so from what I know:")
         gather = (Gather(topic, self._open, sources=default_sources(query))
                   if self._llm is not None else None)
+        # "Compare X with Y": Y's article is fetched alongside, not after the search.
+        others_pool = ThreadPoolExecutor(max_workers=1) if others and self._llm is not None else None
+        others_job = others_pool.submit(self._other_articles, others) if others_pool else None
         stream = _speech.current()
         if gather is not None and gather.asking and stream is not None:
             stream.say("I'm searching.")      # at once: the web takes a few seconds
@@ -457,7 +461,15 @@ class LookUp(_UsesLLM):
         for item in evidence:
             self.last_details += f"\n{item.source}: {item.title}" + (f"\n{item.url}" if item.url else "")
         ask = said or question.strip() or f"What is {topic}?"
-        more_details, more = self._other_articles(others)
+        if others_job is not None:
+            try:
+                more_details, more = others_job.result(timeout=TIMEOUT_SECONDS)
+            except Exception:  # noqa: BLE001 - the comparison goes ahead with what there is
+                more_details, more = [], ""
+            finally:
+                others_pool.shutdown(wait=False, cancel_futures=True)
+        else:
+            more_details, more = self._other_articles(others)
         if more_details:
             self.last_details += "\n" + "\n".join(more_details)
         blocks = []

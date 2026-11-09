@@ -98,6 +98,21 @@ _SEARCH_WEB = re.compile(r"(?:search (?:the web|online|google|the internet) for|
 _NOT_A_WEB_SEARCH = re.compile(r"\b(?:my|file|files|folder|document|pdf|tell me|explain|and|what|who|how|why)\b")
 _NOT_PLAYABLE = re.compile(r"^(?:it|this|that|the next.*|next.*|the previous.*|previous.*|again)$")
 
+# A plain fact question about a named thing goes straight to look_up: the model
+# took 1.0-1.2 s to route such questions (red.log, 2026-11-09). Anything personal,
+# about Red, about now (time, weather, news), on screen, a sum, or pointing back
+# ("who made it") is left to the model, which knows the conversation and the tools.
+_FACT = re.compile(r"(?:who (?:is|was|are|were|made|created|invented|founded|built|developed|designed|"
+                   r"owns|wrote|directed|discovered|started)|what (?:is|are|was|were)|what's|"
+                   r"tell me about|what do you know about) (.+)")
+_NOT_A_FACT = re.compile(
+    r"\b(?:my|mine|me|i|i'm|im|you|your|yours|you're|it|its|it's|this|that|these|those|they|them|"
+    r"their|he|him|his|she|her|we|us|our|here|there|red|up|time|date|day|today|tonight|tomorrow|"
+    r"yesterday|now|weather|temperature|rain|news|headlines|screen|battery|volume|playing|song|music|"
+    r"reminder|reminders|timer|alarm|email|emails|mail|inbox|calendar|meeting|meetings|event|events|"
+    r"schedule|happening|going|wrong|plan|plans|plus|minus|times|divided|multiplied|squared)\b"
+    r"|\d\s*[-+*/x×^%]\s*\d")
+
 
 def _browser(text: str) -> tuple[str, str | None]:
     """'youtube in edge' -> ('youtube', 'edge')."""
@@ -150,7 +165,7 @@ def _with_case(call: dict | None, command: str) -> dict | None:
     """Names as the user wrote them ("Edge", "Believer"): matching was done in lower case."""
     if call is None:
         return None
-    for key in ("app", "folder", "query"):
+    for key in ("app", "folder", "query", "topic"):
         value = call["args"].get(key)
         if isinstance(value, str):
             i = command.lower().replace("’", "'").find(value)
@@ -194,4 +209,10 @@ def _match(said: str, apps: Callable[[str], bool], folders: Callable[[str], bool
         if _NOT_PLAYABLE.fullmatch(query) or _BROWSER_SUFFIX.search(query):
             return None
         return _call("play_online", query=query)
+    m = _FACT.fullmatch(said)
+    if m and not _NOT_A_FACT.search(m.group(1)):          # the subject, not "tell me about"
+        topic = re.sub(r"^(?:a|an|the)\s+", "", m.group(1).strip())
+        topic = re.sub(r"\s+(?:about|all about)$", "", topic)       # "what's Punisher about"
+        if len(topic) >= 2:
+            return _call("look_up", topic=topic)
     return None

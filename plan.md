@@ -166,8 +166,11 @@ answers first. README "Privacy and safety" says what is sent.
   request; no network means an answer from memory with no request at all); page reading stops once the
   best-ranked page and one more are in; one warm-up search when SearXNG starts. First spoken sentence of the
   answer: 2.1–4.9 s, average 3.1 s (was 2.8–4.6 s, average 3.8 s).
-- **Next idea:** "compare X with Y" fetches Y's Wikipedia article only after the search (4.9 s); fetch it
-  alongside.
+- **Done:** plain fact questions ("who made Siri", "what is X", "tell me about X") skip the model's
+  routing (it took 0.9–1.0 s) through `red/fastpath.py`; personal, Red, now, screen, maths and follow-up
+  questions, and anything mid-conversation, still go to the model. Checked against every logged sentence:
+  all 6 it catches were look-ups for the model too. "Compare X with Y" fetches Y alongside the search.
+  Question to first spoken sentence, routing included: average 2.9 s (2.0–4.5 s), was 4.5 s (3.3–5.1 s).
 
 ## Roadmap 2.0: shipping, personality and beating the competition
 
