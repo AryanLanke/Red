@@ -1,0 +1,6 @@
+# Only for training a custom "Hey Red" model (scripts/train_hey_red). Red itself doesn't need these.
+# Checked to install from wheels on Windows with Python 3.11. torch from PyPI is the CPU build,
+# which is plenty for this small classifier, and it leaves the GPU to the LLM.
+-r requirements-voice.txt
+torch==2.15.0
+onnx==1.23.2
