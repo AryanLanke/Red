@@ -161,7 +161,13 @@ answers first. README "Privacy and safety" says what is sent.
   (DuckDuckGo hit CAPTCHAs, Bing was off-topic, all engines together took 2 s); Wikipedia results are read
   through its API (its pages took 1.1–2.7 s); pages get 1.5 s.
 - **Speed:** whole answer 3.5–4.8 s with the web (was 5.4–8.1 s), of which search and reading 2.1–3.2 s;
-  2–4 s without. "I'm searching." covers the wait. Next ideas: start speaking the first sentence sooner.
+  2–4 s without. "I'm searching." covers the wait.
+- **Done (2026-11-09, later):** "I'm searching." at once (Windows' `InternetGetConnectedState`, 14 ms, no
+  request; no network means an answer from memory with no request at all); page reading stops once the
+  best-ranked page and one more are in; one warm-up search when SearXNG starts. First spoken sentence of the
+  answer: 2.1–4.9 s, average 3.1 s (was 2.8–4.6 s, average 3.8 s).
+- **Next idea:** "compare X with Y" fetches Y's Wikipedia article only after the search (4.9 s); fetch it
+  alongside.
 
 ## Roadmap 2.0: shipping, personality and beating the competition
 

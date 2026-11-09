@@ -359,6 +359,41 @@ def test_read_top_pages_keeps_the_snippet_when_the_page_says_too_little():
     assert read_top_pages(found, "Siri", opener)[0].text == "snippet"
 
 
+def test_a_slow_third_page_does_not_hold_up_the_answer():
+    release = threading.Event()
+
+    class SlowThird(FakeOpener):
+        def __call__(self, req, timeout):
+            if req.full_url.startswith("https://site2.com/"):
+                release.wait(5)                     # a site that takes its time
+            return super().__call__(req, timeout)
+
+    found = [Evidence(f"site{i}.com", "Siri", "snippet", f"https://site{i}.com/") for i in range(3)]
+    opener = SlowThird({f"https://site{i}.com/": PAGE for i in range(3)})
+    start = time.perf_counter()
+    better = read_top_pages(found, "who made Siri", opener, budget=5)
+    took = time.perf_counter() - start
+    release.set()
+    assert took < 1.0                                          # didn't wait for site2
+    assert "SRI International" in better[0].text and "SRI International" in better[1].text
+    assert better[2].text == "snippet"
+
+
+def test_the_best_ranked_page_is_waited_for_even_when_two_others_are_faster():
+    release = threading.Event()
+
+    class SlowFirst(FakeOpener):
+        def __call__(self, req, timeout):
+            if req.full_url.startswith("https://site0.com/"):
+                release.wait(0.3)                   # the top result is a bit slower
+            return super().__call__(req, timeout)
+
+    found = [Evidence(f"site{i}.com", "Siri", "snippet", f"https://site{i}.com/") for i in range(3)]
+    opener = SlowFirst({f"https://site{i}.com/": PAGE for i in range(3)})
+    better = read_top_pages(found, "who made Siri", opener, budget=5)
+    assert "SRI International" in better[0].text               # read, not left as a snippet
+
+
 def test_read_top_pages_reads_only_the_top_three():
     found = [Evidence(f"site{i}.com", "Siri", "snippet", f"https://site{i}.com/") for i in range(4)]
     opener = FakeOpener({f"https://site{i}.com/": PAGE for i in range(4)})
@@ -432,9 +467,28 @@ def test_look_up_with_nothing_anywhere_still_says_so(searx_on):
 OFFLINE = urllib.error.URLError(OSError("no network"))
 
 
-def test_offline_answers_from_the_models_own_knowledge_at_once(searx_on):
+def test_no_network_answers_from_memory_at_once_without_any_request(searx_on):
     from red.speech import speaking_to
     from red.tools.assistant import ANSWER_SYSTEM
+    opener = FakeOpener({})                           # any request would fail the test
+    llm = FakeLLM("Siri is Apple's voice assistant.")
+    stream = FakeStream()
+    with speaking_to(stream):
+        reply = LookUp(llm, opener, is_connected=lambda: False).run(topic="Siri")
+    assert reply == "I'm offline, so from what I know: Siri is Apple's voice assistant."
+    assert llm.calls[0][0] == ANSWER_SYSTEM
+    assert opener.urls == [] and stream.spoken == []  # no request, no "I'm searching."
+
+
+def test_no_network_and_no_model_says_it_is_offline():
+    from red.tools.online import Offline
+    with pytest.raises(Offline):
+        LookUp(None, FakeOpener({}), is_connected=lambda: False).run(topic="Siri")
+
+
+def test_a_network_without_internet_still_falls_back_quickly(searx_on):
+    # Windows says "connected" (say, a hotel login page), but nothing loads.
+    from red.speech import speaking_to
     opener = FakeOpener({"https://": OFFLINE, f"{LOCAL}/search": HF_SEARX})
     llm = FakeLLM("Siri is Apple's voice assistant.")
     stream = FakeStream()
@@ -442,8 +496,7 @@ def test_offline_answers_from_the_models_own_knowledge_at_once(searx_on):
     with speaking_to(stream):
         reply = LookUp(llm, opener).run(topic="Siri")
     assert reply == "I'm offline, so from what I know: Siri is Apple's voice assistant."
-    assert llm.calls[0][0] == ANSWER_SYSTEM
-    assert stream.spoken == []                       # no "I'm searching." when offline
+    assert stream.spoken == ["I'm searching."]
     assert time.perf_counter() - start < 1.0         # no waiting for the web
 
 

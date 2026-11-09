@@ -26,7 +26,8 @@ import re
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import wait as wait_all
+from concurrent.futures import TimeoutError as FuturesTimeout
+from concurrent.futures import as_completed
 from dataclasses import dataclass, replace
 from functools import partial
 from html.parser import HTMLParser
@@ -42,6 +43,7 @@ BUDGET_SECONDS = 6.0        # the most the look-up waits for the other sources i
 MAX_TEXT = 700              # characters per snippet, so the model's prompt stays small
 MAX_RESULTS = 4             # web results used per look-up
 READ_PAGES = 3              # the top results whose pages are read, not just their snippets
+READ_ENOUGH = 2             # stop waiting once this many pages gave good text
 PAGE_SECONDS = 1.5          # the most the page reading waits, all pages together (most took 0.2-0.6 s)
 MAX_PASSAGES = 1100         # characters kept from each page: the paragraphs that fit the question
 MAX_PAGE_BYTES = 1_500_000
@@ -286,20 +288,33 @@ def read_top_pages(found: list[Evidence], query: str, opener: Opener,
                    budget: float = PAGE_SECONDS) -> list[Evidence]:
     """The same evidence, with the top pages' best paragraphs in place of their snippets.
 
-    Pages are read side by side. A page that is slow, blocked or not HTML keeps
-    its snippet, so this can only add to what the model sees.
+    Pages are read side by side. Once the best-ranked page is in and READ_ENOUGH
+    of them gave good text, the rest aren't waited for: one slow lower site no
+    longer holds up the answer.
+    A page that is slow, blocked or not HTML keeps its snippet, so this can only
+    add to what the model sees.
     """
     top = found[:READ_PAGES]
     pool = ThreadPoolExecutor(max_workers=len(top))
-    futures = [pool.submit(read_paragraphs, item, opener) for item in top]
-    wait_all(futures, timeout=budget)
-    better = []
-    for item, future in zip(top, futures):
-        text = ""
-        if future.done() and not future.cancelled() and future.exception() is None:
-            text = best_passages(future.result(), query)
-        better.append(replace(item, text=text) if len(text) >= 100 else item)
+    futures = {pool.submit(read_paragraphs, item, opener): i for i, item in enumerate(top)}
+    texts: dict[int, str] = {}
+    done: set[int] = set()
+    try:
+        for future in as_completed(futures, timeout=budget):
+            i = futures[future]
+            done.add(i)
+            if future.exception() is None:
+                text = best_passages(future.result(), query)
+                if len(text) >= 100:
+                    texts[i] = text
+            # The best-ranked page is always waited for (within the budget): two
+            # fast lower pages must not answer without it.
+            if 0 in done and len(texts) >= READ_ENOUGH:
+                break
+    except FuturesTimeout:
+        pass                          # the budget is spent: keep what came back
     pool.shutdown(wait=False, cancel_futures=True)
+    better = [replace(item, text=texts[i]) if i in texts else item for i, item in enumerate(top)]
     return better + found[READ_PAGES:]
 
 

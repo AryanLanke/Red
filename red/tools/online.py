@@ -18,6 +18,7 @@ import json
 import os
 import re
 import socket
+import sys
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -39,6 +40,20 @@ Opener = Callable[..., object]
 
 class Offline(ToolError):
     pass
+
+
+def connected() -> bool:
+    """Windows' own answer to "is there any network connection?" Instant and local:
+    no request leaves the PC. A connection can still lack internet (a hotel login
+    page), so a request can still fail; this only catches the plain offline case."""
+    if sys.platform != "win32":
+        return True
+    try:
+        import ctypes
+        flags = ctypes.c_ulong()
+        return bool(ctypes.windll.wininet.InternetGetConnectedState(ctypes.byref(flags), 0))
+    except Exception:  # noqa: BLE001 - when unsure, try the network as before
+        return True
 
 
 def fetch(url: str, source: str, opener: Opener = urllib.request.urlopen,
@@ -272,9 +287,11 @@ class LookUp(_UsesLLM):
         "additionalProperties": False,
     }
 
-    def __init__(self, llm=None, opener: Opener = urllib.request.urlopen):
+    def __init__(self, llm=None, opener: Opener = urllib.request.urlopen,
+                 is_connected: Callable[[], bool] | None = None):
         super().__init__(llm)
         self._open = opener
+        self._connected = is_connected        # None: connected(), looked up when used
         self.last_details = ""
 
     def _topic(self, topic: str, said: str, history: str) -> str:
@@ -382,8 +399,17 @@ class LookUp(_UsesLLM):
         # with, so the web is not asked.
         query = said or question.strip() or topic
         ask = said or question.strip() or f"What is {topic}?"
+        if not (self._connected or connected)():
+            # No network at all (Windows says so at once): don't try Wikipedia or
+            # the web, answer from the model's own knowledge right away.
+            if self._llm is None:
+                raise Offline("I'm offline, so I can't reach Wikipedia right now.")
+            return self._from_memory(ask, history, detail, "I'm offline, so from what I know:")
         gather = (Gather(topic, self._open, sources=default_sources(query))
                   if self._llm is not None else None)
+        stream = _speech.current()
+        if gather is not None and gather.asking and stream is not None:
+            stream.say("I'm searching.")      # at once: the web takes a few seconds
         title, page, extract = None, {}, ""
         wiki_error: ToolError | None = None
         try:
@@ -405,10 +431,6 @@ class LookUp(_UsesLLM):
             if gather is not None:
                 gather.cancel()
             raise
-        # Wikipedia answered, so the PC is online: now the web search is worth the wait.
-        stream = _speech.current()
-        if gather is not None and gather.asking and stream is not None and wiki_error is None:
-            stream.say("I'm searching.")
         disambiguation = page.get("type") == "disambiguation"
         if disambiguation:
             extract = ""                 # a list of meanings, not an answer

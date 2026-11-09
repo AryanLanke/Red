@@ -42,6 +42,13 @@ def _no_real_searxng(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _always_connected(monkeypatch):
+    """Look-ups behave the same whether or not the test machine is online."""
+    import red.tools.online
+    monkeypatch.setattr(red.tools.online, "connected", lambda: True)
+
+
+@pytest.fixture(autouse=True)
 def _no_real_browser(monkeypatch):
     """No test finds (and so starts) a real browser; the Windows-default opener is a fake."""
     import red.browser

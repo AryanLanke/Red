@@ -31,6 +31,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import urllib.request
 import zipfile
 from pathlib import Path
 from typing import Callable
@@ -45,6 +46,7 @@ COMMIT = "57ff753ad416b7bf27e59d72ae8c7cac93b56be4"          # 2026-11-09
 ARCHIVE_URL = f"https://github.com/searxng/searxng/archive/{COMMIT}.zip"
 ARCHIVE_SHA256 = "0b22645df495343e39f151b9e29439c6cfb51a11af32363c4cc5848366463e3e"
 START_TIMEOUT = 90.0         # loading its engines takes a few seconds; a cold disk, more
+WARM_TIMEOUT = 10.0
 WANTED = ("searx/", "requirements.txt", "LICENSE")
 
 # The Windows fix: `pwd` is only used for an error message about a cache server
@@ -213,9 +215,10 @@ class WebSearch:
     """Red's SearXNG for this run: started in the background, stopped with Red."""
 
     def __init__(self, settings: Settings, starter: Callable | None = None,
-                 environ: dict | None = None):
+                 environ: dict | None = None, opener: Callable | None = None):
         self._settings = settings
         self._starter = starter
+        self._opener = opener or urllib.request.urlopen
         self._environ = os.environ if environ is None else environ
         self._server = None
         self._stopped = False
@@ -256,6 +259,16 @@ class WebSearch:
             self._environ["RED_SEARCH_URL"] = url
             self.status = f"running at {url}"
         log.info("Web search (SearXNG) is running at %s", url)
+        self._warm(url)
+
+    def _warm(self, url: str) -> None:
+        """One throwaway search, so the engines' connections are open before the
+        user's first question (the first search took 1.9 s, later ones 0.65 s)."""
+        try:
+            with self._opener(f"{url}/search?q=hello&format=json", timeout=WARM_TIMEOUT) as r:
+                r.read(1)
+        except Exception as e:  # noqa: BLE001 - only a head start; nothing depends on it
+            log.info("Web search warm-up didn't finish: %s", e)
 
     def stop(self) -> None:
         with self._lock:

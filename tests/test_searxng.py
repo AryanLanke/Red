@@ -216,17 +216,44 @@ def mark_installed(settings):
     searxng._marker(settings).write_text(COMMIT, encoding="utf-8")
 
 
-def test_web_search_starts_in_the_background_and_sets_the_address(settings):
+class FakeWarmOpener:
+    def __init__(self, error=None):
+        self.urls, self.error = [], error
+
+    def __call__(self, url, timeout):
+        self.urls.append(url)
+        if self.error:
+            raise self.error
+        import io
+        return io.BytesIO(b"{}")
+
+
+def test_web_search_starts_in_the_background_sets_the_address_and_warms_up(settings):
     mark_installed(settings)
     server = FakeServer("searxng", [], "", None, {})
     environ = {}
-    web = WebSearch(settings, starter=lambda s: ("http://127.0.0.1:50123", server), environ=environ)
+    warm = FakeWarmOpener()
+    web = WebSearch(settings, starter=lambda s: ("http://127.0.0.1:50123", server),
+                    environ=environ, opener=warm)
     assert web.begin()
     web.thread.join(5)
     assert environ["RED_SEARCH_URL"] == "http://127.0.0.1:50123"
     assert web.status.startswith("running")
+    assert warm.urls == ["http://127.0.0.1:50123/search?q=hello&format=json"]
     web.stop()
     assert server.stopped and "RED_SEARCH_URL" not in environ
+
+
+def test_a_failed_warm_up_changes_nothing(settings):
+    mark_installed(settings)
+    server = FakeServer("searxng", [], "", None, {})
+    environ = {}
+    web = WebSearch(settings, starter=lambda s: ("http://127.0.0.1:50123", server),
+                    environ=environ, opener=FakeWarmOpener(error=OSError("engines slow")))
+    web.begin()
+    web.thread.join(5)
+    assert environ["RED_SEARCH_URL"] == "http://127.0.0.1:50123" and web.status.startswith("running")
+    web.stop()
 
 
 def test_web_search_that_fails_leaves_red_on_wikipedia(settings):
