@@ -302,7 +302,12 @@ the AI stay on the PC. Update README and AGENTS.md to say so.
 **Check:** unit tests with a fake Google client (no network), plus real-model routing. The user tests
 the sign-in by hand.
 
-### 8. Answer only the owner (voice match)
+### 8. ✅ Answer only the owner (voice match)
+**Done (2026-11-09):** `red/voice_match.py` (CAM++ ONNX on onnxruntime, numpy fbank), checked in
+`HeyRedDetector` only when the words matched; voice-setup records 10 "Hey Red"s and saves the voice and a
+personal threshold. Off by default (`RED_VOICE_MATCH=off`). On Piper voices at 0.60: no owner clip refused,
+0 to 6% of other voices let in. **The user still has to run voice-setup and try it with another person.**
+Details in progress.md 7.2.
 - `python -m red voice-setup` also records about 10 phrases from the owner and saves a voice profile in
   `RED_HOME\models\wakeword`.
 - At each "Hey Red", Red compares the voice with the owner's using a small, pinned speaker-recognition
