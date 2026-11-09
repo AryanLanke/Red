@@ -197,6 +197,8 @@ Everything you ask Red to play, songs and artists as well as podcasts, videos an
 
 **Talk to Red like a friend.** Anything that isn't a command ("what's on your mind?", "I had a rough day") gets a real answer, not a stock line, and Red remembers the conversation for a while. Ask "what's on my screen?" and Red tells you what you're looking at. After an answer Red asks whether you want to know more and keeps listening; say "no" or just stay quiet and it stops. Questions about new products, or "compare Hey Copilot with Hey Siri", are looked up on Wikipedia, and when Red doesn't know a name it says so instead of guessing. "Can you open YouTube?" just opens YouTube, like an order would. Common commands ("open YouTube", "volume up", "pause", "lock", "what time is it", "play Believer") don't wait for the language model at all, so they're done about a second after you stop talking. Only risky things (shutdown, restart, sleep, emptying the Recycle Bin) get one question first.
 
+**Long answers start right away.** Red starts speaking the first sentence while the rest is still being written, so even "tell me the whole story" begins in about two seconds. To cut Red off, say "Hey Red" (or press Ctrl+Alt+R) while it's talking: it stops and listens for what you say next.
+
 **Keeping Red running.** The microphone is only on while Red runs. `python -m red background` starts Red with no window, so closing PowerShell doesn't stop it, and `python -m red stop` stops it and turns the microphone off. `python -m red startup on` starts it when you sign in. If you'd rather have the microphone open only after you press Ctrl+Alt+R, set `RED_WAKEWORD=off`.
 
 ## Where Red keeps its files

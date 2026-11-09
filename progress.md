@@ -352,6 +352,21 @@ Every command writes a `Timing` line to `red.log`: listen, transcribe, route, ac
 - Speed: about 0.03 ms a sentence. Measured with the real `VoiceApp` (Piper audio of "Open YouTube.", real `base.en` with the pause check, the real router and action, a silent speaker): done about 1.26 s after you stop talking with the fast path (0.8 s of quiet, 0.45 s pause check, 0.00 s route, 0.01 s act), about 2.5 s through Qwen3.5 4B, and 2.65 s in the 23:37 test with the 7B. The pause check's transcription (0.45 to 0.9 s on the CPU) is now the biggest part.
 - Real model: all 149 integration cases pass through the fast path plus the model, in 64 s against 116 s for the model alone.
 
+#### Speaking while the model writes, and cutting in (2026-11-09, plan.md task 6, second plan)
+
+- **Streaming.** `OllamaClient.stream_json` and `OpenAICompatClient.stream_json` (Ollama NDJSON, or server-sent events) yield the reply as it's written. `red/speech.py` reads the `answer` or `reply` string out of the JSON as it arrives (`JsonFieldReader`, escapes split across pieces included) and stops at its closing quote, closing the connection so Ollama stops writing (that also cuts off Qwen3.5's occasional junk after the JSON). `sentences()` yields each sentence as soon as its end and a space have arrived, and keeps "Mr.", "Dr.", "U.S.", "e.g." and "8,848.86" whole. `SpeechStream` synthesizes the next sentence with Piper while the last one plays. Used by `answer`, `look_up` (it says "From Wikipedia:" first), `describe_screen` and chat, through the stream `VoiceApp` opens for each command. The schemas and system prompts are the same as before, and the tools still return the whole text, so the log, memory and typed mode don't change. After a streamed answer only the follow-up question is said.
+- **First word**, measured through the real `VoiceApp` with Qwen3.5 4B on the GPU, real Piper and a silent player that takes as long as the audio (from the end of your words, not counting the end-of-speech pause):
+
+| | Streaming | Before |
+|---|---|---|
+| "Tell me the whole story of the Punisher web series in detail" | first word at 2.17 s, then 62 s of story | 5.79 s |
+| "explain recursion" | 1.43 s | 1.84 s |
+| "I'm feeling lonely." (chat) | 1.81 s | 2.51 s |
+
+  What's left is routing these through the model (0.8 to 1.2 s), the first sentence (0.3 to 0.6 s) and Piper for it. `Timing` lines in `red.log` now say "first word at".
+- **Prompt caching.** Every system prompt is a constant (chat puts the time in the user message), and the router's conversation context goes in the user message too. Ollama's timings: Qwen2.5 7B reuses the cached router prompt (2,148 ms the first time, then 84 to 117 ms); Qwen3.5 4B re-reads its 3,500 tokens every time (336 ms, then about 200 ms each), the same limit as on the CPU (progress.md 5). On the GPU that's 0.2 s a command; nothing more can be done from Red's side with Ollama 0.40.11.
+- **Cutting in.** While Red talks (a streamed answer, chat, or any spoken reply), `VoiceApp` calls `listener.allow_interrupt(True)`: the wake word listens again, and "Hey Red" or the hotkey calls `VoiceApp.interrupt()`, which cancels the `SpeechStream` and the speaker. Red then chimes and listens for the next command at once. During recording and confirmations the wake word stays off as before, and an interrupt never starts a second command. Tested with fakes; the user should try it by voice (it relies on the laptop microphone hearing "Hey Red" over Red's own voice).
+
 ### 7.3 Overlay (Track C)
 
 - PySide6. Frameless, always on top, translucent, and doesn't take keyboard focus. Sits in the bottom-right corner of the primary screen.
