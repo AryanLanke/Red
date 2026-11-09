@@ -36,7 +36,7 @@ Rules:
 - Convert durations to the unit the tool asks for (for example "3 hours" is 180 minutes).
 - If the command is ambiguous or missing a required value, use "none" and ask a short question.
 - A single word or phrase with no request in it (for example "banana") is unclear: use "none".
-- A general question about facts or the world (who, what, why, how) goes to web_search.
+- A general knowledge question or "explain X" goes to answer. Use web_search only when the user asks to search or to see results in the browser.
 - Pick the most specific tool: web_search (not open_url) to look something up, including pictures; open_settings (not open_app) for a Windows Settings page."""
 
 
@@ -62,6 +62,13 @@ class Router:
     def __init__(self, registry: ToolRegistry, llm: LLM | None = None):
         self.registry = registry
         self.llm = llm
+        # Tools that need the local model themselves (answers, summaries) get it here,
+        # so default_registry() needs no arguments.
+        if llm is not None:
+            for tool in registry:
+                bind = getattr(tool, "bind_llm", None)
+                if callable(bind):
+                    bind(llm)
         self.schema = self._build_schema()
         self._validator = Draft202012Validator(self.schema)
         self.system_prompt = SYSTEM_PROMPT.format(tools="\n".join(
