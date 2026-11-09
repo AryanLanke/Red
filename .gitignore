@@ -4,6 +4,9 @@
 !.env.example
 credentials.json
 token.json
+google-token.json
+google-client.json
+client_secret*.json
 *.pem
 *.key
 
