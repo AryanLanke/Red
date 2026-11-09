@@ -40,8 +40,10 @@ def has(**expected):
 
 
 def contains(key, *words):
+    """key may be "question|topic": the words in any of those arguments."""
     def check(args):
-        return all(w in norm(args.get(key, "")) for w in words)
+        text = " ".join(str(args.get(k, "")) for k in key.split("|"))
+        return all(w in norm(text) for w in words)
     check.__name__ = f"contains({key}, {words})"
     return check
 
@@ -76,7 +78,7 @@ CASES = [
     ("explain recursion", "answer", contains("question", "recursion")),
     ("who was alan turing", ("answer", "look_up"),
      lambda a: "turing" in norm(a.get("question", a.get("topic", "")))),
-    ("how tall is mount everest", ("answer", "look_up"), contains("question", "everest")),   # both answer it
+    ("how tall is mount everest", ("answer", "look_up"), contains("question|topic", "everest")),   # both answer it
     ("search the web for hugging face", "web_search", contains("query", "hugging face")),
     ("google recursion", "web_search", contains("query", "recursion")),
     ("banana", "none", ANY),

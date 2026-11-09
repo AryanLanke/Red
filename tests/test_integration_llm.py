@@ -92,6 +92,29 @@ def test_search_in_a_named_browser(router, command, browser):
     assert from_words(command, route.args.get("browser")) == browser, route
 
 
+COMPARE_2341 = ("Can you compare Hey Copilot with Hey Siri and then Ok Google and just tell me "
+                "which one is better at what. I heard that Hey Copilot is for Windows only and what "
+                "they are good at. Can you tell me those things?")
+
+
+def test_the_2341_comparison_looks_the_assistants_up(router):
+    """plan.md task 2c: recent products go to look_up, all three of them."""
+    route = router.route(COMPARE_2341)
+    assert route.tool == "look_up", route
+    named = " ".join([route.args["topic"], *route.args.get("others", [])]).lower()
+    assert "copilot" in named and "siri" in named and "google" in named, route
+
+
+def test_an_unknown_name_is_not_made_up(llm):
+    """plan.md task 2c: the answer says it doesn't know, instead of inventing."""
+    from red.tools.assistant import Answer
+    tool = Answer(llm)
+    tool.set_command("What is Hey CD?")
+    reply = tool.run(question="Hey CD is a voice assistant for Windows and macOS")
+    assert "know" in reply.lower(), reply
+    assert "macos" not in reply.lower(), reply
+
+
 def test_unclear_command_uses_none(router):
     route = router.route("banana")
     assert route.is_none
