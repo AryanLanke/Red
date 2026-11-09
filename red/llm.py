@@ -116,14 +116,34 @@ def _model_spec(name: str) -> ModelSpec:
 
 # --- Clients -----------------------------------------------------------------
 
+DEFAULT_MAX_TOKENS = 256     # a tool call or a few sentences
+
+
 class LLM(Protocol):
-    def complete_json(self, system: str, user: str, schema: dict, temperature: float = 0.0) -> str:
+    def complete_json(self, system: str, user: str, schema: dict, temperature: float = 0.0,
+                      max_tokens: int | None = None) -> str:
         """Return the model's reply, constrained to the JSON schema.
 
         Routing uses temperature 0 (the same command, the same tool); chat
         uses a little more, so Red doesn't sound like a form letter.
+        max_tokens (default DEFAULT_MAX_TOKENS) is raised for long answers.
         """
         ...
+
+
+def complete(llm, system: str, user: str, schema: dict, *, temperature: float = 0.0,
+             max_tokens: int | None = None) -> str:
+    """llm.complete_json with options, for clients (and test fakes) that may not take them."""
+    options = {k: v for k, v in (("temperature", temperature), ("max_tokens", max_tokens))
+               if v not in (None, 0.0)}
+    if not options:
+        return llm.complete_json(system, user, schema)
+    try:
+        return llm.complete_json(system, user, schema, **options)
+    except TypeError as e:
+        if "unexpected keyword" not in str(e):
+            raise
+        return llm.complete_json(system, user, schema)
 
 
 def _post_json(url: str, body: dict, headers: dict | None = None, timeout: float = 120) -> dict:
@@ -149,14 +169,16 @@ class OllamaClient:
         self.base_url = base_url.rstrip("/")
         self.model, self.keep_alive = model, keep_alive
 
-    def complete_json(self, system: str, user: str, schema: dict, temperature: float = 0.0) -> str:
+    def complete_json(self, system: str, user: str, schema: dict, temperature: float = 0.0,
+                      max_tokens: int | None = None) -> str:
         data = _post_json(f"{self.base_url}/api/chat", {
             "model": self.model,
             "messages": _messages(system, user),
             "format": schema,
             "stream": False,
             "keep_alive": self.keep_alive,
-            "options": {"temperature": temperature, "num_predict": 256, "num_ctx": 4096},
+            "options": {"temperature": temperature, "num_predict": max_tokens or DEFAULT_MAX_TOKENS,
+                        "num_ctx": 4096},
         })
         try:
             return data["message"]["content"]
@@ -212,13 +234,14 @@ class OpenAICompatClient:
         self.base_url = base_url.rstrip("/")
         self.model, self.api_key = model, api_key
 
-    def complete_json(self, system: str, user: str, schema: dict, temperature: float = 0.0) -> str:
+    def complete_json(self, system: str, user: str, schema: dict, temperature: float = 0.0,
+                      max_tokens: int | None = None) -> str:
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
         data = _post_json(f"{self.base_url}/chat/completions", {
             "model": self.model,
             "messages": _messages(system, user),
             "temperature": temperature,
-            "max_tokens": 256,
+            "max_tokens": max_tokens or DEFAULT_MAX_TOKENS,
             "response_format": {"type": "json_schema",
                                 "json_schema": {"name": "route", "strict": True, "schema": schema}},
         }, headers)

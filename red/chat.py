@@ -17,6 +17,7 @@ from collections import deque
 from datetime import datetime
 from typing import Callable
 
+from .llm import complete
 from .tools.assistant import spoken
 
 log = logging.getLogger(__name__)
@@ -75,12 +76,18 @@ class Chat:
         return (f"It's {when} for the user.\nConversation so far:\n{history}\n\n"
                 f"The user now says: {said}")
 
+    def history(self, max_lines: int = 6) -> str:
+        """The last few lines of the conversation ("User: ...", "Red: ..."), or "" if it's new.
+
+        Tools and the router use it to understand "that series" or "tell me more".
+        """
+        self._expire()
+        lines = list(self.turns)[-max_lines:]
+        return "\n".join(f"{who}: {text[:400]}" for who, text in lines)
+
     def _ask(self, said: str) -> str:
-        try:
-            return self.llm.complete_json(CHAT_SYSTEM, self.prompt(said), CHAT_SCHEMA,
-                                          temperature=CHAT_TEMPERATURE)
-        except TypeError:          # a client without the temperature option
-            return self.llm.complete_json(CHAT_SYSTEM, self.prompt(said), CHAT_SCHEMA)
+        return complete(self.llm, CHAT_SYSTEM, self.prompt(said), CHAT_SCHEMA,
+                        temperature=CHAT_TEMPERATURE)
 
     def reply(self, said: str, fallback: str = "") -> str:
         """Red's answer to `said`, remembered. Falls back to `fallback` if the model fails."""
