@@ -85,6 +85,9 @@ class Settings:
     quick_end_silence_seconds: float = DEFAULT_QUICK_END_SILENCE
     max_command_seconds: float = DEFAULT_MAX_COMMAND
     follow_up_seconds: float = DEFAULT_FOLLOW_UP
+    # Answer only the owner's voice (red/voice_match.py). Off until tested.
+    voice_match: bool = False
+    voice_match_threshold: float | None = None    # None: voice-setup's own pick
 
     @property
     def bin_dir(self) -> Path:
@@ -188,6 +191,17 @@ def load_settings(home: Path | None = None) -> Settings:
     quick_end = _seconds("RED_QUICK_END_SILENCE", DEFAULT_QUICK_END_SILENCE, 0.0, 5.0)
     max_command = _seconds("RED_MAX_COMMAND_SECONDS", DEFAULT_MAX_COMMAND, 3.0, 120.0)
     follow_up = _seconds("RED_FOLLOW_UP_SECONDS", DEFAULT_FOLLOW_UP, 0.0, 30.0)
+    match_text = (_env("RED_VOICE_MATCH") or "off").lower()
+    if match_text not in {"on", "off", "1", "0", "true", "false", "yes", "no"}:
+        raise ValueError(f"RED_VOICE_MATCH must be on or off, got {match_text!r}")
+    match_threshold = _env("RED_VOICE_MATCH_THRESHOLD")
+    if match_threshold is not None:
+        try:
+            value = float(match_threshold)
+        except ValueError:
+            value = -1.0
+        if not 0.0 < value < 1.0:
+            raise ValueError(f"RED_VOICE_MATCH_THRESHOLD must be between 0 and 1, got {match_threshold!r}")
 
     # Keep model caches under RED_HOME for this process only.
     # This doesn't change any system or user environment variables.
@@ -215,6 +229,8 @@ def load_settings(home: Path | None = None) -> Settings:
         quick_end_silence_seconds=quick_end,
         max_command_seconds=max_command,
         follow_up_seconds=follow_up,
+        voice_match=match_text in {"on", "1", "true", "yes"},
+        voice_match_threshold=float(match_threshold) if match_threshold is not None else None,
     )
 
 
