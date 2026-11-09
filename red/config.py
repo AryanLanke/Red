@@ -26,6 +26,14 @@ DEFAULT_WHISPER_MODEL = "small"
 DEFAULT_WHISPER_DEVICE = "cpu"
 DEFAULT_PIPER_VOICE = "en_US-lessac-medium"
 SEARCH_ENGINE_CHOICES = ("google", "bing", "duckduckgo")
+# How Red shows what it's doing: a glow around the screen edges, the small
+# corner card, Windows notifications, or nothing.
+OVERLAY_CHOICES = ("glow", "card", "notify", "off")
+DEFAULT_OVERLAY = "glow"
+# Natural pauses mid-sentence run up to about a second, so wait longer than
+# that before deciding you've finished.
+DEFAULT_END_SILENCE = 1.5      # seconds of quiet that end a command
+DEFAULT_MAX_COMMAND = 20.0     # seconds; a command is cut off after this
 
 # Values that turn the hotkey or the wake word off.
 _OFF = {"0", "off", "none", "no", "false", "disabled"}
@@ -61,6 +69,9 @@ class Settings:
     mic_device: str | None = None
     music_dir: Path | None = None
     search_engine: str = "google"
+    overlay: str = DEFAULT_OVERLAY
+    end_silence_seconds: float = DEFAULT_END_SILENCE
+    max_command_seconds: float = DEFAULT_MAX_COMMAND
 
     @property
     def bin_dir(self) -> Path:
@@ -154,6 +165,11 @@ def load_settings(home: Path | None = None) -> Settings:
     engine = (_env("RED_SEARCH_ENGINE") or "google").lower()
     if engine not in SEARCH_ENGINE_CHOICES:
         engine = "google"
+    overlay = (_env("RED_OVERLAY") or DEFAULT_OVERLAY).lower()
+    if overlay not in OVERLAY_CHOICES:
+        raise ValueError(f"RED_OVERLAY must be one of {OVERLAY_CHOICES}, got {overlay!r}")
+    end_silence = _seconds("RED_END_SILENCE", DEFAULT_END_SILENCE, 0.3, 5.0)
+    max_command = _seconds("RED_MAX_COMMAND_SECONDS", DEFAULT_MAX_COMMAND, 3.0, 120.0)
 
     # Keep model caches under RED_HOME for this process only.
     # This doesn't change any system or user environment variables.
@@ -176,4 +192,21 @@ def load_settings(home: Path | None = None) -> Settings:
         mic_device=_env("RED_MIC_DEVICE"),
         music_dir=Path(os.path.expandvars(music_dir)).expanduser() if music_dir else None,
         search_engine=engine,
+        overlay=overlay,
+        end_silence_seconds=end_silence,
+        max_command_seconds=max_command,
     )
+
+
+def _seconds(name: str, default: float, low: float, high: float) -> float:
+    """A number of seconds between low and high. Unset means the default."""
+    text = _env(name)
+    if text is None:
+        return default
+    try:
+        value = float(text)
+    except ValueError:
+        value = float("nan")
+    if not low <= value <= high:
+        raise ValueError(f"{name} must be a number of seconds from {low:g} to {high:g}, got {text!r}")
+    return value

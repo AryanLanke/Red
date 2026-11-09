@@ -354,7 +354,8 @@ def test_main_voice_mode_end_to_end(world, monkeypatch, capsys):
     monkeypatch.setattr(cli, "attach_reminders", lambda on_due: None)
     overlay = FakeOverlay()
 
-    def fake_run_with_overlay(worker):
+    def fake_run_with_overlay(worker, style="card"):
+        assert style == "glow"   # the default look
         thread = threading.Thread(target=worker, args=(overlay,), daemon=True)
         thread.start()
         for _ in range(200):
@@ -418,3 +419,15 @@ def test_pause_music_command_pauses_for_real(world):
     app.handle("hotkey")
     assert speaker.said == ["Paused."]
     assert player.calls == ["pause", "resume", "pause"] and player.paused
+
+
+def test_small_talk_is_answered_without_the_model(world):
+    app, speaker, overlay, asked, out = make_app(world, "What are you doing right now?")
+    app.handle("wakeword")
+    assert speaker.said == ["Just here on your PC, listening for you. What do you need?"]
+    # "thinking" once while Whisper transcribes, then straight to the answer:
+    # no second "thinking" while the model works.
+    assert overlay.names == ["listening", "thinking", "speaking", "idle"]
+    # ScriptedLLM has no reply for this sentence and would raise if asked.
+    assert "Sorry, something went wrong." not in speaker.said
+    assert asked == []
