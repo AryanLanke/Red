@@ -5,6 +5,7 @@
     python -m red --dry-run                type commands, only show the tool calls
     python -m red setup                    download the LLM backend, the model and the voice models
     python -m red doctor                   check that everything Red needs is in place
+    python -m red voice-setup              say "Hey Red" a few times so Red learns your voice
     python -m red background               run Red with no window (closing PowerShell won't stop it)
     python -m red stop                     stop the hidden Red; status says whether it runs
     python -m red startup on|off           start Red when you sign in, or stop doing that
@@ -34,7 +35,7 @@ from .config import Settings, load_settings
 from .executor import Executor
 from .llm import LLMError, connect
 from .router import RouteError, Router
-from .smalltalk import is_goodbye, quick_reply
+from .smalltalk import dismissal_reply, is_goodbye, quick_reply
 from .tools import default_registry
 
 log = logging.getLogger("red")
@@ -77,7 +78,7 @@ def _show(router: Router, command: str) -> None:
 
 
 def _run(router: Router, executor: Executor, command: str) -> None:
-    quick = quick_reply(command)
+    quick = dismissal_reply(command) or quick_reply(command)
     if quick is not None:
         logging.getLogger("red.commands").info("%r -> small talk", command)
         print(f"  Red: {quick}")
@@ -332,6 +333,11 @@ class VoiceApp:
             last = "Okay."
             self._say(last)
             return last, tool, False
+        bye = dismissal_reply(text)
+        if bye is not None:
+            logging.getLogger("red.commands").info("%r -> dismissed", text)
+            self._say(bye)
+            return bye, tool, False
         quick = quick_reply(text)
         if quick is not None:
             logging.getLogger("red.commands").info("%r -> small talk", text)
@@ -552,6 +558,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd")
     sub.add_parser("setup", help="download the LLM backend, the model and the voice models")
     sub.add_parser("doctor", help="check that everything Red needs is in place")
+    sub.add_parser("voice-setup", help="say \"Hey Red\" a few times so Red learns your voice")
     for name, text in (("background", "run Red with no window"),
                        ("stop", "stop the hidden Red"), ("status", "is the hidden Red running?")):
         sub.add_parser(name, help=text)
@@ -571,6 +578,11 @@ def main(argv: list[str] | None = None) -> int:
 
     settings = load_settings()
     settings.ensure_dirs()
+    if args.cmd == "voice-setup":
+        logging.basicConfig(filename=settings.logs_dir / "red.log", level=logging.INFO,
+                            format="%(asctime)s %(name)s %(levelname)s %(message)s")
+        from .voice_setup import main as voice_setup_main
+        return voice_setup_main(settings)
     if args.cmd in ("background", "stop", "status"):
         from .background import main as background_main
         return background_main(args.cmd, settings.home)

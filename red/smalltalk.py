@@ -90,3 +90,48 @@ def is_goodbye(text: str) -> bool:
     """True when `text` just says "no, that's all": nothing more for Red to do."""
     said = normalize(text)
     return bool(said) and _GOODBYE_RE.fullmatch(said) is not None
+
+
+# "Go away", "leave me alone", "I don't need your help": end the conversation
+# at any point, not only after "Anything else?".
+_DISMISS = re.compile(
+    r"\b(?:go away|go off|get lost|leave me alone|leave me|leave now|go from here|"
+    r"get out(?: of here)?|shut up|be quiet|stop talking|stop listening|go to sleep|"
+    r"i don't need (?:your|you|any) help|i don't need you|i do not need your help|"
+    r"(?:fuck|piss|bugger|sod) off|buzz off|back off|that's enough|enough|"
+    r"go back to sleep|dismiss|you can go|you may go|goodbye|good bye|bye)\b"
+)
+
+# Swearing or insults. Said on their own (no command in the sentence),
+# Red answers once and leaves you alone.
+_RUDE = re.compile(
+    r"\b(?:fuck\w*|f\*+k|shit\w*|bitch\w*|bastard|asshole|arsehole|dick|cunt|"
+    r"idiot|stupid|dumb|moron|useless|nerd|loser|damn you|screw you|hate you|i hate your)\b"
+)
+
+# Words that mean the sentence still asks for something real.
+_ACTION = re.compile(
+    r"\b(?:open|play|pause|resume|search|look up|find|set|remind|turn|lock|shut ?down|"
+    r"restart|volume|mute|check|tell me|show|take|start|launch|write|compose|email|mail|"
+    r"weather|news|timer|what time|what's the)\b"
+)
+
+RUDE_REPLY = "That's not very nice. I'll leave you alone."
+DISMISS_REPLY = "Okay. Say \"Hey Red\" when you need me."
+
+
+def dismissal_reply(text: str) -> str | None:
+    """A last reply if `text` means "go away" (or is just abuse), else None.
+
+    When it returns a reply, Red says it and stops listening.
+    """
+    said = normalize(text)
+    if not said:
+        return None
+    rude = _RUDE.search(said) is not None
+    asks_for_something = _ACTION.search(said) is not None
+    if _DISMISS.search(said) and not asks_for_something:
+        return RUDE_REPLY if rude else DISMISS_REPLY
+    if rude and not asks_for_something and len(said.split()) <= 8:
+        return RUDE_REPLY
+    return None

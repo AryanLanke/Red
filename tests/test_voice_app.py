@@ -511,3 +511,18 @@ def test_goodbye_words_are_only_exits_in_a_follow_up(world, monkeypatch):
     app, speaker, overlay, record, out = follow_app(world, monkeypatch, "No.", speech_calls=1)
     app.handle("wakeword")
     assert speaker.said == ["Okay, what would you like?"]
+
+
+def test_go_away_ends_the_conversation_at_once(world, monkeypatch):
+    app, speaker, overlay, record, out = follow_app(world, monkeypatch, "Fuck off from here.", speech_calls=1)
+    app.handle("wakeword")
+    assert speaker.said == ["That's not very nice. I'll leave you alone."]
+    assert len(record.calls) == 1                     # no "Anything else?"
+
+
+def test_go_away_in_a_follow_up(world, monkeypatch):
+    app, speaker, overlay, record, out = follow_app(
+        world, monkeypatch, "Open my downloads.", "Just go from here, I don't need your help.")
+    app.handle("wakeword")
+    assert speaker.said[-1] == 'Okay. Say "Hey Red" when you need me.'
+    assert len(record.calls) == 2
