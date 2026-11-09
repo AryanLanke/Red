@@ -25,7 +25,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Iterator, Protocol
 
 from .config import Settings
 from .downloads import download, safe_extract
@@ -205,6 +205,35 @@ def _post_json(url: str, body: dict, headers: dict | None = None, timeout: float
         raise LLMError(f"Cannot reach LLM server at {url} ({e.reason})") from e
 
 
+def _stream_lines(url: str, body: dict, headers: dict | None = None, *, sse: bool = False,
+                  timeout: float = 120) -> Iterator[dict]:
+    """POST and yield each JSON line of the reply as it arrives (Ollama NDJSON, or SSE)."""
+    req = urllib.request.Request(url, data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json", **(headers or {})})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            for raw in r:
+                line = raw.decode("utf-8", errors="replace").strip()
+                if sse:
+                    if not line.startswith("data:"):
+                        continue
+                    line = line[5:].strip()
+                    if line == "[DONE]":
+                        return
+                if not line:
+                    continue
+                try:
+                    yield json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+    except urllib.error.HTTPError as e:
+        raise LLMError(f"LLM server error {e.code}: {e.read().decode(errors='replace')[:500]}") from e
+    except urllib.error.URLError as e:
+        raise LLMError(f"Cannot reach LLM server at {url} ({e.reason})") from e
+    except (TimeoutError, OSError) as e:
+        raise LLMError(f"The LLM server stopped answering ({e})") from e
+
+
 def _messages(system: str, user: str) -> list[dict]:
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
@@ -220,8 +249,8 @@ class OllamaClient:
         self.vision = vision              # it can look at images (describe_screen)
         self.options = dict(options or {})   # extra Ollama options, e.g. {"num_gpu": 0}
 
-    def complete_json(self, system: str, user: str, schema: dict, temperature: float = 0.0,
-                      max_tokens: int | None = None, images: list[str] | None = None) -> str:
+    def _body(self, system: str, user: str, schema: dict, temperature: float,
+              max_tokens: int | None, images: list[str] | None, stream: bool) -> dict:
         messages = _messages(system, user)
         if images and self.vision:
             messages[-1]["images"] = list(images)
@@ -229,18 +258,39 @@ class OllamaClient:
             "model": self.model,
             "messages": messages,
             "format": schema,
-            "stream": False,
+            "stream": stream,
             "keep_alive": self.keep_alive,
             "options": {"temperature": temperature, "num_predict": max_tokens or DEFAULT_MAX_TOKENS,
                         "num_ctx": 4096, **self.options},
         }
         if self.thinking:
             body["think"] = False         # answer at once; thinking costs seconds
+        return body
+
+    def complete_json(self, system: str, user: str, schema: dict, temperature: float = 0.0,
+                      max_tokens: int | None = None, images: list[str] | None = None) -> str:
+        body = self._body(system, user, schema, temperature, max_tokens, images, stream=False)
         data = _post_json(f"{self.base_url}/api/chat", body)
         try:
             return data["message"]["content"]
         except (KeyError, TypeError) as e:
             raise LLMError(f"Unexpected Ollama response: {str(data)[:500]}") from e
+
+    def stream_json(self, system: str, user: str, schema: dict, temperature: float = 0.0,
+                    max_tokens: int | None = None, images: list[str] | None = None) -> Iterator[str]:
+        """The same call as complete_json, yielding the reply as the model writes it.
+
+        Closing the generator early closes the connection, and Ollama stops writing.
+        """
+        body = self._body(system, user, schema, temperature, max_tokens, images, stream=True)
+        for msg in _stream_lines(f"{self.base_url}/api/chat", body):
+            if "error" in msg:
+                raise LLMError(f"Ollama error: {str(msg['error'])[:300]}")
+            piece = (msg.get("message") or {}).get("content") or ""
+            if piece:
+                yield piece
+            if msg.get("done"):
+                return
 
     def warm(self) -> None:
         """Load the model into memory now, and keep it there for keep_alive.
@@ -293,10 +343,9 @@ class OpenAICompatClient:
         self.model, self.api_key = model, api_key
         self.thinking = thinking
 
-    def complete_json(self, system: str, user: str, schema: dict, temperature: float = 0.0,
-                      max_tokens: int | None = None) -> str:
-        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
-        data = _post_json(f"{self.base_url}/chat/completions", {
+    def _body(self, system: str, user: str, schema: dict, temperature: float,
+              max_tokens: int | None, stream: bool) -> dict:
+        return {
             "model": self.model,
             "messages": _messages(system, user),
             "temperature": temperature,
@@ -305,11 +354,33 @@ class OpenAICompatClient:
                                 "json_schema": {"name": "route", "strict": True, "schema": schema}},
             # llama-server reads this for Qwen3.5's chat template; others ignore it.
             **({"chat_template_kwargs": {"enable_thinking": False}} if self.thinking else {}),
-        }, headers)
+            **({"stream": True} if stream else {}),
+        }
+
+    def _headers(self) -> dict:
+        return {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+
+    def complete_json(self, system: str, user: str, schema: dict, temperature: float = 0.0,
+                      max_tokens: int | None = None) -> str:
+        data = _post_json(f"{self.base_url}/chat/completions",
+                          self._body(system, user, schema, temperature, max_tokens, False),
+                          self._headers())
         try:
             return data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as e:
             raise LLMError(f"Unexpected LLM response: {str(data)[:500]}") from e
+
+    def stream_json(self, system: str, user: str, schema: dict, temperature: float = 0.0,
+                    max_tokens: int | None = None) -> Iterator[str]:
+        """Server-sent events ("data: {...}" lines), yielding the reply as it's written."""
+        body = self._body(system, user, schema, temperature, max_tokens, True)
+        for msg in _stream_lines(f"{self.base_url}/chat/completions", body, self._headers(), sse=True):
+            try:
+                piece = msg["choices"][0].get("delta", {}).get("content") or ""
+            except (KeyError, IndexError, TypeError, AttributeError):
+                continue
+            if piece:
+                yield piece
 
 
 # --- Ollama backend ----------------------------------------------------------

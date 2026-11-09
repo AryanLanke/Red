@@ -113,3 +113,51 @@ def test_llama_server_gets_enable_thinking_false(monkeypatch):
     assert sent[0][1]["chat_template_kwargs"] == {"enable_thinking": False}
     llm.OpenAICompatClient("http://x/v1", "other").complete_json("s", "u", {})
     assert "chat_template_kwargs" not in sent[1][1]
+
+
+class FakeResponse:
+    def __init__(self, lines):
+        self.lines = [l.encode() for l in lines]
+
+    def __iter__(self):
+        return iter(self.lines)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def test_ollama_streams_the_reply(monkeypatch):
+    sent = []
+
+    def urlopen(req, timeout):
+        import json as j
+        sent.append(j.loads(req.data))
+        return FakeResponse(['{"message": {"content": "{\\"answer\\": \\"Hi"}, "done": false}\n',
+                             '\n', 'not json\n',
+                             '{"message": {"content": " there\\"}"}, "done": false}\n',
+                             '{"message": {"content": ""}, "done": true}\n',
+                             '{"message": {"content": "never read"}}\n'])
+    monkeypatch.setattr(llm.urllib.request, "urlopen", urlopen)
+    client = llm.OllamaClient("http://x", "qwen3.5:4b-q4_K_M", thinking=True)
+    assert "".join(client.stream_json("s", "u", {"type": "object"})) == '{"answer": "Hi there"}'
+    assert sent[0]["stream"] is True and sent[0]["think"] is False and sent[0]["format"] == {"type": "object"}
+
+
+def test_ollama_stream_error_is_an_llm_error(monkeypatch):
+    monkeypatch.setattr(llm.urllib.request, "urlopen",
+                        lambda req, timeout: FakeResponse(['{"error": "model not found"}\n']))
+    with pytest.raises(llm.LLMError, match="model not found"):
+        list(llm.OllamaClient("http://x", "m").stream_json("s", "u", {}))
+
+
+def test_openai_compatible_server_sent_events(monkeypatch):
+    monkeypatch.setattr(llm.urllib.request, "urlopen", lambda req, timeout: FakeResponse([
+        'data: {"choices": [{"delta": {"content": "{\\"answer\\""}}]}\n', ': keep-alive\n',
+        'data: {"choices": [{"delta": {}}]}\n',
+        'data: {"choices": [{"delta": {"content": ": \\"ok\\"}"}}]}\n', 'data: [DONE]\n',
+        'data: {"choices": [{"delta": {"content": "late"}}]}\n']))
+    client = llm.OpenAICompatClient("http://x/v1", "m")
+    assert "".join(client.stream_json("s", "u", {})) == '{"answer": "ok"}'
