@@ -7,6 +7,7 @@ import webbrowser
 from typing import Callable
 from urllib.parse import quote_plus, urlsplit
 
+from .. import windows as _windows
 from .base import Tool, ToolError
 
 # Fixed URL templates. Only the encoded query is ever inserted.
@@ -56,9 +57,10 @@ class WebSearch(Tool):
     }
 
     def __init__(self, open_browser: Callable[[str], bool] = webbrowser.open,
-                 engine: Callable[[], str] = web_engine):
+                 engine: Callable[[], str] = web_engine, watch: Callable | None = None):
         self._open = open_browser
         self._engine = engine
+        self._watch = watch
 
     def run(self, query: str, site: str = "web") -> str:
         query = " ".join(query.split())
@@ -66,8 +68,10 @@ class WebSearch(Tool):
             raise ToolError("What should I search for?")
         if site not in SITES:
             site = "web"
+        watcher = (self._watch or _windows.watch)(_windows.browser_target())
         if not self._open(search_url(query, site, self._engine())):
             raise ToolError("I couldn't open the browser.")
+        self.finish_later(watcher)
         where = "the web" if site == "web" else SITES[site][0]
         return f"Searching {where} for {query}."
 
@@ -84,8 +88,10 @@ class OpenUrl(Tool):
         "additionalProperties": False,
     }
 
-    def __init__(self, open_browser: Callable[[str], bool] = webbrowser.open):
+    def __init__(self, open_browser: Callable[[str], bool] = webbrowser.open,
+                 watch: Callable | None = None):
         self._open = open_browser
+        self._watch = watch
 
     def run(self, url: str) -> str:
         url = url.strip()
@@ -94,7 +100,9 @@ class OpenUrl(Tool):
         if (parts.scheme.lower() not in {"http", "https"} or not parts.hostname
                 or any(c.isspace() or ord(c) < 32 for c in url)):
             raise ToolError("I can only open web addresses that start with http or https.")
+        watcher = (self._watch or _windows.watch)(_windows.browser_target())
         if not self._open(url):
             raise ToolError("I couldn't open the browser.")
+        self.finish_later(watcher)
         host = parts.hostname.removeprefix("www.")
         return f"Opening {host}."

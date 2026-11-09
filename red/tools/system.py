@@ -16,6 +16,7 @@ from typing import Callable, ClassVar
 
 from .. import allowlist as _allowlist
 from .. import known_folders as _known
+from .. import windows as _windows
 from .apps import AppPaths, FoundApp
 from .base import Tool, ToolError
 
@@ -78,10 +79,12 @@ class OpenFolder(Tool):
 
     def __init__(self, allowlist=None,
                  startfile: Callable[[str], None] = _default_startfile,
-                 known: Callable[[], dict[str, Path]] = _known.all_known_folders):
+                 known: Callable[[], dict[str, Path]] = _known.all_known_folders,
+                 watch: Callable | None = None):
         self._allowlist = _allowlist_source(allowlist)
         self._startfile = startfile
         self._known = known
+        self._watch = watch      # None: red.windows.watch, looked up at run time
 
     def _find(self, folder: str) -> tuple[str, Path] | None:
         """(display name, path) for a folder name, or None. Never guesses."""
@@ -110,7 +113,9 @@ class OpenFolder(Tool):
         # Also stops a file (or a program) from being "opened" as a folder.
         if not path.is_dir():
             raise ToolError(f"The {name} folder doesn't exist: {path}")
+        watcher = (self._watch or _windows.watch)(_windows.folder_target(path.name or name))
         self._startfile(str(path))
+        self.finish_later(watcher)       # bring the Explorer window to the front
         return f"Opening {name}."
 
 
@@ -126,12 +131,14 @@ class OpenApp(Tool):
     }
 
     def __init__(self, allowlist=None, popen=subprocess.Popen, which=shutil.which,
-                 startfile=_default_startfile, app_paths: AppPaths | None = None):
+                 startfile=_default_startfile, app_paths: AppPaths | None = None,
+                 watch: Callable | None = None):
         self._allowlist = _allowlist_source(allowlist)
         self._popen = popen
         self._which = which
         self._startfile = startfile
         self._app_paths = app_paths or AppPaths()
+        self._watch = watch      # None: red.windows.watch, looked up at run time
 
     def run(self, app: str) -> str:
         argv = self._allowlist().app(app)
@@ -153,26 +160,31 @@ class OpenApp(Tool):
         flags = (getattr(subprocess, "CREATE_NO_WINDOW", 0)
                  if program.lower().endswith((".cmd", ".bat"))
                  else getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
+        watcher = (self._watch or _windows.watch)(_windows.app_target(program, app))
         try:
             # A list and no shell: nothing in argv is ever parsed as a command line.
-            self._popen(list(argv), shell=False, close_fds=True, creationflags=flags,
-                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL)
+            proc = self._popen(list(argv), shell=False, close_fds=True, creationflags=flags,
+                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL)
+            watcher.add_pid(getattr(proc, "pid", None))
         except OSError as e:
             if getattr(e, "winerror", None) != ERROR_ELEVATION_REQUIRED:
                 raise ToolError(f"I couldn't start {app}: {e.strerror or e}") from e
             # Programs like Task Manager need the shell to start them elevated.
             self._startfile(program, arguments=subprocess.list2cmdline(argv[1:]))
+        self.finish_later(watcher)       # bring its window to the front while Red speaks
         return f"Opening {app.strip()}."
 
     def _start_registered(self, found: FoundApp) -> str:
         # The shell starts the registered program: by its App Paths name for Store
         # apps (which can't be started by path), by full path for everything else.
         target = found.exe if found.packaged else str(found.path)
+        watcher = (self._watch or _windows.watch)(_windows.app_target(found.exe, found.name))
         try:
             self._startfile(target)
         except OSError as e:
             raise ToolError(f"I couldn't start {found.name}: {e.strerror or e}") from e
+        self.finish_later(watcher)
         return f"Opening {found.name}."
 
 

@@ -82,6 +82,7 @@ The voice and UI modules are imported lazily, through `load_voice()` and inside 
   The `Listener` calls `on_trigger` on one worker thread and pauses the wake word while it runs. Models are pinned (`PinnedFiles`) under `RED_HOME\models\{whisper,piper,wakeword}`.
 - **Reminders:** `attach_reminders()` in `__main__.py` sets `red.scheduler.default_scheduler().on_due` behind a try-import. In voice mode, `VoiceApp.announce()` waits for the current command (`_turn` lock), pauses the wake word and speaks; typed mode prints.
 - **Doctor** (`red/doctor.py`): each check takes a `System` of injected functions (package lookup, HTTP, subprocess, sounddevice), so `tests/test_doctor.py` needs no hardware.
+- **Bringing windows to the front** (`red/windows.py`): `open_app`, `open_folder`, `open_url`, `web_search` and `play_online` call `watch(target)` before launching (a snapshot of the top-level windows), then hand the watcher to `Tool.finish_later()`. While Red speaks, it waits up to 5 s for the new window (by pid, exe or title; browsers may reuse an existing window) and fronts it with `AttachThreadInput`, then the Alt-key trick. `tests/conftest.py` swaps `watch` for a no-op in every test.
 - **Overlay** (`red/overlay.py`): PySide6, frameless, click-through and never focused. `set_state()` is safe to call from any thread. If Qt can't start, Red falls back to Windows toast notifications.
 
 ## Rules that come from the design

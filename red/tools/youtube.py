@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Callable
 from urllib.parse import quote_plus
 
+from .. import windows as _windows
 from .base import Tool, ToolError
 
 SEARCH_URL = "https://www.youtube.com/results?search_query={q}"
@@ -128,9 +129,17 @@ class PlayOnline(Tool):
     }
 
     def __init__(self, open_browser: Callable[[str], bool] = webbrowser.open,
-                 find: Callable[[str], Video | None] = fetch_results):
+                 find: Callable[[str], Video | None] = fetch_results, watch: Callable | None = None):
         self._open = open_browser
         self._find = find
+        self._watch = watch
+
+    def _open_and_front(self, url: str) -> bool:
+        watcher = (self._watch or _windows.watch)(_windows.browser_target())
+        if not self._open(url):
+            return False
+        self.finish_later(watcher)       # bring the browser to the front while Red speaks
+        return True
 
     def run(self, query: str) -> str:
         query = " ".join(query.split())[:MAX_QUERY]
@@ -140,14 +149,14 @@ class PlayOnline(Tool):
             video = self._find(query)
         except (OSError, urllib.error.URLError, socket.timeout, ValueError) as e:
             # Offline, slow or a changed page: the results page still lets you pick.
-            if not self._open(search_url(query)):
+            if not self._open_and_front(search_url(query)):
                 raise ToolError("I couldn't open the browser.") from e
             return f"I couldn't reach YouTube's results, so I opened the search for {query}."
         if video is None:
-            if not self._open(search_url(query)):
+            if not self._open_and_front(search_url(query)):
                 raise ToolError("I couldn't open the browser.")
             return f"I didn't find a video to start, so here's the YouTube search for {query}."
-        if not self._open(video.url):
+        if not self._open_and_front(video.url):
             raise ToolError("I couldn't open the browser.")
         title = spoken_title(video.title)
         return f"Playing {title} on YouTube." if title else f"Playing {query} on YouTube."
