@@ -9,9 +9,11 @@ While a trigger is being handled, the wake word is paused automatically (its
 microphone stream is closed), so Red never hears itself. Call pause() and
 resume() around anything else that records or speaks. Pauses nest.
 
-The wake word uses openWakeWord's pre-trained ONNX models (tflite has no
-Windows wheels), pinned by SHA-256 under RED_HOME\\models\\wakeword. The
-keyboard hook, microphone and detector are passed in, so tests use fakes.
+The default wake phrase is "Hey Red" (red/wakeword.py: a voice activity
+gate plus a small pinned Whisper model). Other openWakeWord ONNX phrases and
+custom .onnx models also work (tflite has no Windows wheels); they're pinned
+by SHA-256 under RED_HOME\\models\\wakeword. The keyboard hook, microphone and
+detector are passed in, so tests use fakes.
 """
 
 from __future__ import annotations

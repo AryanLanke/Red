@@ -91,7 +91,7 @@ def test_resolve_wakeword():
 
 def test_hey_red_is_the_default_and_no_other_assistant_name_is_offered():
     assert DEFAULT_WAKEWORD == "hey_red"
-    assert all("jarvis" not in name for name in WAKEWORDS)
+    assert set(WAKEWORDS) == {"hey_mycroft", "hey_rhasspy", "alexa"}
     import inspect
     params = inspect.signature(Listener).parameters
     assert params["detector_factory"].default is make_detector

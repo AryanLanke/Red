@@ -24,7 +24,7 @@ def test_wake_phrase_variants(text, expected):
 @pytest.mark.parametrize("text", [
     "", "Red", "Hey", "Hey there", "Hey, Fred.", "Hey, ready to go?", "I read the red book.",
     "He read it yesterday.", "They said red.", "The red car is fast.", "A red car",
-    "Hey Jarvis", "Hey red one two three four",
+    "Hey computer", "Hey red one two three four",
 ])
 def test_ordinary_speech_does_not_match(text):
     assert match_score(text) < 0.5
