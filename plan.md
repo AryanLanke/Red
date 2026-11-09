@@ -243,7 +243,10 @@ so Red understands what it sees, not only the words.
 - **Check:** unit tests, plus `Timing` lines before and after. Target: "open YouTube" done about 1.5 s
   after the user stops talking.
 
-### 6. Speak while the model writes; interrupt Red
+### 6. ✅ Speak while the model writes; interrupt Red
+**Done (2026-11-09):** `red/speech.py` and `stream_json`. "Tell me the whole story" starts speaking at 2.17 s
+instead of 5.79 s; chat at 1.81 s instead of 2.51 s. "Hey Red" or the hotkey while Red talks stops it and
+listens. Ollama 0.40.11 can't cache Qwen3.5's prompt (0.2 s a command on the GPU). Details in progress.md 7.2.
 - **Why:** in the 23:37 test a chat reply took 6.6 s to speak and was finished 11 s after the user
   stopped.
 - **Streaming:** use `"stream": true` from Ollama (`red/llm.py`), split the output into sentences, and
