@@ -10,6 +10,7 @@ from .online import LookUp, News, Weather
 from .quick import (EmptyRecycleBin, LockPC, NextMedia, OpenSettings, PauseMedia, PreviousTrack,
                     ResumeMedia, SleepPC, TakeScreenshot, TellStatus, Volume)
 from .reminders import CancelReminder, ListReminders, SetReminder, SetTimer
+from .screen import DescribeScreen
 from .system import CancelShutdown, OpenApp, OpenFolder, Restart, Shutdown
 from .web import OpenUrl, WebSearch
 
@@ -18,7 +19,7 @@ def default_registry() -> ToolRegistry:
     # The music tools share one player, created on the first play. Pause, resume
     # and next fall back to the media keys when Red's own player is idle.
     return ToolRegistry([
-        OpenFolder(), OpenApp(), OpenUrl(), WebSearch(), Answer(),
+        OpenFolder(), OpenApp(), OpenUrl(), WebSearch(), Answer(), DescribeScreen(),
         LookUp(), Weather(), News(),
         FindFile(), OpenFoundFile(), ComposeMail(),
         Shutdown(), Restart(), CancelShutdown(), SleepPC(), LockPC(),

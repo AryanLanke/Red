@@ -4,3 +4,5 @@ PySide6-Essentials==6.11.3
 shiboken6==6.11.3
 # Music playback through SDL_mixer: mp3, ogg, opus, flac and wav, with no VLC needed.
 pygame-ce==2.5.8
+# Screenshots for "what's on my screen?" (the text is read by Windows' own OCR).
+pillow==13.0.0
