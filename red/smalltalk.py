@@ -161,3 +161,47 @@ def is_ability_question(text: str) -> bool:
 
 def is_casual_yes(text: str | None) -> bool:
     return bool(text) and _CASUAL_YES.fullmatch(normalize(text)) is not None
+
+
+# Phrases that sound negative but mean "go on": "you don't need my permission",
+# "no problem", "why not". They are removed before looking for no-words.
+_NOT_A_NO = re.compile(
+    r"\b(?:you )?(?:don't|do not|dont) (?:need|have) (?:to ask(?: me)?|my permission|permission|"
+    r"to check(?: with me)?)"
+    r"|\bno need (?:to ask(?: me)?|for permission|to check)"
+    r"|\bwithout asking(?: me)?"
+    r"|\b(?:no|not a) (?:problem|worries)\b"
+    r"|\bdon't worry\b|\bwhy not\b|\bwhy don't you\b|\bno doubt\b"
+)
+# Any of these anywhere in the answer means no.
+_NO_WORDS = re.compile(
+    r"\b(?:no|nope|nah|don't|dont|do not|not|never|stop|cancel|cancelled|wait|hold on|"
+    r"negative|never ?mind|forget it|leave it)\b"
+)
+# A clear yes: enough even for a shutdown.
+_STRONG_YES = re.compile(
+    r"\b(?:y|yes|yeah|yep|yup|yea|yah|sure|go ahead|do it|go for it|of course|absolutely|"
+    r"definitely|please do|confirm|confirmed|proceed|affirmative)\b"
+)
+# A relaxed yes: fine for opening an app, not for turning the PC off.
+_SOFT_YES = re.compile(r"\b(?:ok|okay|alright|all right|ya|please|fine|right|carry on|go on)\b")
+
+
+def yes_intent(text: str | None, strict: bool = False) -> bool | None:
+    """Whether a spoken or typed answer means yes (True), no (False), or isn't clear (None).
+
+    Yes and no words count anywhere in the sentence, so "Yeah, you don't
+    need my permission, go ahead" is a yes. Any no-word ("no", "don't",
+    "stop", "cancel") wins over a yes. With `strict` (risky actions), "okay"
+    or "please" alone isn't enough: it needs "yes", "sure", "go ahead"...
+    """
+    if not text:
+        return None
+    said = _NOT_A_NO.sub(" ", normalize(text))
+    if _NO_WORDS.search(said):
+        return False
+    if _STRONG_YES.search(said):
+        return True
+    if not strict and _SOFT_YES.search(said):
+        return True
+    return None

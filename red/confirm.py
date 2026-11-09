@@ -1,7 +1,8 @@
 """Yes/no confirmation for destructive actions.
 
-Only "y" or "yes" confirms. Anything else, or no answer before the
-timeout, cancels. `ask` is pluggable: typed input here, spoken input from
+Only a clear yes confirms: "y", "yes", "yeah, go ahead", "sure, do it".
+A no-word anywhere ("no", "don't", "stop", "cancel"), an unclear answer
+("okay", "maybe"), or no answer before the timeout cancels. `ask` is pluggable: typed input here, spoken input from
 red.voice_confirm.spoken_ask, both with the same signature.
 """
 
@@ -92,10 +93,16 @@ def with_fallback(primary: Ask, fallback: Ask = typed_ask) -> Ask:
     return ask
 
 
+def is_clear_yes(answer: str | None) -> bool:
+    """A yes that's enough for a risky action: "yes", or a yes inside a sentence with no "no" in it."""
+    from .smalltalk import yes_intent
+    return is_yes(answer) or yes_intent(answer, strict=True) is True
+
+
 def confirm(question: str, ask: Ask = typed_ask, timeout: float = DEFAULT_TIMEOUT) -> bool:
-    """Ask a yes/no question. True only for an explicit yes; errors and timeouts cancel."""
+    """Ask a yes/no question. True only for a clear yes; errors and timeouts cancel."""
     try:
         answer = ask(question, timeout)
     except Exception:
         return False
-    return is_yes(answer)
+    return is_clear_yes(answer)
