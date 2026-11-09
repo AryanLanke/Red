@@ -313,6 +313,20 @@ def _load_contacts(path: Path):
 # Running
 # --------------------------------------------------------------------------
 
+def check_web_search(settings, sys_: System) -> list[Check]:
+    """Red's own SearXNG (red/searxng.py): installed, off, or someone else's."""
+    if not settings.web_search:
+        return [Check(OK, "Web search is off (RED_WEB_SEARCH=off): answers use Wikipedia only")]
+    if settings.search_url:
+        return [Check(OK, f"Web search uses your own SearXNG at {settings.search_url}")]
+    from .searxng import installed
+    if installed(settings):
+        return [Check(OK, "Web search (SearXNG) is installed; Red starts it when it starts "
+                          "(its log is logs\\searxng.log)")]
+    return [Check(WARN, "Web search isn't installed, so answers use Wikipedia only",
+                  "python -m red setup")]
+
+
 def run_checks(sys_: System | None = None, settings=None) -> list[Check]:
     sys_ = sys_ or System()
     out = check_python(sys_) + check_packages(sys_)
@@ -323,7 +337,7 @@ def run_checks(sys_: System | None = None, settings=None) -> list[Check]:
         except ValueError as e:
             return out + [Check(FAIL, f"A setting is wrong: {e}", "Fix it in RED_HOME\\config\\.env")]
     for check in (check_home, check_llm, check_gpu, check_audio, check_voice_models,
-                  check_triggers, check_config_files):
+                  check_triggers, check_config_files, check_web_search):
         try:
             out += check(settings, sys_)
         except Exception as e:  # noqa: BLE001 - one broken check must not hide the others
