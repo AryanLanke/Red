@@ -91,7 +91,8 @@ class ComposeMail(Tool):
     name = "compose_mail"
     description = ("Write a new email draft in the user's mail app, with the recipient, "
                    "subject and body filled in, for the user to review and send. It never "
-                   "sends anything.")
+                   "sends anything. Don't ask for a subject or body: write short ones from the "
+                   "user's words ('mail Priya about lunch': subject 'Lunch').")
     args_schema = {
         "type": "object",
         "properties": {

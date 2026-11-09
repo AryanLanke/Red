@@ -121,9 +121,15 @@ CASES = [
 ]
 
 
+# "open it" always follows a find_file in a real conversation.
+AFTER_FIND = ("User: find my resume\nRed: I found 3 files. 1: resume.pdf in Documents, "
+              "2: resume_old.docx in Downloads, 3: resume_2024.pdf in Desktop.")
+
+
 @pytest.mark.parametrize("command, tool, check", CASES)
 def test_routes(router, command, tool, check):
-    route = router.route(command)
+    context = AFTER_FIND if tool == "open_found_file" else ""
+    route = router.route(command, context=context) if context else router.route(command)
     assert route.tool in ((tool,) if isinstance(tool, str) else tool), route
     if check is not None:
         assert check(route.args), (check.__name__, route)

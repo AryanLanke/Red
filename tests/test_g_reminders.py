@@ -251,6 +251,9 @@ def test_cancel_falls_back_to_your_words(sched, clock):
     remind.run(text="water the plants", time="16:00")
     cancel.set_command("cancel my reminder to call mom")
     assert cancel.run(which="reminder") == "Cancelled call mom."
+    remind.run(text="call dad", time="15:30")
+    cancel.set_command("cancel my reminder to call dad")
+    assert cancel.run(which="all") == "Cancelled call dad."   # the model's "all" isn't yours
     cancel.set_command("cancel it")                         # names nothing: ask, as before
     remind.run(text="feed the cat", time="17:00")
     with pytest.raises(ToolError, match="Which one"):

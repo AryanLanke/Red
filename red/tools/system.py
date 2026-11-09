@@ -122,7 +122,8 @@ class OpenFolder(Tool):
 class OpenApp(Tool):
     name = "open_app"
     description = ("Start an application by name, for example Notepad, Calculator, VS Code, "
-                   "Word, Excel, PowerPoint, Outlook, or Chrome.")
+                   "Word, Excel, PowerPoint, Outlook, or Chrome. Websites like YouTube or "
+                   "GitHub are not apps: use open_url.")
     args_schema = {
         "type": "object",
         "properties": {"app": {"type": "string", "minLength": 1, "maxLength": 100}},

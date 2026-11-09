@@ -163,6 +163,9 @@ class ListReminders(_ReminderTool):
         return f"You have {count}: {spoken}{more}."
 
 
+_ALL = {"all", "everything", "all of them", "all timers", "all timer"}
+
+
 def _reminder_key(text: str) -> str:
     """'my reminder to call mom' -> 'call mom'."""
     text = re.sub(r"[^\w' ]+", " ", text.lower())
@@ -189,6 +192,8 @@ class CancelReminder(_ReminderTool):
         if not items:
             return "You don't have any timers or reminders."
         key = _reminder_key(which)
+        if key in _ALL and said and not re.search(r"\b(all|every|everything)\b", said.lower()):
+            key = ""        # the model said "all", you didn't: never cancel everything for it
         if not key and said:
             # The model sometimes says only "reminder"; "cancel my reminder to
             # call mom" still names the one to cancel.
@@ -196,7 +201,7 @@ class CancelReminder(_ReminderTool):
                                          r"can you|could you|red)\b", " ", said.lower()))
             if words and any(words in text.lower() for _, _, text in items):
                 key = words
-        if key in {"all", "everything", "all of them", "all timers", "all timer"}:
+        if key in _ALL:
             for rid, _, _ in items:
                 sched.cancel(rid)
             return f"Cancelled all {len(items)}."
