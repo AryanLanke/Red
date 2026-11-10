@@ -182,3 +182,42 @@ def test_a_part_that_is_chat_means_the_sentence_is_one_command():
                      "I want to open the door and open my heart": call("none", reply="That's sweet.")})
     steps = Router(default_registry(), llm, fast=None).route_many("I want to open the door and open my heart")
     assert len(steps) == 1 and steps[0][1].is_none
+
+
+# --- a debate, a quiz, a discussion: Chat, not one answer (Task 5) ---------------------
+
+from red.router import is_multi_turn  # noqa: E402
+
+
+@pytest.mark.parametrize("said", [
+    "Let's have a debate about AI regulation",
+    "debate me on tabs versus spaces",
+    "argue about pineapple on pizza",
+    "let's discuss AI safety",
+    "Quiz me on capitals",
+    "let's go back and forth on this",
+])
+def test_multi_turn_requests_go_to_chat_without_the_model(said):
+    llm = FakeLLM(call("open_folder", folder="Downloads"))
+    route = Router(default_registry(), llm).route(said)
+    assert route.is_none
+    assert llm.calls == []                     # never a one-shot answer
+    assert route.args["reply"] == "Let's get into it."
+
+
+@pytest.mark.parametrize("said", [
+    "open YouTube", "stop", "play Believer", "how are you", "set a timer for 5 minutes",
+])
+def test_ordinary_commands_are_not_multi_turn(said):
+    assert not is_multi_turn(said)
+
+
+def test_a_multi_turn_request_beats_the_fast_path():
+    route = Router(default_registry()).route("Quiz me: capital of France")
+    assert route.is_none
+
+
+def test_a_question_about_a_debate_is_still_chat():
+    # Route checks the words, not intent: this must never become a tool call.
+    assert Router(default_registry(), FakeLLM(call("open_url", url="https://x.example"))).route(
+        "I watched a debate about the moon landing").is_none

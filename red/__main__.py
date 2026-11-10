@@ -53,6 +53,8 @@ START_TIMEOUT_SECONDS = 8.0
 # this many follow-ups in a row, so it can never loop forever. After an
 # action it just goes quiet.
 MAX_FOLLOW_UPS = 6
+# In a debate the user needs longer to think of their reply than for "anything else?".
+DEBATE_FOLLOW_UP_SECONDS = 15.0
 # How long the spoken reply may wait for a tool's follow-through work.
 LATER_WAIT_SECONDS = 6.0
 # Ollama unloads an idle model after keep_alive (5 minutes by default), and
@@ -417,7 +419,8 @@ class VoiceApp:
         try:
             for turn in range(MAX_FOLLOW_UPS + 1):
                 last, tool, again = self._exchange(tool, follow_up=bool(turn))
-                if not again or self.settings.follow_up_seconds <= 0:
+                # A debate keeps listening even with follow-ups off: that's the whole point.
+                if not again or not (self.settings.follow_up_seconds > 0 or self.chat.is_debate):
                     break
         except Exception as e:  # noqa: BLE001 - one bad command must not stop Red
             log.exception("Command failed")
@@ -445,7 +448,10 @@ class VoiceApp:
 
         kwargs: dict = {}
         if follow_up:
-            kwargs["start_timeout"] = self.settings.follow_up_seconds
+            timeout = self.settings.follow_up_seconds
+            if self.chat.is_debate:
+                timeout = max(timeout, DEBATE_FOLLOW_UP_SECONDS)
+            kwargs["start_timeout"] = timeout
         if self.settings.quick_end_silence_seconds > 0:
             kwargs["is_complete"] = is_complete
         audio = self.voice.record(**kwargs)
@@ -462,6 +468,8 @@ class VoiceApp:
         timer.recorded(quick=early is not None, check_seconds=check_seconds)
         if getattr(audio, "size", 0) == 0:
             if follow_up:
+                if self.chat.is_debate:
+                    self.chat.end_debate()   # they stopped answering: the debate is over
                 return "", tool, False       # nothing more to do: just go quiet
             last = "I didn't hear anything."
             self._say(last)
@@ -479,7 +487,13 @@ class VoiceApp:
             # still thinking, so listen once more; in a follow-up, go quiet.
             logging.getLogger("red.commands").info("%r -> filler, ignored", text)
             return "", tool, not follow_up
+        if self.chat.debate_ends(text):
+            # "stop", "you win", "I give up": Chat closes the debate in its own words.
+            last = self.chat.reply(text)
+            self._say(last)
+            return last, tool, False
         if follow_up and is_goodbye(text):
+            self.chat.end_debate()
             last = "Okay."
             self._say(last)
             return last, tool, False
@@ -592,7 +606,7 @@ class VoiceApp:
 
     def _follow_up_question(self, answer: str) -> str:
         """'Anything more you want to know about it?', or "" when the answer already asks something."""
-        if asks_back(answer) or self.settings.follow_up_seconds <= 0:
+        if asks_back(answer) or self.settings.follow_up_seconds <= 0 or self.chat.is_debate:
             return ""
         question = FOLLOW_UP_QUESTIONS[self._next_question % len(FOLLOW_UP_QUESTIONS)]
         self._next_question += 1
