@@ -62,6 +62,13 @@ sentence. **Not yet tried by the user:** the Google sign-in, voice match, and cu
 
 ## Tasks, in order
 
+> **Handoff Note (2026-11-10):** Kokoro TTS is complete and committed (`8500e14`). All 1,310 unit tests pass.
+> For instructions and ready-to-use prompts for **DeepSeek v4.1 Flash**, see [DEEPSEEK_INSTRUCTIONS.md](DEEPSEEK_INSTRUCTIONS.md) and [HANDOFF.md](HANDOFF.md).
+
+### 0. ✅ Kokoro-82M TTS Integration (Done 2026-11-10)
+- Natural voice engine using Kokoro ONNX with Piper fallback. Pinned models, 27 voices, vocab file, doctor health check, 24 unit tests. Committed in `8500e14`.
+
+
 ### 1. ✅ (mostly) Make "Hey Red" wake reliably
 **Done (2026-11-09):** repeats collapsed, "Hey Red, <command>" wakes, `python -m red wake-test`, peak loudness
 in the log. Details and Piper results in progress.md 7.2. **Left:** (a) the user must try it by voice and, if
