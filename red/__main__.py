@@ -205,7 +205,8 @@ def load_voice(settings: Settings) -> Voice:
     models = settings.models_dir
     return Voice(
         transcriber=Transcriber(models / "whisper", settings.whisper_model, settings.whisper_device,
-                                hotwords=vocabulary(settings)),
+                                hotwords=vocabulary(settings),
+                                vocabulary_file=settings.vocabulary_path),
         speaker=make_speaker(settings),
         record=functools.partial(record_command,
                                  max_seconds=settings.max_command_seconds,

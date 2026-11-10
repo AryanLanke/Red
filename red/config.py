@@ -134,6 +134,11 @@ class Settings:
     def contacts_path(self) -> Path:
         return self.config_dir / "contacts.toml"
 
+    @property
+    def vocabulary_path(self) -> Path:
+        """Names Whisper should hear right (artists, apps), one per line."""
+        return self.config_dir / "vocabulary.txt"
+
     def ensure_dirs(self) -> None:
         for d in (
             self.bin_dir / "llama.cpp",

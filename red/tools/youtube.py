@@ -31,7 +31,12 @@ from .base import Tool, ToolError
 
 SEARCH_URL = "https://www.youtube.com/results?search_query={q}"
 WATCH_URL = "https://www.youtube.com/watch?v={id}"
+# The user's own liked songs ("play my liked songs"). LL is YouTube's own name
+# for that private playlist, available to anyone signed in in the browser.
+LIKED_URL = "https://www.youtube.com/playlist?list=LL"
 TIMEOUT_SECONDS = 6.0
+MIN_VIDEO_SECONDS = 60         # below this it's usually a Short or a clip, not the song/video
+MAX_RENDERERS = 3              # read enough of the page to have a few real results to choose from
 # The results page is about 1.6 MB, and the first video comes after ~0.8 MB
 # of page setup. Red reads in chunks and stops at the first video.
 CHUNK = 128 * 1024
@@ -43,20 +48,69 @@ MAX_SPOKEN_TITLE = 80
 BROWSER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                  "(KHTML, like Gecko) Chrome/130.0 Safari/537.36")
 
-_VIDEO = re.compile(r'"videoRenderer":\{"videoId":"([A-Za-z0-9_-]{11})"')
 _ANY_ID = re.compile(r'"videoId":"([A-Za-z0-9_-]{11})"')
-_TITLE = re.compile(r'"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"')
 _ID_OK = re.compile(r"[A-Za-z0-9_-]{11}")
 # "Play some music", "play anything": no song named, so start a mix of popular songs.
 _ANYTHING = re.compile(r"(?:some |any |a |the |my )?(?:music|songs?|tunes|anything|something|"
                        r"all|all (?:the |my )?songs|whatever)", re.I)
 ANYTHING_QUERY = "popular songs mix"
+# "Play my liked songs", "my favorites", "liked videos": YouTube's own Liked playlist.
+_LIKED = re.compile(r"\b(?:my\s+)?(?:liked|favorite|favourite|loved)\s+(?:songs?|videos?|music|"
+                    r"playlist)\b|\bmy\s+(?:likes|favorites|favourites)\b", re.I)
+# "Play a short", "cat shorts": the only time a clip under a minute is wanted.
+_SHORT = re.compile(r"\b(?:shorts?|clips?)\b", re.I)
+
+# Words in a search that don't help choose a video ("play the official video").
+_STOP = frozenset({"the", "and", "for", "with", "from", "official", "video", "music", "song",
+                   "songs", "audio", "lyrics", "lyric", "full", "new", "play", "please", "short",
+                   "shorts", "clip", "clips", "on", "youtube", "a", "an", "my", "of", "in", "to"})
 
 
 def search_words(query: str) -> str:
     """What to search YouTube for: the user's words, or a mix when they named nothing."""
     query = " ".join(query.split())[:MAX_QUERY]
     return ANYTHING_QUERY if _ANYTHING.fullmatch(query.strip(" .!?")) else query
+
+
+def is_liked_songs(query: str) -> bool:
+    """'play my liked songs', 'my favorites': open the Liked playlist itself."""
+    return bool(_LIKED.search(query))
+
+
+def wants_short(query: str) -> bool:
+    return bool(_SHORT.search(query))
+
+
+def query_words(query: str) -> list[str]:
+    """The words that should appear in a result's title (lower case, stop words dropped)."""
+    return [w for w in re.findall(r"[a-z0-9']+", query.lower())
+            if len(w) >= 3 and w not in _STOP]
+
+
+def is_short_url(url: str) -> bool:
+    return "/shorts/" in url.lower()
+
+
+def duration_seconds(text: str) -> int | None:
+    """'59:29' -> 3569, '1:02:03' -> 3723, '12 minutes, 25 seconds' -> 745."""
+    text = " ".join(text.split()).lower()
+    if ":" in text:
+        parts = text.split(":")
+        try:
+            values = [int(p) for p in parts]
+        except ValueError:
+            return None
+        if not 1 <= len(values) <= 3:
+            return None
+        seconds = 0
+        for value in values:
+            seconds = seconds * 60 + value
+        return seconds
+    minutes = re.search(r"(\d+)\s*minutes?", text)
+    seconds = re.search(r"(\d+)\s*seconds?", text)
+    if minutes or seconds:
+        return (int(minutes.group(1)) * 60 if minutes else 0) + (int(seconds.group(1)) if seconds else 0)
+    return None
 
 Opener = Callable[..., object]
 
@@ -65,6 +119,7 @@ Opener = Callable[..., object]
 class Video:
     id: str
     title: str = ""
+    seconds: int | None = None      # length, when the results page says it
 
     @property
     def url(self) -> str:
@@ -84,14 +139,111 @@ def _json_text(raw: str) -> str:
         return raw
 
 
+def _balanced(text: str, begin: int) -> int:
+    """The index just past the JSON object opening at `begin` (strings and escapes respected)."""
+    depth, i, quoted, escaped = 0, begin, False, False
+    while i < len(text):
+        c = text[i]
+        if quoted:
+            if escaped:
+                escaped = False
+            elif c == "\\":
+                escaped = True
+            elif c == '"':
+                quoted = False
+        elif c == '"':
+            quoted = True
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    return -1
+
+
+def _renderers(page: str):
+    """(the raw JSON text, the parsed object) for each videoRenderer in the page."""
+    i = page.find('"videoRenderer":')
+    while i >= 0:
+        begin = page.find("{", i + len('"videoRenderer":'))
+        end = _balanced(page, begin) if begin >= 0 else -1
+        if end < 0:
+            return
+        raw = page[begin:end]
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            data = None
+        if isinstance(data, dict):
+            yield raw, data
+        i = page.find('"videoRenderer":', end)
+
+
+def _title_of(data: dict) -> str:
+    title = data.get("title") or {}
+    runs = title.get("runs") or []
+    if runs and isinstance(runs[0], dict):
+        return _json_text(str(runs[0].get("text", "")))
+    return str(title.get("simpleText", ""))
+
+
+def _length_of(data: dict) -> int | None:
+    length = data.get("lengthText") or {}
+    text = length.get("simpleText")
+    if not text:
+        label = ((length.get("accessibility") or {}).get("accessibilityData") or {}).get("label", "")
+        text = label
+    return duration_seconds(str(text)) if text else None
+
+
+def _is_short(data: dict, raw: str) -> bool:
+    """A Short from the Shorts shelf, or a video that opens in the Shorts player."""
+    return ("reelWatchEndpoint" in raw or "/shorts/" in raw
+            or '"isShort":true' in raw.replace(" ", ""))
+
+
+def all_videos(page: str) -> list[Video]:
+    """Every ordinary video in the results page, in YouTube's order (Shorts left out)."""
+    found = []
+    for raw, data in _renderers(page):
+        video_id = data.get("videoId")
+        if not isinstance(video_id, str) or not _ID_OK.fullmatch(video_id):
+            continue
+        if _is_short(data, raw):
+            continue
+        found.append(Video(video_id, _title_of(data), _length_of(data)))
+    return found
+
+
 def first_video(page: str) -> Video | None:
-    """The first real video in a YouTube results page (not a channel, playlist or Short)."""
-    m = _VIDEO.search(page)
-    if m is None:
-        m = _ANY_ID.search(page)
-        return Video(m.group(1)) if m else None
-    title = _TITLE.search(page, m.end(), m.end() + 8000)
-    return Video(m.group(1), _json_text(title.group(1)) if title else "")
+    """The first real video in a YouTube results page (not a channel, playlist, Short or clip)."""
+    for video in all_videos(page):
+        if video.seconds is None or video.seconds >= MIN_VIDEO_SECONDS:
+            return video
+    m = _ANY_ID.search(page)
+    return Video(m.group(1)) if m else None
+
+
+def pick_video(page: str, query: str) -> Video | None:
+    """The best video for `query`: no Shorts or clips, and a title with the search's words.
+
+    None means nothing matched well; the caller then shows the search results
+    so the user can pick, rather than opening the wrong song.
+    """
+    candidates = [v for v in all_videos(page)
+                  if wants_short(query) or v.seconds is None or v.seconds >= MIN_VIDEO_SECONDS]
+    if not candidates:
+        return None
+    if query == ANYTHING_QUERY:
+        return candidates[0]
+    words = query_words(query)
+    for video in candidates:
+        title = video.title.lower()
+        if any(word in title for word in words):
+            return video
+    return None
 
 
 def spoken_title(title: str) -> str:
@@ -109,7 +261,11 @@ def spoken_title(title: str) -> str:
 
 def fetch_results(query: str, opener: Opener = urllib.request.urlopen,
                   timeout: float = TIMEOUT_SECONDS) -> Video | None:
-    """Fetch the results page and return its first video. Raises OSError if YouTube can't be reached."""
+    """Fetch the results page and pick the best video for `query`.
+
+    Raises OSError if YouTube can't be reached. None means the page was read
+    but nothing matched (the caller opens the search results instead).
+    """
     req = urllib.request.Request(search_url(query), headers={
         "User-Agent": BROWSER_AGENT, "Accept-Language": "en-US,en;q=0.9"})
     page = b""
@@ -119,11 +275,13 @@ def fetch_results(query: str, opener: Opener = urllib.request.urlopen,
             if not chunk:
                 break
             page += chunk
-            # Stop once the first video and a little after it (its title) are in.
-            m = _VIDEO.search(page.decode("utf-8", "ignore"))
-            if m is not None and len(page) - m.end() > 8000:
-                break
-    return first_video(page.decode("utf-8", "replace"))
+            text = page.decode("utf-8", "ignore")
+            # Stop once a few real results (not just the Shorts shelf) are in.
+            if text.count('"videoRenderer":') >= MAX_RENDERERS:
+                last = text.rfind('"videoRenderer":')
+                if len(text) - last > 8000:
+                    break
+    return pick_video(page.decode("utf-8", "replace"), query)
 
 
 class PlayOnline(Tool):
@@ -131,7 +289,8 @@ class PlayOnline(Tool):
     description = ("Play anything the user asks to play, online on YouTube: a song, artist, "
                    "album, genre, podcast, video, trailer or talk, for example 'play Believer', "
                    "'play some Arijit Singh', 'play a podcast about loneliness', 'play the "
-                   "Punisher trailer'. Starts the first result.")
+                   "Punisher trailer', 'play my liked songs' or 'play my favorites'. Starts "
+                   "the best matching result, never a Short.")
     args_schema = {
         "type": "object",
         "properties": {"query": {
@@ -162,6 +321,10 @@ class PlayOnline(Tool):
     def run(self, query: str) -> str:
         if not " ".join(query.split()):
             raise ToolError("What should I play?")
+        if is_liked_songs(query):
+            if not self._open_and_front(LIKED_URL):
+                raise ToolError("I couldn't open the browser.")
+            return "Opening your liked songs on YouTube."
         query = search_words(query)
         try:
             video = self._find(query)

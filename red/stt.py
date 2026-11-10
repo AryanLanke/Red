@@ -80,6 +80,27 @@ MAX_VOCABULARY_CHARS = 250
 _COPILOT = re.compile(r"\b(?:hey\s*co|heyco|heiko|haco|haeco)[\s-]*pilot\b", re.IGNORECASE)
 
 
+def read_vocabulary(path: Path | str | None) -> list[str]:
+    """Names from RED_HOME\\config\\vocabulary.txt: one per line, # comments and blanks skipped.
+
+    The user writes artist names ("LE SSERAFIM", "Arijit Singh") here so Whisper
+    hears them right; the file is read on every transcription, so edits apply
+    without restarting Red.
+    """
+    if path is None:
+        return []
+    try:
+        lines = Path(path).read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return []
+    names = []
+    for line in lines:
+        name = line.split("#", 1)[0].strip()
+        if name:
+            names.append(name)
+    return names
+
+
 def command_vocabulary(*names: str) -> str:
     """The hotwords for commands: the fixed names, then app and contact names, kept short."""
     seen: set[str] = set()
@@ -148,6 +169,7 @@ class Transcriber:
     def __init__(self, model_dir: Path, model: str = "small", device: str = "auto", *,
                  language: str | None = "en", beam_size: int = 5,
                  vad_filter: bool = True, hotwords: str | None = None,
+                 vocabulary_file: Path | str | None = None,
                  max_new_tokens: int | None = None,
                  model_factory: ModelFactory = _faster_whisper_model,
                  cuda_check: Callable[[], bool] = cuda_available):
@@ -163,6 +185,7 @@ class Transcriber:
         self.beam_size = beam_size
         self.vad_filter = vad_filter
         self.hotwords = hotwords
+        self.vocabulary_file = Path(vocabulary_file) if vocabulary_file else None
         self.max_new_tokens = max_new_tokens
         self._factory = model_factory
         self._cuda_check = cuda_check
@@ -221,6 +244,14 @@ class Transcriber:
             self._model = None
             self._create("cpu")
 
+    def hotwords_text(self) -> str | None:
+        """The names to bias Whisper toward: the fixed ones plus the user's vocabulary file."""
+        names = read_vocabulary(self.vocabulary_file)
+        if not names:
+            return self.hotwords
+        base = [n.strip() for n in (self.hotwords or "").split(",") if n.strip()]
+        return command_vocabulary(*base, *names)
+
     def _run(self, audio: np.ndarray) -> str:
         extra = {"max_new_tokens": self.max_new_tokens} if self.max_new_tokens else {}
         segments, _info = self._model.transcribe(
@@ -228,7 +259,7 @@ class Transcriber:
             language=self.language,
             beam_size=self.beam_size,
             vad_filter=self.vad_filter,
-            hotwords=self.hotwords,
+            hotwords=self.hotwords_text(),
             condition_on_previous_text=False,
             without_timestamps=True,
             **extra,

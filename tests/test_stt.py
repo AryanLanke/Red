@@ -3,7 +3,7 @@ import pytest
 
 import red.audio as audio
 from red.stt import (BASE_VOCABULARY, MAX_VOCABULARY_CHARS, WHISPER_MODELS, Transcriber,
-                     command_vocabulary, fix_names)
+                     command_vocabulary, fix_names, read_vocabulary)
 from voice_fakes import FakeWhisper, fake_download, tone
 
 
@@ -176,3 +176,46 @@ def test_vocabulary_is_short_and_has_no_repeats():
     assert names.count("Spotify") == 1 and "spotify" not in names and names.count("YouTube") == 1
     assert "Task Manager" in names and "x" * 41 not in names
     assert len(words) <= MAX_VOCABULARY_CHARS
+
+
+# --- the user's vocabulary file (names Whisper mishears) ---------------------------
+
+def test_read_vocabulary_skips_comments_and_blanks(tmp_path):
+    path = tmp_path / "vocabulary.txt"
+    path.write_text("# artist names\nLE SSERAFIM\n\n  Arijit Singh  \n# a comment\n"
+                    "Crazy # trailing comment\n", encoding="utf-8")
+    assert read_vocabulary(path) == ["LE SSERAFIM", "Arijit Singh", "Crazy"]
+
+
+def test_a_missing_vocabulary_file_is_fine(tmp_path):
+    assert read_vocabulary(tmp_path / "nope.txt") == []
+    assert read_vocabulary(None) == []
+
+
+def test_vocabulary_file_names_reach_whisper(tmp_path):
+    path = tmp_path / "vocabulary.txt"
+    path.write_text("LE SSERAFIM\nArijit Singh\n", encoding="utf-8")
+    t, created = make(tmp_path, vocabulary_file=path)
+    t.transcribe(tone(1.0))
+    hotwords = created[0].calls[0][1]["hotwords"]
+    assert hotwords.startswith("Hey Copilot, Hey Siri")        # the fixed names stay first
+    assert "LE SSERAFIM" in hotwords and "Arijit Singh" in hotwords
+    assert len(hotwords) <= MAX_VOCABULARY_CHARS + 40          # one comma-joined prompt, still short
+
+
+def test_vocabulary_edits_apply_without_restarting(tmp_path):
+    path = tmp_path / "vocabulary.txt"
+    path.write_text("LE SSERAFIM\n", encoding="utf-8")
+    t, created = make(tmp_path, vocabulary_file=path)
+    t.transcribe(tone(1.0))
+    path.write_text("NewJeans\n", encoding="utf-8")
+    t.transcribe(tone(1.0))
+    second = created[0].calls[1][1]["hotwords"]
+    assert "NewJeans" in second and "LE SSERAFIM" not in second
+
+
+def test_a_broken_vocabulary_file_does_not_stop_transcription(tmp_path):
+    path = tmp_path / "vocabulary.txt"
+    path.write_bytes(b"\xff\xfe\x00 broken")                    # not UTF-8 at all
+    t, created = make(tmp_path, vocabulary_file=path)
+    assert t.transcribe(tone(1.0)) == "Open downloads."
