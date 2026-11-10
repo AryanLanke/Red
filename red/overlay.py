@@ -756,14 +756,19 @@ class NotificationOverlay(Overlay):
         self.notify(f"Red: {LABELS[state]}" if state != "speaking" else "Red", text)
 
     def notify(self, title: str, body: str) -> None:
-        env = dict(os.environ, RED_TOAST_TITLE=title, RED_TOAST_BODY=body)
-        try:
-            self._runner(toast_command(), env=env,
-                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL,
-                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        except OSError as e:
-            log.warning("Couldn't show a notification: %s", e)
+        show_notification(title, body, runner=self._runner)
+
+
+def show_notification(title: str, body: str, runner=subprocess.Popen) -> None:
+    """Show one Windows toast. The title and body are text nodes, never markup."""
+    env = dict(os.environ, RED_TOAST_TITLE=title, RED_TOAST_BODY=body)
+    try:
+        runner(toast_command(), env=env,
+               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+               stderr=subprocess.DEVNULL,
+               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except OSError as e:
+        log.warning("Couldn't show a notification: %s", e)
 
 
 class ConsoleOverlay(Overlay):

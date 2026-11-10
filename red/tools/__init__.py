@@ -13,6 +13,7 @@ from .quick import (EmptyRecycleBin, LockPC, NextMedia, OpenSettings, PauseMedia
 from .reminders import CancelReminder, ListReminders, SetReminder, SetTimer
 from .screen import DescribeScreen
 from .system import CancelShutdown, OpenApp, OpenFolder, Restart, Shutdown
+from .watch import CancelWatch, NotifyWhenDone, Watchers
 from .web import OpenUrl, WebSearch
 from .youtube import PlayOnline
 
@@ -21,6 +22,7 @@ def default_registry(google: bool | None = None) -> ToolRegistry:
     """Every tool. google: the Gmail and Calendar tools (None: if Red is signed in)."""
     # No local music: every "play ..." goes to play_online (YouTube), and pause,
     # resume, next, previous and stop are the media keys, which control it.
+    watchers = Watchers()              # notify_when_done and cancel_watch share the watches
     registry = ToolRegistry([
         OpenFolder(), OpenApp(), OpenUrl(), WebSearch(), Answer(), DescribeScreen(),
         LookUp(), Weather(), News(),
@@ -29,6 +31,7 @@ def default_registry(google: bool | None = None) -> ToolRegistry:
         PlayOnline(), StopMedia(), PauseMedia(), ResumeMedia(), NextMedia(), PreviousTrack(),
         Volume(), OpenSettings(), TellStatus(), TakeScreenshot(), EmptyRecycleBin(),
         SetTimer(), SetReminder(), ListReminders(), CancelReminder(),
+        NotifyWhenDone(watchers), CancelWatch(watchers),
         CheckRepos(),
     ])
     if google if google is not None else _google.signed_in():

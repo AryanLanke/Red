@@ -48,6 +48,7 @@ Rules:
 - Recent things: questions about products, apps, AI assistants or gadgets that may be new (from 2024 on), and "latest", "newest" or "compare" questions about products, go to look_up, so the facts come from a real source.
 - Playing: every "play X", "put on X" or "open a podcast/video" (a song, artist, album, genre, podcast, video, trailer), "shuffle my songs", or just "music" or "anything", goes to play_online. "Search YouTube for X" only shows results: web_search with site youtube.
 - A browser named in the command ("in Edge", "from Chrome") only fills the browser argument; it never changes the tool.
+- Waiting for something to finish ("tell me when the build is done", "when VS Code finishes, remind me") goes to notify_when_done, not set_reminder. "Stop watching X" goes to cancel_watch.
 - Pick the most specific tool: open_settings (not open_app) for a Windows Settings page; find_file (not open_folder) when the user says find, locate or where is.
 
 Examples:

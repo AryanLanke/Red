@@ -277,6 +277,10 @@ class VoiceApp:
         self.executor = Executor(registry, ask=with_fallback(ask, typed_fallback), log_path=log_path)
         self.chat = Chat(router.llm)        # conversation with memory, for anything that isn't a command
         bind_conversation(registry, self.chat)
+        for tool in registry:
+            bind = getattr(tool, "bind_announce", None)
+            if callable(bind):
+                bind(self.announce)         # notify_when_done speaks when the app finishes
         self.listener = None
         self.notice = ""        # why the wake word is off, if it is
         self.reminders = None   # red.scheduler's Scheduler, when it exists
