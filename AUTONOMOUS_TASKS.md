@@ -17,7 +17,8 @@ You are running autonomously inside Qoder. When given this file, **do not stop a
 ```
 
 ### Global Rules:
-1. **Always set environment variables** before running Python commands in PowerShell:
+1. **TTS Engine Standard**: Kokoro-82M ONNX has replaced Piper as Red's default primary voice (`RED_TTS=kokoro`, default voice `af_heart`). Piper is strictly an automatic fallback if files are missing. All new voice outputs, UI settings, wizards, and tests must treat Kokoro as primary.
+2. **Always set environment variables** before running Python commands in PowerShell:
    ```powershell
    $env:RED_HOME="D:\RED"; $env:QT_QPA_PLATFORM="offscreen"
    ```
