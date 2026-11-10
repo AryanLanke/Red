@@ -79,6 +79,85 @@ class Desktop(Protocol):
     def front(self, hwnd: int) -> bool: ...
 
 
+class FrontOps(Protocol):
+    """The plain Win32 calls that wake a window. Win32Desktop is one; tests use a fake."""
+
+    def is_visible(self, hwnd: int) -> bool: ...
+    def is_iconic(self, hwnd: int) -> bool: ...
+    def show(self, hwnd: int, command: int) -> None: ...
+    def update(self, hwnd: int) -> None: ...
+    def redraw(self, hwnd: int) -> None: ...
+    def foreground(self) -> int: ...
+    def thread_of(self, hwnd: int) -> int: ...
+    def current_thread(self) -> int: ...
+    def attach(self, mine: int, other: int, on: bool) -> bool: ...
+    def bring_to_top(self, hwnd: int) -> None: ...
+    def set_foreground(self, hwnd: int) -> None: ...
+    def press_alt(self) -> None: ...
+    def release_alt(self) -> None: ...
+
+
+# A restored, background-throttled Chrome can come to the front before it has
+# painted, which leaves a blank white page. These give the renderer a moment
+# and then ask Windows to paint the window again.
+REPAINT_SETTLE_SECONDS = 0.06
+SW_SHOW = 5
+
+
+def front_window(ops: FrontOps, hwnd: int, *, settle: float = REPAINT_SETTLE_SECONDS,
+                 sleep: Callable[[float], None] = time.sleep) -> bool:
+    """Bring a window to the front, waking it first if it was minimised or hidden.
+
+    A window that was minimised (or hidden behind another virtual desktop) may
+    be throttled by its program and never paint: YouTube then shows a blank
+    page when Chrome comes back. So restore it, paint it once, front it, then
+    paint it again after a short yield.
+    """
+    woken = False
+    if not ops.is_visible(hwnd):
+        ops.show(hwnd, SW_SHOW)
+        woken = True
+    if ops.is_iconic(hwnd):
+        ops.show(hwnd, SW_RESTORE)
+        woken = True
+    if woken:
+        ops.update(hwnd)                 # paint the client area before it's fronted
+    fronted = _activate(ops, hwnd)
+    if fronted and woken:
+        if settle:
+            sleep(settle)                # let the compositor catch up
+        ops.redraw(hwnd)                 # RedrawWindow + DwmFlush: no blank page
+    return fronted
+
+
+def _activate(ops: FrontOps, hwnd: int) -> bool:
+    """SetForegroundWindow past the foreground lock, with the Alt-key trick as the backup."""
+    if ops.foreground() == hwnd:
+        return True
+    # Share input with the window that has the foreground now: then
+    # Windows treats Red's request like one from that window.
+    me = ops.current_thread()
+    foreground = ops.foreground()
+    other = ops.thread_of(foreground) if foreground else 0
+    attached = bool(other and other != me and ops.attach(me, other, True))
+    try:
+        ops.bring_to_top(hwnd)
+        ops.set_foreground(hwnd)
+    finally:
+        if attached:
+            ops.attach(me, other, False)
+    if ops.foreground() == hwnd:
+        return True
+    # The Alt-key trick: while Alt is down, Windows lifts the lock. An
+    # unassigned key in between stops the Alt release from opening a menu.
+    ops.press_alt()
+    try:
+        ops.set_foreground(hwnd)
+    finally:
+        ops.release_alt()
+    return ops.foreground() == hwnd
+
+
 def app_target(exe: str | None = None, title: str = "", pid: int | None = None) -> Target:
     exes = frozenset({os.path.basename(exe).lower()}) if exe else frozenset()
     return Target(exes=exes, pids={pid} if pid else set(),
@@ -307,6 +386,12 @@ class Win32Desktop:
         u.SetForegroundWindow.argtypes = [wintypes.HWND]
         u.BringWindowToTop.argtypes = [wintypes.HWND]
         u.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+        u.UpdateWindow.argtypes = [wintypes.HWND]
+        u.UpdateWindow.restype = wintypes.BOOL
+        u.RedrawWindow.argtypes = [wintypes.HWND, ctypes.c_void_p, ctypes.c_void_p, wintypes.UINT]
+        u.RedrawWindow.restype = wintypes.BOOL
+        u.InvalidateRect.argtypes = [wintypes.HWND, ctypes.c_void_p, wintypes.BOOL]
+        u.InvalidateRect.restype = wintypes.BOOL
         u.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
         u.keybd_event.argtypes = [wintypes.BYTE, wintypes.BYTE, wintypes.DWORD, ctypes.c_void_p]
         k.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
@@ -364,32 +449,64 @@ class Win32Desktop:
         return found
 
     def front(self, hwnd: int) -> bool:
-        u, k = self.user32, self.kernel32
-        if u.IsIconic(hwnd):
-            u.ShowWindow(hwnd, SW_RESTORE)
-        if u.GetForegroundWindow() == hwnd:
-            return True
-        # Share input with the window that has the foreground now: then
-        # Windows treats Red's request like one from that window.
-        me = k.GetCurrentThreadId()
-        foreground = u.GetForegroundWindow()
-        other = u.GetWindowThreadProcessId(foreground, None) if foreground else 0
-        attached = bool(other and other != me and u.AttachThreadInput(me, other, True))
-        try:
-            u.BringWindowToTop(hwnd)
-            u.SetForegroundWindow(hwnd)
-        finally:
-            if attached:
-                u.AttachThreadInput(me, other, False)
-        if u.GetForegroundWindow() == hwnd:
-            return True
-        # The Alt-key trick: while Alt is down, Windows lifts the lock. An
-        # unassigned key in between stops the Alt release from opening a menu.
+        return front_window(_Win32Front(self), hwnd)
+
+
+class _Win32Front:
+    """Win32Desktop's plain Win32 calls, for front_window()."""
+
+    REDRAW_FLAGS = 0x0001 | 0x0004 | 0x0080 | 0x0100   # INVALIDATE | ERASE | ALLCHILDREN | UPDATENOW
+
+    def __init__(self, desktop: Win32Desktop):
+        self._u = desktop.user32
+        self._k = desktop.kernel32
+        self._dwm = desktop.dwmapi
+
+    def is_visible(self, hwnd: int) -> bool:
+        return bool(self._u.IsWindowVisible(hwnd))
+
+    def is_iconic(self, hwnd: int) -> bool:
+        return bool(self._u.IsIconic(hwnd))
+
+    def show(self, hwnd: int, command: int) -> None:
+        self._u.ShowWindow(hwnd, command)
+
+    def update(self, hwnd: int) -> None:
+        self._u.UpdateWindow(hwnd)
+
+    def redraw(self, hwnd: int) -> None:
+        if not self._u.RedrawWindow(hwnd, None, None, self.REDRAW_FLAGS):
+            self._u.InvalidateRect(hwnd, None, True)
+            self._u.UpdateWindow(hwnd)
+        flush = getattr(self._dwm, "DwmFlush", None) if self._dwm is not None else None
+        if flush is not None:
+            flush()                       # wait until the compositor has the new frame
+
+    def foreground(self) -> int:
+        return int(self._u.GetForegroundWindow() or 0)
+
+    def thread_of(self, hwnd: int) -> int:
+        if not hwnd:
+            return 0
+        return int(self._u.GetWindowThreadProcessId(hwnd, None))
+
+    def current_thread(self) -> int:
+        return int(self._k.GetCurrentThreadId())
+
+    def attach(self, mine: int, other: int, on: bool) -> bool:
+        return bool(self._u.AttachThreadInput(mine, other, on))
+
+    def bring_to_top(self, hwnd: int) -> None:
+        self._u.BringWindowToTop(hwnd)
+
+    def set_foreground(self, hwnd: int) -> None:
+        self._u.SetForegroundWindow(hwnd)
+
+    def press_alt(self) -> None:
+        u = self._u
         u.keybd_event(VK_MENU, 0, 0, None)
         u.keybd_event(VK_UNASSIGNED, 0, 0, None)
         u.keybd_event(VK_UNASSIGNED, 0, KEYEVENTF_KEYUP, None)
-        try:
-            u.SetForegroundWindow(hwnd)
-        finally:
-            u.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, None)
-        return u.GetForegroundWindow() == hwnd
+
+    def release_alt(self) -> None:
+        self._u.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, None)

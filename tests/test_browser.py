@@ -120,6 +120,14 @@ def test_open_youtube_opens_it_in_chrome():
     assert popen.calls[0][0] == [CHROME, "https://www.youtube.com"]
 
 
+def test_the_youtube_address_red_opens_is_a_plain_web_address():
+    from red.fastpath import match
+
+    call = match("open youtube")
+    assert call == {"tool": "open_url", "args": {"url": "https://www.youtube.com"}}
+    assert b.safe_url(call["args"]["url"])                   # no blank/relative page
+
+
 def test_open_youtube_from_edge():
     popen = FakePopen()
     tool = OpenUrl(browsers=browsers(popen=popen))
