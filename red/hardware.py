@@ -23,6 +23,8 @@ nothing is installed or changed.
 from __future__ import annotations
 
 import ctypes
+import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -107,6 +109,58 @@ def driver_gpu_gb() -> float | None:
 
 def gpu_gb() -> float | None:
     return nvidia_gpu_gb() or driver_gpu_gb()
+
+
+def cpu_name(environ=os.environ) -> str:
+    """The CPU's name, for the settings app. No device is opened."""
+    text = environ.get("PROCESSOR_IDENTIFIER", "").strip()
+    if text:
+        return text
+    return platform.processor().strip() or "Unknown CPU"
+
+
+def driver_gpu_names() -> list[str]:
+    """The display adapters' names from their driver registry entries (deduplicated)."""
+    if sys.platform != "win32":
+        return []
+    import winreg
+    names: list[str] = []
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _DISPLAY_CLASS) as cls:
+            for i in range(64):
+                try:
+                    sub = winreg.EnumKey(cls, i)
+                except OSError:
+                    break
+                try:
+                    with winreg.OpenKey(cls, sub) as key:
+                        value, _ = winreg.QueryValueEx(key, "DriverDesc")
+                except OSError:
+                    continue
+                if isinstance(value, str) and value.strip():
+                    names.append(value.strip())
+    except OSError:
+        return names
+    return list(dict.fromkeys(names))
+
+
+def gpu_name(run: Callable = subprocess.run, which: Callable = shutil.which,
+             names: Callable[[], list[str]] = driver_gpu_names) -> str | None:
+    """The GPU's name, from nvidia-smi or the display driver, for the settings app."""
+    exe = which("nvidia-smi")
+    if exe:
+        try:
+            out = run([exe, "--query-gpu=name", "--format=csv,noheader"],
+                      capture_output=True, text=True, timeout=10,
+                      creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except (OSError, subprocess.SubprocessError):
+            out = None
+        if out is not None and out.returncode == 0:
+            found = [line.strip() for line in (out.stdout or "").splitlines() if line.strip()]
+            if found:
+                return ", ".join(dict.fromkeys(found))
+    found = list(dict.fromkeys(names()))
+    return ", ".join(found) if found else None
 
 
 def ram_gb() -> float | None:

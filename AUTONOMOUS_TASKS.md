@@ -40,7 +40,7 @@ You are running autonomously inside Qoder. When given this file, **do not stop a
 - [x] **Task 3: Play the right song (Filter Shorts, match titles, liked playlist)**
 - [x] **Task 4: Build `notify_when_done` tool for VS Code & processes**
 - [x] **Task 5: Multi-turn debates and back-and-forth talk**
-- [ ] **Task 6: PySide6 Setup and Settings App**
+- [x] **Task 6: PySide6 Setup and Settings App**
 
 ---
 

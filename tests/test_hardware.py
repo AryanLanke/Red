@@ -77,3 +77,27 @@ def test_setup_never_changes_an_existing_env(tmp_path, clean_env, capsys):
     assert cli._setup_model(settings, detect=lambda: pick) is settings
     assert env.read_text(encoding="utf-8") == "RED_LLM_MODEL=qwen2.5-7b-instruct-q4_k_m\n"
     assert "RED_LLM_MODEL=qwen3.5-4b" in capsys.readouterr().out
+
+
+# --- names for the settings app ----------------------------------------------------
+
+def test_cpu_name_comes_from_windows():
+    assert h.cpu_name({"PROCESSOR_IDENTIFIER": "AMD64 Family 25 Model 68, AuthenticAMD"}) == \
+        "AMD64 Family 25 Model 68, AuthenticAMD"
+    assert h.cpu_name({})                      # the platform's answer, never empty
+
+
+def test_gpu_name_reads_nvidia_smi():
+    def run(argv, **kw):
+        assert argv[1:] == ["--query-gpu=name", "--format=csv,noheader"]
+        return subprocess.CompletedProcess(argv, 0, stdout="NVIDIA GeForce RTX 4050\n", stderr="")
+    assert h.gpu_name(run=run, which=lambda name: "nvidia-smi",
+                      names=lambda: pytest.fail("the driver is only a backup")) == \
+        "NVIDIA GeForce RTX 4050"
+
+
+def test_gpu_name_falls_back_to_the_display_driver():
+    assert h.gpu_name(run=None, which=lambda name: None,
+                      names=lambda: ["Intel(R) UHD Graphics", "Intel(R) UHD Graphics"]) == \
+        "Intel(R) UHD Graphics"
+    assert h.gpu_name(run=None, which=lambda name: None, names=lambda: []) is None

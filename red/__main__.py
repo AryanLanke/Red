@@ -5,6 +5,7 @@
     python -m red --dry-run                type commands, only show the tool calls
     python -m red setup                    download the LLM backend, the model and the voice models
     python -m red doctor                   check that everything Red needs is in place
+    python -m red app                      open the setup and settings window
     python -m red voice-setup              say "Hey Red" a few times so Red learns your voice
     python -m red wake-test                see what the wake word hears from your microphone
     python -m red background               run Red with no window (closing PowerShell won't stop it)
@@ -949,6 +950,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd")
     sub.add_parser("setup", help="download the LLM backend, the model and the voice models")
     sub.add_parser("doctor", help="check that everything Red needs is in place")
+    sub.add_parser("app", help="open the setup and settings window")
     sub.add_parser("wake-test", help="see what the wake word hears from your microphone")
     sub.add_parser("voice-setup", help="say \"Hey Red\" a few times so Red learns your voice")
     sub.add_parser("google-login", help="optional: let Red use your Gmail, Calendar and Contacts")
@@ -969,6 +971,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "doctor":
         from .doctor import main as doctor_main
         return doctor_main()        # only looks: starts nothing, records nothing
+
+    if args.cmd == "app":
+        from . import app as app_mod
+        return app_mod.main(load_settings())
 
     settings = load_settings()
     settings.ensure_dirs()
