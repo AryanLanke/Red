@@ -30,6 +30,7 @@ DEFAULT_PIPER_VOICE = "en_US-lessac-medium"
 SEARCH_ENGINE_CHOICES = ("google", "bing", "duckduckgo")
 # The browser pages open in (red.browser). "default" is the Windows default.
 BROWSER_CHOICES = ("chrome", "edge", "firefox", "default")
+TTS_CHOICES = ("kokoro", "piper")
 DEFAULT_BROWSER = "chrome"
 # How Red shows what it's doing: a glow around the screen edges, the small
 # corner card, Windows notifications, or nothing.
@@ -77,6 +78,10 @@ class Settings:
     whisper_model: str = DEFAULT_WHISPER_MODEL
     whisper_device: str = DEFAULT_WHISPER_DEVICE
     piper_voice: str = DEFAULT_PIPER_VOICE
+    # The voice engine (red/tts_kokoro.py): kokoro (natural, CPU) or piper (faster, flatter).
+    tts: str = "kokoro"
+    voice: str = "af_heart"          # a Kokoro voice
+    voice_speed: float = 1.0
     mic_device: str | None = None
     search_engine: str = "google"
     # Web pages for look_up through Red's own SearXNG (red/searxng.py). On unless
@@ -195,6 +200,16 @@ def load_settings(home: Path | None = None) -> Settings:
     quick_end = _seconds("RED_QUICK_END_SILENCE", DEFAULT_QUICK_END_SILENCE, 0.0, 5.0)
     max_command = _seconds("RED_MAX_COMMAND_SECONDS", DEFAULT_MAX_COMMAND, 3.0, 120.0)
     follow_up = _seconds("RED_FOLLOW_UP_SECONDS", DEFAULT_FOLLOW_UP, 0.0, 30.0)
+    tts = (_env("RED_TTS") or "kokoro").lower()
+    if tts not in TTS_CHOICES:
+        raise ValueError(f"RED_TTS must be one of {TTS_CHOICES}, got {tts!r}")
+    speed_text = _env("RED_VOICE_SPEED") or "1.0"
+    try:
+        voice_speed = float(speed_text)
+    except ValueError:
+        voice_speed = -1.0
+    if not 0.7 <= voice_speed <= 1.5:
+        raise ValueError(f"RED_VOICE_SPEED must be a number from 0.7 to 1.5, got {speed_text!r}")
     web_text = (_env("RED_WEB_SEARCH") or "on").lower()
     if web_text not in {"on", "off", "1", "0", "true", "false", "yes", "no"}:
         raise ValueError(f"RED_WEB_SEARCH must be on or off, got {web_text!r}")
@@ -228,6 +243,9 @@ def load_settings(home: Path | None = None) -> Settings:
         whisper_model=_env("RED_WHISPER_MODEL") or DEFAULT_WHISPER_MODEL,
         whisper_device=whisper_device,
         piper_voice=_env("RED_PIPER_VOICE") or DEFAULT_PIPER_VOICE,
+        tts=tts,
+        voice=_env("RED_VOICE") or "af_heart",
+        voice_speed=voice_speed,
         mic_device=_env("RED_MIC_DEVICE"),
         search_engine=engine,
         web_search=web_text in {"on", "1", "true", "yes"},

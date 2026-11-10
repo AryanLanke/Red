@@ -14,7 +14,7 @@ Red is a local, offline voice and action assistant for Windows. A local LLM turn
 4. the router
 5. spoken confirmation for destructive tools
 6. the action
-7. Piper's spoken reply
+7. Spoken reply (Kokoro TTS, or Piper fallback)
 
 The overlay shows each step. The Phase 2 tracks (D, E, F) work in worktrees under `D:\RED\worktrees\`, and progress.md section 8.12 decides which files each one may edit.
 

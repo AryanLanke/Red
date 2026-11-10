@@ -166,7 +166,7 @@ def main(settings) -> int:
     """python -m red voice-setup: stops a hidden Red while recording, then starts it again."""
     from . import background
     from .audio import chime, record_command
-    from .tts import Speaker
+    from .tts_kokoro import make_speaker
     from .wakeword import make_wake_transcriber
 
     model_dir = settings.models_dir / "wakeword"
@@ -184,7 +184,7 @@ def main(settings) -> int:
         embed = voice_model.embed
     except Exception as e:  # noqa: BLE001 - no voice model: the words are still learned
         print(f"Voice match isn't available ({e}); learning only how you say it.")
-    speaker = Speaker(settings.models_dir / "piper", settings.piper_voice)
+    speaker = make_speaker(settings)
     try:
         speaker.load()
         say = lambda text: speaker.say(text, block=True)  # noqa: E731

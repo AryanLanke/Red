@@ -229,6 +229,19 @@ def check_voice_models(settings, sys_: System) -> list[Check]:
                              "python -m red setup"))
     except Exception as e:  # noqa: BLE001
         out.append(Check(WARN, f"Couldn't check the Piper voice ({e})"))
+    if settings.tts == "kokoro":
+        try:
+            from .tts_kokoro import KOKORO_FILES, VOICES
+            if not KOKORO_FILES.present(settings.models_dir / "kokoro"):
+                out.append(Check(WARN, "The Kokoro voice isn't downloaded, so Red speaks with Piper",
+                                 "python -m red setup"))
+            elif settings.voice not in VOICES:
+                out.append(Check(WARN, f"Unknown Kokoro voice {settings.voice!r}; Red uses af_heart",
+                                 f"Set RED_VOICE to one of: {', '.join(VOICES[:6])}, ..."))
+            else:
+                out.append(Check(OK, f"Kokoro voice {settings.voice} (speed {settings.voice_speed:g})"))
+        except Exception as e:  # noqa: BLE001
+            out.append(Check(WARN, f"Couldn't check the Kokoro voice ({e})"))
     return out
 
 

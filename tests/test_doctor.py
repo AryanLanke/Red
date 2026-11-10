@@ -212,5 +212,6 @@ def test_triggers(settings, monkeypatch, tmp_path):
 def test_voice_models_missing(settings):
     pytest.importorskip("faster_whisper")
     checks = doctor.check_voice_models(settings, system())
-    assert [c.status for c in checks] == [FAIL, FAIL]
+    # Whisper and Piper missing fail; Kokoro missing only warns (Red speaks with Piper).
+    assert [c.status for c in checks] == [FAIL, FAIL, WARN]
     assert all("setup" in c.fix for c in checks)

@@ -154,7 +154,10 @@ Your settings are in `RED_HOME\config\.env` (copied from `.env.example`). Settin
 | `RED_OVERLAY` | What Red shows while it works: `glow` around the screen edges, a `card` in the corner, `notify` (Windows notifications), or `off` | `glow` |
 | `RED_WHISPER_DEVICE` | Speech recognition on `cpu`, `cuda` (NVIDIA GPU) or `auto` | `cpu` |
 | `RED_WHISPER_MODEL` | Speech recognition model | `small` |
-| `RED_PIPER_VOICE` | The voice Red speaks with | `en_US-lessac-medium` |
+| `RED_TTS` | Voice engine: `kokoro` (more natural, default) or `piper` (fast fallback) | `kokoro` |
+| `RED_VOICE` | Kokoro voice name, such as `af_heart`, `af_bella`, `am_adam`, `bf_emma` | `af_heart` |
+| `RED_VOICE_SPEED` | Voice speed multiplier, from `0.7` to `1.5` | `1.0` |
+| `RED_PIPER_VOICE` | Fallback Piper voice used if Kokoro is unavailable or `RED_TTS=piper` | `en_US-lessac-medium` |
 | `RED_SEARCH_ENGINE` | `google`, `bing` or `duckduckgo` for web searches | `google` |
 | `RED_WEB_SEARCH` | `on` or `off`: answers also check web pages through Red's own SearXNG, not just Wikipedia. See *Privacy and safety* | `on` |
 | `RED_SEARCH_URL` | Use your own [SearXNG](https://docs.searxng.org/) on this PC instead of Red's, such as `http://127.0.0.1:8888`. Only addresses on your own PC are accepted | Red's own |

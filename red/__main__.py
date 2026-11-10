@@ -200,14 +200,13 @@ def load_voice(settings: Settings) -> Voice:
     from .audio import chime, record_command
     from .listener import Listener
     from .stt import Transcriber
-    from .tts import Speaker
     from .voice_confirm import spoken_ask
 
     models = settings.models_dir
     return Voice(
         transcriber=Transcriber(models / "whisper", settings.whisper_model, settings.whisper_device,
                                 hotwords=vocabulary(settings)),
-        speaker=Speaker(models / "piper", settings.piper_voice),
+        speaker=make_speaker(settings),
         record=functools.partial(record_command,
                                  max_seconds=settings.max_command_seconds,
                                  silence_seconds=settings.end_silence_seconds,
@@ -217,6 +216,12 @@ def load_voice(settings: Settings) -> Voice:
         listener_factory=Listener,
         make_ask=spoken_ask,
     )
+
+
+def make_speaker(settings: Settings):
+    """Kokoro (natural) with Piper behind it, or Piper alone (RED_TTS=piper)."""
+    from .tts_kokoro import make_speaker as make
+    return make(settings)
 
 
 def vocabulary(settings: Settings) -> str:

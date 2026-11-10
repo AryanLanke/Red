@@ -10,7 +10,7 @@ The first version of Red: a local voice and action assistant for Windows 11. Eve
 
 **Talking to Red**
 - Press **Ctrl+Alt+R**, or say the **"Hey Red"** wake word, then speak. If the wake word can't start, Red says so once and keeps working with the shortcut.
-- Speech recognition with Whisper (small), on the CPU by default. Red answers out loud with a Piper voice.
+- Speech recognition with Whisper (small), on the CPU by default. Red answers out loud with Kokoro-82M TTS (natural quality, 27 voices) with Piper as fallback.
 - A small floating status window in the bottom-right corner shows Listening, Thinking, Confirm, Speaking and Problem. It never takes the keyboard focus. Without PySide6, Red shows Windows notifications instead.
 - Typed mode (`python -m red --typed`), a dry run that only shows what Red would do (`--dry-run`), and one-off commands (`python -m red run "..."`, `python -m red route "..."`).
 - A local language model (Qwen2.5 7B, or 3B for smaller GPUs) through a pinned, code-signed Ollama that Red starts and stops itself. Red can also use an Ollama that's already running, or your own OpenAI-compatible server.
