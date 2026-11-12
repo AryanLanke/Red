@@ -186,6 +186,8 @@ def speaking_to(stream: "SpeechStream | None"):
 
 _DONE = object()
 
+_INTER_SENTENCE_PAUSE = 0.12   # a human beat between sentences, so Red doesn't sound robotic
+
 
 class SpeechStream:
     """Sentences in, speech out: Piper makes the next one while the last one plays.
@@ -258,6 +260,8 @@ class SpeechStream:
                     break
                 if playing:
                     player.wait()
+                    if not self.cancelled:
+                        time.sleep(_INTER_SENTENCE_PAUSE)
                 if self.cancelled or getattr(audio, "size", 0) == 0:
                     continue
                 self._mark_first()
