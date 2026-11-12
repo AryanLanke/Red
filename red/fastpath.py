@@ -142,6 +142,12 @@ _NOT_PLAYABLE = re.compile(r"^(?:it|this|that|the next.*|next.*|the previous.*|p
 _FACT = re.compile(r"(?:who (?:is|was|are|were|made|created|invented|founded|built|developed|designed|"
                    r"owns|wrote|directed|discovered|started)|what (?:is|are|was|were)|what's|"
                    r"tell me about|what do you know about) (.+)")
+# More phrasings that skip the router too (plan.md speed step 2): "when was X",
+# "where is X", "how tall is X", "what does X mean".
+_FACT_MORE = re.compile(
+    r"(?:(?:when|where) (?:was|were|is|are)|"
+    r"how (?:tall|big|large|far|deep|old|long|fast|high|hot|cold|heavy|wide) (?:is|are|was|were)) (.+)"
+    r"|what does (.+?) (?:mean|stand for)")
 _NOT_A_FACT = re.compile(
     r"\b(?:my|mine|me|i|i'm|im|you|your|yours|you're|it|its|it's|this|that|these|those|they|them|"
     r"their|he|him|his|she|her|we|us|our|here|there|red|up|time|date|day|today|tonight|tomorrow|"
@@ -265,4 +271,11 @@ def _match(said: str, apps: Callable[[str], bool], folders: Callable[[str], bool
         topic = re.sub(r"\s+(?:about|all about)$", "", topic)       # "what's Punisher about"
         if len(topic) >= 2:
             return _call("look_up", topic=topic)
+    m = _FACT_MORE.fullmatch(said)
+    if m:
+        subject = m.group(1) or m.group(2)
+        if subject and not _NOT_A_FACT.search(subject):
+            topic = re.sub(r"^(?:a|an|the)\s+", "", subject.strip())
+            if len(topic) >= 2:
+                return _call("look_up", topic=topic)
     return None

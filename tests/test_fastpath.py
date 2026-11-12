@@ -98,7 +98,7 @@ def test_clear_commands_skip_the_model(said, expected):
     "play the next one please and then pause",
     "don't open youtube", "sleep",                              # not matched: still the model
     "cancel it", "shut down in a while", "shut down at 10 pm",  # needs the model (or a clock)
-    "empty the recycle bin", "what's on my screen", "how tall is mount everest",
+    "empty the recycle bin", "what's on my screen",
     "I'm feeling lonely.", "banana", "", "   ",
     "open " + "x" * 90,
     "play Believer in Chrome",                              # play_online has no browser yet
@@ -116,6 +116,12 @@ def test_anything_unclear_goes_to_the_model(said):
     ("Hey Red, tell me about the James Webb telescope", "James Webb telescope"),
     ("who invented the telephone", "telephone"),
     ("what are black holes", "black holes"),
+    ("when was the light bulb invented", "light bulb invented"),
+    ("where is the Eiffel Tower", "Eiffel Tower"),
+    ("how tall is mount everest", "mount everest"),
+    ("how old is the universe", "universe"),
+    ("what does NASA stand for", "NASA"),
+    ("what does mortgage mean", "mortgage"),
 ])
 def test_plain_fact_questions_go_straight_to_look_up(said, topic):
     assert match(said) == call("look_up", topic=topic)
@@ -128,6 +134,8 @@ def test_plain_fact_questions_go_straight_to_look_up(said, topic):
     "what's the news today", "what is in my calendar", "what is 5 + 5", "what is 12 times 7",
     "who made it", "what is that", "who is she", "what was the song", "what time is it now",
     "what's happening", "what is wrong with this",
+    "where is my phone", "when is my next meeting", "how old are you", "what does red mean",
+    "where are you",
 ])
 def test_personal_or_follow_up_questions_still_go_to_the_model(said):
     result = match(said)
