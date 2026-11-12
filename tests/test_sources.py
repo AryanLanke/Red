@@ -241,7 +241,7 @@ def test_gather_budget_uses_the_clock_it_is_given():
 
 # --- the look-up: Wikipedia plus the web, checked against each other ---------------------
 
-def test_look_up_uses_the_web_in_ranking_order_with_wikipedia_last_if_unranked(searx_on):
+def test_look_up_uses_the_web_in_ranking_order_and_skips_wikipedia(searx_on):
     opener = FakeOpener({**wiki_routes(), f"{LOCAL}/search": HF_SEARX})
     llm = FakeLLM("Hugging Face is an AI company.")
     tool = LookUp(llm, opener)
@@ -251,10 +251,10 @@ def test_look_up_uses_the_web_in_ranking_order_with_wikipedia_last_if_unranked(s
     assert system == cross_check_system(False)
     assert "Sources, best-ranked first:" in user
     assert "[1] huggingface.co, Hugging Face docs:" in user
-    assert "[2] techcrunch.com" in user
-    assert "[3] Wikipedia, Hugging Face: Hugging Face, Inc. is an American company" in user
+    assert "[2] techcrunch.com" in user and "[3]" not in user
+    # Wikipedia is the fallback, not a source: it's never even asked.
+    assert not any(u.startswith("https://en.wikipedia.org") for u in opener.urls)
     assert tool.last_details.splitlines() == [
-        "Wikipedia: Hugging Face", "https://en.wikipedia.org/wiki/Hugging_Face",
         "huggingface.co: Hugging Face docs", "https://huggingface.co/docs",
         "techcrunch.com: Hugging Face raises money", "https://techcrunch.com/hf"]
 
