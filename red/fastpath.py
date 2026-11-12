@@ -1,10 +1,11 @@
-"""Instant common commands: "open YouTube", "volume up", "pause", "lock", "play Believer".
+"""Instant common commands: "open YouTube", "volume up", "pause", "lock", "shut down".
 
 In the 23:37 voice test the model took 1.3 s of the 2.65 s for "open YouTube".
 Clear, common commands don't need it. `match()` turns a sentence into a tool
 call only when the whole sentence is one of the forms below; anything else
 (None) goes to the model as before. Router.route() checks the call with the
-same schema as a model's call, and the Executor asks the same confirmations.
+same schema as a model's call, and the Executor asks the same confirmations
+(shutdown and restart stay destructive, so they are still confirmed aloud).
 
 It's plain string matching, well under a millisecond, with or without a GPU.
 The words are only looked up: an app, folder or site name has to be in a
@@ -87,6 +88,42 @@ _FIXED = [
     (r"(?:take a screenshot|take a screen ?shot|screenshot|capture (?:the|my) screen)", _call("take_screenshot")),
 ]
 _FIXED_RE = [(re.compile(p), c) for p, c in _FIXED]
+
+# "shut down", "shut down in 2 hours", "restart the pc": the delay is parsed
+# here, so even offline these go straight to the tool (the Executor still
+# confirms, since shutdown and restart are destructive).
+_DELAY_SUFFIX = r"(?:\s+in\s+(.+))?"
+_DEVICE = r"(?:the|my|this)\s+(?:pc|computer|laptop|system|machine)"
+_POWER = re.compile(
+    r"(?:(?:shut\s?down|shutdown|power\s+off|turn\s+off)(?:\s+" + _DEVICE + r")?"
+    r"|shut\s+" + _DEVICE + r"\s+down"
+    r"|turn\s+" + _DEVICE + r"\s+off)" + _DELAY_SUFFIX)
+_RESTART = re.compile(r"(?:restart|reboot)(?:\s+" + _DEVICE + r")?" + _DELAY_SUFFIX)
+_CANCEL = re.compile(r"cancel(?:\s+the)?\s+(?:shutdown|shut\s?down|restart|reboot)")
+
+
+def _delay_minutes(said: str) -> int | None:
+    """'2 hours', 'half an hour', '1 hour and 30 minutes' -> minutes, or None."""
+    said = " ".join(said.split())
+    if re.fullmatch(r"half\s+an?\s+hour", said):
+        return 30
+    if re.fullmatch(r"an?\s+hour\s+and\s+a\s+half", said):
+        return 90
+    total, found = 0, False
+    for part in re.split(r"\s*(?:and|,)\s*", said):
+        if re.fullmatch(r"(?:an?|one)\s+hour", part):
+            total, found = total + 60, True
+            continue
+        m = re.fullmatch(r"(\d+)\s*(?:hours?|hrs?|h)", part)
+        if m:
+            total, found = total + int(m.group(1)) * 60, True
+            continue
+        m = re.fullmatch(r"(\d+)\s*(?:minutes?|mins?|m)", part)
+        if m:
+            total, found = total + int(m.group(1)), True
+            continue
+        return None
+    return total if found else None
 
 _SET_VOLUME = re.compile(r"(?:set (?:the )?volume to|volume(?: to)?|turn (?:the )?volume to) (\d{1,3})(?: ?(?:percent|%))?")
 _OPEN = re.compile(r"(?:open|launch|start|open up|bring up|go to) (?:the |my )?(.+?)(?: app| application| website| site| folder)?")
@@ -186,6 +223,19 @@ def _match(said: str, apps: Callable[[str], bool], folders: Callable[[str], bool
     for pattern, call in _FIXED_RE:
         if pattern.fullmatch(said):
             return {"tool": call["tool"], "args": dict(call["args"])}
+    m = _POWER.fullmatch(said)
+    if m:
+        minutes = _delay_minutes(m.group(1)) if m.group(1) else 0
+        if minutes is not None:
+            return _call("shutdown", minutes=minutes)
+    m = _RESTART.fullmatch(said)
+    if m:
+        minutes = _delay_minutes(m.group(1)) if m.group(1) else 0
+        if minutes is not None:
+            return _call("restart", minutes=minutes)
+    m = _CANCEL.fullmatch(said)
+    if m:
+        return _call("cancel_shutdown")
     m = _SET_VOLUME.fullmatch(said)
     if m and int(m.group(1)) <= 100:
         return _call("volume", action="set", percent=int(m.group(1)))

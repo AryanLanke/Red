@@ -57,6 +57,21 @@ def call(tool, **args):
     ("what's the date today", call("tell_status", what="date")),
     ("how much battery do I have", call("tell_status", what="battery")),
     ("take a screenshot", call("take_screenshot")),
+    # power: instant, but still confirmed aloud because they're destructive
+    ("shut down", call("shutdown", minutes=0)),
+    ("shutdown", call("shutdown", minutes=0)),
+    ("shut down the pc", call("shutdown", minutes=0)),
+    ("shut my pc down", call("shutdown", minutes=0)),
+    ("turn off my laptop", call("shutdown", minutes=0)),
+    ("shut down in 2 hours", call("shutdown", minutes=120)),
+    ("shut down in 30 minutes", call("shutdown", minutes=30)),
+    ("shut down in half an hour", call("shutdown", minutes=30)),
+    ("shut down in 1 hour and 30 minutes", call("shutdown", minutes=90)),
+    ("restart", call("restart", minutes=0)),
+    ("reboot the pc", call("restart", minutes=0)),
+    ("restart in 10 minutes", call("restart", minutes=10)),
+    ("cancel shutdown", call("cancel_shutdown")),
+    ("cancel the restart", call("cancel_shutdown")),
     # play and search
     ("play Believer", call("play_online", query="Believer")),
     ("Play some Arijit Singh.", call("play_online", query="some Arijit Singh")),
@@ -81,7 +96,8 @@ def test_clear_commands_skip_the_model(said, expected):
     "search online for the mars rover and tell me about it",   # look_up
     "search for my resume file", "search for what is hugging face",
     "play the next one please and then pause",
-    "don't open youtube", "shut down in 2 hours", "restart", "sleep",   # destructive: always the model
+    "don't open youtube", "sleep",                              # not matched: still the model
+    "cancel it", "shut down in a while", "shut down at 10 pm",  # needs the model (or a clock)
     "empty the recycle bin", "what's on my screen", "how tall is mount everest",
     "I'm feeling lonely.", "banana", "", "   ",
     "open " + "x" * 90,
