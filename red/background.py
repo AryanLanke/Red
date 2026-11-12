@@ -11,13 +11,17 @@ confirmations work as usual; typed ones can't, because there is no console.
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import Callable
 
+log = logging.getLogger(__name__)
+
 PID_NAME = "red.pid"
+HOTKEY_PID_NAME = "red-hotkey.pid"
 DETACHED_PROCESS = 0x00000008
 CREATE_NEW_PROCESS_GROUP = 0x00000200
 CREATE_NO_WINDOW = 0x08000000
@@ -31,9 +35,20 @@ def pid_file(home: Path) -> Path:
     return home / "logs" / PID_NAME
 
 
+def hotkey_pid_file(home: Path) -> Path:
+    return home / "logs" / HOTKEY_PID_NAME
+
+
 def read_pid(home: Path) -> int | None:
     try:
         return int(pid_file(home).read_text(encoding="ascii").strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _read(path: Path) -> int | None:
+    try:
+        return int(path.read_text(encoding="ascii").strip())
     except (OSError, ValueError):
         return None
 
@@ -80,7 +95,53 @@ def stop(home: Path, *, runner: Callable = subprocess.run) -> bool:
         pid_file(home).unlink(missing_ok=True)
 
 
-def main(action: str, home: Path) -> int:
+def _start_if_needed(home: Path, *, runner: Callable = subprocess.run,
+                     popen: Callable = subprocess.Popen, python: str | None = None) -> bool:
+    """Start a hidden Red if none is running. True when one was started."""
+    pid = read_pid(home)
+    if pid is not None and is_running(pid, runner):
+        return False
+    try:
+        start(home, popen=popen, runner=runner, python=python)
+    except BackgroundError:
+        return False              # another press (or the sign-in shortcut) started it first
+    return True
+
+
+def watch(home: Path, *, hotkey: str, runner: Callable = subprocess.run,
+          popen: Callable = subprocess.Popen) -> None:
+    """Register the hotkey and start Red whenever it isn't running. Runs until killed.
+
+    Red's own listener handles the hotkey while Red is running, so this only
+    acts when Red is down (the pid file says so). A second watcher is refused.
+    """
+    from .listener import normalize_hotkey
+    try:
+        key = normalize_hotkey(hotkey)
+    except ValueError as e:
+        log.warning("Hotkey watcher won't start: %s", e)
+        return
+    own = hotkey_pid_file(home)
+    existing = _read(own)
+    if existing is not None and is_running(existing, runner):
+        log.info("A hotkey watcher is already running (process %s).", existing)
+        return
+    own.parent.mkdir(parents=True, exist_ok=True)
+    own.write_text(str(os.getpid()), encoding="ascii")
+    try:
+        from pynput import keyboard
+        hotkeys = keyboard.GlobalHotKeys({key: lambda: _start_if_needed(home, runner=runner,
+                                                                        popen=popen)})
+        hotkeys.start()
+        try:
+            hotkeys.join()
+        finally:
+            hotkeys.stop()
+    finally:
+        own.unlink(missing_ok=True)
+
+
+def main(action: str, home: Path, hotkey: str | None = None) -> int:
     if action == "background":
         try:
             pid = start(home)
@@ -92,9 +153,16 @@ def main(action: str, home: Path) -> int:
         return 0
     if action == "stop":
         if stop(home):
-            print("Red stopped. The microphone is off.")
+            print("Red stopped. The microphone is off. (The Ctrl+Alt+R watcher stays on, "
+                  "so the hotkey can start Red again.)")
         else:
             print("No hidden Red is running.")
+        return 0
+    if action == "hotkey":
+        if hotkey is None:
+            print("Red's hotkey is turned off (RED_HOTKEY), so there's nothing to watch.")
+            return 1
+        watch(home, hotkey=hotkey)
         return 0
     pid = read_pid(home)
     running = pid is not None and is_running(pid)

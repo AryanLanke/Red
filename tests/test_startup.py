@@ -40,6 +40,7 @@ def test_on_creates_shortcut_through_fixed_script(folder):
     assert not s.is_on()
     reply = s.on()
     assert s.is_on() and "start when you sign in" in reply
+    assert len(ps.calls) == 2                       # Red + the hotkey watcher
     argv, kwargs = ps.calls[0]
     assert argv[0].lower().endswith("powershell.exe") and "-EncodedCommand" in argv
     script = base64.b64decode(argv[-1]).decode("utf-16-le")
@@ -52,12 +53,16 @@ def test_on_creates_shortcut_through_fixed_script(folder):
     assert env["RED_LNK_CWD"] == str(Path("D:/RED/red"))
     assert env["RED_LNK_STYLE"] == "7"
     assert "shell" not in kwargs
+    hotkey_env = ps.calls[1][1]["env"]
+    assert hotkey_env["RED_LNK_PATH"] == str(folder / "Red Hotkey.lnk")
+    assert hotkey_env["RED_LNK_ARGS"] == f"-m red --home {Path('D:/RED')} hotkey"
 
 
 def test_home_with_spaces_is_quoted(folder):
     ps = FakePowerShell()
     make(folder, ps, home=Path("C:/Users/A B/Red")).on()
     assert ps.calls[0][1]["env"]["RED_LNK_ARGS"] == f'-m red --home "{Path("C:/Users/A B/Red")}" background'
+    assert ps.calls[1][1]["env"]["RED_LNK_ARGS"] == f'-m red --home "{Path("C:/Users/A B/Red")}" hotkey'
 
 
 def test_on_failure_is_reported(folder):
@@ -73,8 +78,9 @@ def test_off_and_status(folder):
     assert "wasn't set" in s.off()
     s.on()
     assert "starts when you sign in" in s.status()
+    assert s.hotkey_shortcut.is_file()
     assert "won't start" in s.off()
-    assert not s.is_on()
+    assert not s.is_on() and not s.hotkey_shortcut.is_file()
 
 
 def test_main_reports_errors(folder, capsys):

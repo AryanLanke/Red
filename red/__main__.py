@@ -9,6 +9,7 @@
     python -m red voice-setup              say "Hey Red" a few times so Red learns your voice
     python -m red wake-test                see what the wake word hears from your microphone
     python -m red background               run Red with no window (closing PowerShell won't stop it)
+    python -m red hotkey                   watch Ctrl+Alt+R and start Red when it isn't running
     python -m red stop                     stop the hidden Red; status says whether it runs
     python -m red startup on|off           start Red when you sign in, or stop doing that
     python -m red google-login             optional: let Red use your Gmail, Calendar and Contacts
@@ -956,6 +957,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("google-login", help="optional: let Red use your Gmail, Calendar and Contacts")
     sub.add_parser("google-logout", help="sign Red out of Google")
     for name, text in (("background", "run Red with no window"),
+                       ("hotkey", "watch for Ctrl+Alt+R and start Red when it isn't running"),
                        ("stop", "stop the hidden Red"), ("status", "is the hidden Red running?")):
         sub.add_parser(name, help=text)
     p_startup = sub.add_parser("startup", help="start Red when you sign in: on, off, or show")
@@ -988,9 +990,9 @@ def main(argv: list[str] | None = None) -> int:
                             format="%(asctime)s %(name)s %(levelname)s %(message)s")
         from .voice_setup import main as voice_setup_main
         return voice_setup_main(settings)
-    if args.cmd in ("background", "stop", "status"):
+    if args.cmd in ("background", "hotkey", "stop", "status"):
         from .background import main as background_main
-        return background_main(args.cmd, settings.home)
+        return background_main(args.cmd, settings.home, hotkey=settings.hotkey)
     if args.cmd == "startup":
         from .startup import main as startup_main
         return startup_main(args.action, settings.home)

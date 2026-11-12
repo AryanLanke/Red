@@ -1,12 +1,13 @@
-"""Start Red when you sign in: a shortcut in your Startup folder.
+"""Start Red when you sign in: two shortcuts in your Startup folder.
 
-    python -m red startup on       create the shortcut
-    python -m red startup off      remove it
-    python -m red startup          say whether it's on
+    python -m red startup on       create the shortcuts
+    python -m red startup off      remove them
+    python -m red startup          say whether they're on
 
-The shortcut runs pythonw.exe with "-m red --home <RED_HOME> background", so
-Red starts hidden with no console window, and "python -m red stop" / "status"
-still work through the pid file. The .lnk file is written by a fixed
+"Red.lnk" runs pythonw.exe with "-m red --home <RED_HOME> background", so Red
+starts hidden with no console window. "Red Hotkey.lnk" runs a tiny watcher
+(red/background.py watch) that keeps Ctrl+Alt+R working even when Red isn't
+running: the hotkey then starts Red. The .lnk files are written by a fixed
 PowerShell script; the paths reach it only through environment variables, so
 nothing is parsed as script.
 """
@@ -21,6 +22,7 @@ from pathlib import Path
 from typing import Callable
 
 SHORTCUT_NAME = "Red.lnk"
+HOTKEY_SHORTCUT_NAME = "Red Hotkey.lnk"
 STARTUP_FOLDER_ID = "{B97D20BB-F46A-4C97-BA10-5E3608430854}"   # FOLDERID_Startup
 WINDOW_MINIMIZED = 7
 
@@ -85,16 +87,27 @@ class Startup:
     def shortcut(self) -> Path:
         return self._folder() / SHORTCUT_NAME
 
+    @property
+    def hotkey_shortcut(self) -> Path:
+        return self._folder() / HOTKEY_SHORTCUT_NAME
+
     def is_on(self) -> bool:
         return self.shortcut.is_file()
 
     def on(self) -> str:
         path = self.shortcut
         path.parent.mkdir(parents=True, exist_ok=True)
+        self._write_shortcut(path, ["-m", "red", "--home", str(self.home), "background"])
+        self._write_shortcut(self.hotkey_shortcut,
+                             ["-m", "red", "--home", str(self.home), "hotkey"])
+        return (f"Red will start when you sign in ({path}), and Ctrl+Alt+R will start it "
+                f"if it isn't running ({self.hotkey_shortcut}).")
+
+    def _write_shortcut(self, path: Path, args: list[str]) -> None:
         env = dict(os.environ,
                    RED_LNK_PATH=str(path),
                    RED_LNK_TARGET=self._python(),
-                   RED_LNK_ARGS=subprocess.list2cmdline(["-m", "red", "--home", str(self.home), "background"]),
+                   RED_LNK_ARGS=subprocess.list2cmdline(args),
                    RED_LNK_CWD=str(self.workdir),
                    RED_LNK_STYLE=str(WINDOW_MINIMIZED))
         encoded = base64.b64encode(_SCRIPT.encode("utf-16-le")).decode("ascii")
@@ -109,21 +122,24 @@ class Startup:
         if result.returncode != 0 or not path.is_file():
             detail = " ".join(f"{result.stdout or ''} {result.stderr or ''}".split())[:200]
             raise StartupError(f"Couldn't create the shortcut {path}: {detail or result.returncode}")
-        return f"Red will start when you sign in ({path})."
 
     def off(self) -> str:
-        path = self.shortcut
-        if not path.is_file():
+        removed = []
+        for path in (self.shortcut, self.hotkey_shortcut):
+            if path.is_file():
+                try:
+                    path.unlink()
+                    removed.append(path.name)
+                except OSError as e:
+                    raise StartupError(f"Couldn't remove {path}: {e}") from e
+        if not removed:
             return "Red wasn't set to start at sign-in."
-        try:
-            path.unlink()
-        except OSError as e:
-            raise StartupError(f"Couldn't remove {path}: {e}") from e
         return "Red won't start at sign-in any more."
 
     def status(self) -> str:
         if self.is_on():
-            return f"Red starts when you sign in ({self.shortcut})."
+            return (f"Red starts when you sign in ({self.shortcut}), and Ctrl+Alt+R starts it "
+                    f"if it isn't running ({self.hotkey_shortcut}).")
         return "Red doesn't start at sign-in. Turn it on with: python -m red startup on"
 
 

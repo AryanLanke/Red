@@ -78,3 +78,35 @@ def test_main_messages(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(bg, "stop", lambda home: False)
     assert bg.main("stop", tmp_path) == 0
     assert "No hidden Red" in capsys.readouterr().out
+
+
+# --- the hotkey watcher ------------------------------------------------------------
+
+def test_start_if_needed_starts_red_when_nothing_is_running(tmp_path):
+    bg.pid_file(tmp_path).parent.mkdir()
+    assert bg._start_if_needed(tmp_path, runner=Runner(), popen=Popen, python="pythonw.exe") is True
+    assert Popen.instances[0].cmd == ["pythonw.exe", "-m", "red", "--home", str(tmp_path)]
+
+
+def test_start_if_needed_does_nothing_while_red_runs(tmp_path):
+    bg.pid_file(tmp_path).parent.mkdir()
+    bg.pid_file(tmp_path).write_text("4242")
+    assert bg._start_if_needed(tmp_path, runner=Runner(alive={4242}), popen=Popen) is False
+    assert Popen.instances == []
+
+
+def test_start_if_needed_swallows_a_race(tmp_path, monkeypatch):
+    def refuse(home, **kw):
+        raise bg.BackgroundError("already running")
+
+    monkeypatch.setattr(bg, "start", refuse)
+    assert bg._start_if_needed(tmp_path, runner=Runner(), popen=Popen) is False
+
+
+def test_hotkey_main_routes_to_the_watcher(tmp_path, monkeypatch, capsys):
+    seen = []
+    monkeypatch.setattr(bg, "watch", lambda home, **kw: seen.append((home, kw["hotkey"])))
+    assert bg.main("hotkey", tmp_path, hotkey="Ctrl+Alt+R") == 0
+    assert seen == [(tmp_path, "Ctrl+Alt+R")]
+    assert bg.main("hotkey", tmp_path, hotkey=None) == 1
+    assert "turned off" in capsys.readouterr().out
