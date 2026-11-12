@@ -234,169 +234,73 @@ class QtOverlay(Overlay):
 # Glow around the screen edges
 # --------------------------------------------------------------------------
 
-# The glow: a thin glossy line of light right at the screen edge, with a
-# soft halo behind it. A few soft patches of colour drift slowly along the
-# edges at different speeds, so the light looks liquid rather than spinning.
-# Corners are rounded, so the line runs smoothly round them.
-
-# Colour patches per state. Calm blues, violets and roses; warmer while Red
-# speaks, cooler while it asks you to confirm, amber for a problem.
+# Colours that sweep around the edges, per state. Red's own warm colours
+# while it listens and speaks, cooler ones while it thinks or asks.
 GLOW_PALETTES = {
-    "listening": ("#5b8cff", "#9b6bff", "#ff5c8a", "#ff9a6b"),
-    "thinking": ("#4f7dff", "#8f6bff", "#c86bff", "#5bc8ff"),
-    "confirm": ("#3b82f6", "#60c6ff", "#7c8cff", "#3bb8f6"),
-    "speaking": ("#ff6b8f", "#9b6bff", "#5b8cff", "#ffb36b"),
-    "error": ("#ffb020", "#ff6b4a", "#ffcc5c", "#ff8a3d"),
+    "listening": ("#ff3b30", "#ff9500", "#ff2d55", "#bf5af2"),
+    "thinking": ("#bf5af2", "#5e5ce6", "#ff2d55", "#64d2ff"),
+    "confirm": ("#0a84ff", "#64d2ff", "#5e5ce6", "#0a84ff"),
+    "speaking": ("#ff375f", "#ff9f0a", "#ff453a", "#bf5af2"),
+    "error": ("#ff9f0a", "#ff453a", "#ff9f0a", "#ffd60a"),
 }
-GLOW_SPEED = {          # how fast the colours drift: share of the screen's edge per second
-    "listening": 0.05,
-    "thinking": 0.16,
-    "confirm": 0.04,
-    "speaking": 0.08,
-    "error": 0.03,
+GLOW_SPEED = {          # turns of the colour sweep per second
+    "listening": 0.25,
+    "thinking": 0.9,
+    "confirm": 0.2,
+    "speaking": 0.35,
+    "error": 0.15,
 }
 GLOW_PULSE = {          # breaths per second
-    "listening": 0.6,
-    "thinking": 1.1,
-    "confirm": 0.5,
-    "speaking": 1.4,
-    "error": 1.6,
+    "listening": 0.9,
+    "thinking": 1.6,
+    "confirm": 0.7,
+    "speaking": 1.2,
+    "error": 2.0,
 }
-GLOW_DEPTH = 48         # pixels: how far the faint halo reaches in from each edge
-GLOW_RADIUS = 28        # pixels: the rounded corners the light follows
-GLOW_INSET = 3.0        # pixels: the bright line sits just inside the edge, fully visible
-GLOW_GLOSS = 0.45       # how far the bright line is mixed towards white
+GLOW_DEPTH = 56         # pixels: how far the glow reaches in from each edge
 GLOW_FPS = 30
-GLOW_FADE_IN = 0.3      # seconds
-GLOW_FADE_OUT = 0.7     # seconds
-GLOW_STOPS = 16         # colour samples along each strip (the colour patches are wide)
+GLOW_FADE_IN = 0.25     # seconds
+GLOW_FADE_OUT = 0.6     # seconds
+# Without numpy (no smooth mask): stacked strokes instead, as (stroke width
+# as a share of 2 x depth, opacity), wide and faint to thin and bright.
+GLOW_LAYERS = tuple((1.0 - i / 12, 0.06 + 0.5 * (i / 12) ** 2) for i in range(12))
+GLOW_SOFTNESS = 0.42    # the glow fades to about a third every 0.42 x depth pixels
 
 
-def rounded_edge_distance(xs, ys, width: int, height: int, radius: float):
-    """Distance in pixels from each point to the screen's rounded-corner outline.
+def edge_falloff(distance, depth: float):
+    """Glow strength (0..1) at `distance` pixels in from the nearest screen edge.
 
-    xs, ys are numpy grids of pixel positions. Along the straight edges it's
-    simply the distance to the nearest edge; inside a corner it's measured
-    to the corner's arc, so the light bends smoothly instead of meeting at
-    a sharp diagonal.
+    Bright at the edge, dying away smoothly and reaching exactly 0 at
+    `depth`. Works on numbers and on numpy arrays.
     """
     import numpy as np
 
-    right, bottom = width - 1 - radius, height - 1 - radius
-    dx = np.maximum(np.maximum(radius - xs, xs - right), 0.0)
-    dy = np.maximum(np.maximum(radius - ys, ys - bottom), 0.0)
-    straight = np.minimum(np.minimum(xs, width - 1 - xs), np.minimum(ys, height - 1 - ys))
-    corner = radius - np.hypot(dx, dy)
-    return np.where((dx > 0) & (dy > 0), corner, straight)
+    d = np.clip(np.asarray(distance, dtype=np.float32) / float(depth), 0.0, 1.0)
+    return np.exp(-d / GLOW_SOFTNESS) * (1.0 - d)
 
 
-def glow_profile(distance, depth: float):
-    """(halo, line) strength, 0..1, at `distance` pixels from the glow's centre line.
+def glow_mask(x0: int, y0: int, w: int, h: int, screen_w: int, screen_h: int, depth: int):
+    """Glow strength for every pixel of one strip, as uint8 rows (h, w).
 
-    The halo has a brighter inner part and a wide faint tail that ends
-    smoothly at `depth`; the line is a narrow highlight.
+    (x0, y0) is the strip's corner relative to the screen's corner. Each
+    pixel uses its distance to the nearest of the four edges, so the
+    corners blend smoothly where two strips meet.
     """
     import numpy as np
 
-    d = np.abs(np.asarray(distance, dtype=np.float32))
-    tail = np.clip(1.0 - (d / float(depth)) ** 2, 0.0, 1.0) ** 2
-    halo = (0.62 * np.exp(-(d / 8.0) ** 2) + 0.30 * np.exp(-(d / 24.0) ** 2)) * tail
-    line = np.exp(-(d / 1.7) ** 2)
-    return np.clip(halo, 0.0, 1.0), np.clip(line, 0.0, 1.0)
-
-
-def glow_masks(x0: int, y0: int, w: int, h: int, screen_w: int, screen_h: int,
-               depth: int = GLOW_DEPTH, radius: float = GLOW_RADIUS, inset: float = GLOW_INSET):
-    """The halo and line strengths for every pixel of one strip, as uint8 (h, w) arrays.
-
-    (x0, y0) is the strip's corner relative to the screen's corner.
-    """
-    import numpy as np
-
-    ys, xs = np.mgrid[y0:y0 + h, x0:x0 + w].astype(np.float32)
-    d = rounded_edge_distance(xs, ys, screen_w, screen_h, radius) - inset
-    halo, line = glow_profile(d, depth)
-    return (np.round(halo * 255).astype(np.uint8), np.round(line * 255).astype(np.uint8))
-
-
-def _hex_rgb(colour: str) -> tuple[float, float, float]:
-    colour = colour.lstrip("#")
-    return tuple(int(colour[i:i + 2], 16) / 255 for i in (0, 2, 4))  # type: ignore[return-value]
-
-
-def flow_colour(position: float, seconds: float, palette: tuple[str, ...],
-                speed: float) -> tuple[int, int, int]:
-    """The colour at `position` (0..1 round the screen's edge) at time `seconds`.
-
-    Each palette colour is a soft patch drifting round the edge at its own
-    speed (some the other way). Colours are mixed in linear light, so blends
-    stay clean instead of turning muddy.
-    """
-    n = len(palette)
-    total = [0.0, 0.0, 0.0]
-    weight_sum = 0.0
-    for i, colour in enumerate(palette):
-        direction = 1 if i % 2 == 0 else -1
-        centre = (i / n + direction * speed * (1 + 0.37 * i) * seconds) % 1.0
-        gap = abs(position - centre)
-        gap = min(gap, 1.0 - gap)
-        weight = math.exp(-(gap / 0.16) ** 2) + 1e-4
-        for k, c in enumerate(_hex_rgb(colour)):
-            total[k] += weight * c ** 2.2
-        weight_sum += weight
-    return tuple(int(round(255 * (t / weight_sum) ** (1 / 2.2))) for t in total)  # type: ignore[return-value]
-
-
-@functools.lru_cache(maxsize=16)
-def _linear_palette(palette: tuple[str, ...]):
-    import numpy as np
-
-    return np.array([_hex_rgb(c) for c in palette], dtype=np.float64) ** 2.2
-
-
-def flow_colours(positions, seconds: float, palette: tuple[str, ...],
-                 speed: float) -> list[tuple[int, int, int]]:
-    """flow_colour for many positions at once (numpy), as used on every frame."""
-    import numpy as np
-
-    pos = np.asarray(positions, dtype=np.float64)[:, None]
-    n = len(palette)
-    i = np.arange(n)
-    direction = np.where(i % 2 == 0, 1.0, -1.0)
-    centres = (i / n + direction * speed * (1 + 0.37 * i) * seconds) % 1.0
-    gap = np.abs(pos - centres[None, :])
-    gap = np.minimum(gap, 1.0 - gap)
-    weights = np.exp(-(gap / 0.16) ** 2) + 1e-4
-    mixed = (weights @ _linear_palette(tuple(palette))) / weights.sum(axis=1, keepdims=True)
-    rgb = np.round(255 * mixed ** (1 / 2.2)).astype(int)
-    return [tuple(int(c) for c in row) for row in rgb]
-
-
-def glossy(rgb: tuple[int, int, int], amount: float = GLOW_GLOSS) -> tuple[int, int, int]:
-    """Mix a colour towards white, for the bright highlight line."""
-    return tuple(int(round(c + (255 - c) * amount)) for c in rgb)  # type: ignore[return-value]
-
-
-def perimeter_span(side: str, x: int, y: int, w: int, h: int, screen_w: int, screen_h: int):
-    """Where a strip starts and ends along the edge, as (start, end) in 0..1 going clockwise."""
-    p = 2.0 * (screen_w + screen_h)
-    if side == "top":
-        return x / p, (x + w) / p
-    if side == "right":
-        return (screen_w + y) / p, (screen_w + y + h) / p
-    if side == "bottom":
-        return ((screen_w + screen_h + (screen_w - x)) / p,
-                (screen_w + screen_h + (screen_w - x - w)) / p)
-    return ((2 * screen_w + screen_h + (screen_h - y)) / p,
-            (2 * screen_w + screen_h + (screen_h - y - h)) / p)
+    xs = np.arange(w, dtype=np.float32) + x0
+    ys = np.arange(h, dtype=np.float32) + y0
+    dx = np.minimum(xs, screen_w - 1 - xs)[None, :]
+    dy = np.minimum(ys, screen_h - 1 - ys)[:, None]
+    strength = edge_falloff(np.minimum(dx, dy), depth)
+    return np.round(strength * 255).astype(np.uint8)
 
 
 def glow_alpha(level: float, state: str, seconds: float) -> float:
     """How strong the glow is right now: the fade level times a gentle breath."""
     pulse = GLOW_PULSE.get(state, 1.0)
-    breath = 0.85 + 0.15 * math.sin(seconds * 2 * math.pi * pulse)
-    eased = 1 - (1 - max(0.0, min(1.0, level))) ** 2      # quick to appear, soft to settle
-    return eased * breath
+    breath = 0.8 + 0.2 * math.sin(seconds * 2 * math.pi * pulse)
+    return max(0.0, min(1.0, level)) * breath
 
 
 def step_toward(value: float, target: float, dt: float,
@@ -407,8 +311,7 @@ def step_toward(value: float, target: float, dt: float,
     return max(target, value - dt / fade_out)
 
 
-def edge_strips(x: int, y: int, width: int, height: int,
-                depth: int) -> dict[str, tuple[int, int, int, int]]:
+def edge_strips(x: int, y: int, width: int, height: int, depth: int) -> dict[str, tuple[int, int, int, int]]:
     """The four thin windows (x, y, w, h) that together frame the screen.
 
     Four strips instead of one full-screen window: a see-through window is
@@ -428,17 +331,22 @@ def edge_strips(x: int, y: int, width: int, height: int,
 def _glow_class():
     """Build the Qt glow classes. Imported lazily so Red runs without PySide6."""
     from PySide6.QtCore import QElapsedTimer, QObject, QPointF, QRectF, Qt, QTimer, Signal, Slot
-    from PySide6.QtGui import QColor, QGuiApplication, QImage, QLinearGradient, QPainter
+    from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QGuiApplication, QImage,
+                               QPainter, QPen)
     from PySide6.QtWidgets import QWidget
 
-    def to_image(values):
-        """A white image whose alpha is `values` (uint8 rows), used as a mask."""
-        import numpy as np
-
-        h, w = values.shape
-        a = values.astype(np.uint32)
+    def mask_image(x0: int, y0: int, w: int, h: int, screen_w: int, screen_h: int, depth: int):
+        """The strip's fade as a white image whose alpha is the glow strength, or None."""
+        if w <= 0 or h <= 0:
+            return None
+        try:
+            import numpy as np
+        except ImportError:
+            return None
+        a = glow_mask(x0, y0, w, h, screen_w, screen_h, depth).astype(np.uint32)
         pixels = np.ascontiguousarray((a << 24) | (a << 16) | (a << 8) | a)  # premultiplied white
-        return QImage(pixels.data, w, h, w * 4, QImage.Format.Format_ARGB32_Premultiplied).copy()
+        image = QImage(pixels.data, w, h, w * 4, QImage.Format.Format_ARGB32_Premultiplied)
+        return image.copy()     # own the pixels; the numpy array goes away
 
     class Strip(QWidget):
         def __init__(self, glow, side: str):
@@ -453,10 +361,6 @@ def _glow_class():
             self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             self.setWindowTitle("Red")
             self.glow, self.side = glow, side
-            self.halo = self.line = None      # mask images, made when placed
-            self.line_at = None               # where the line's band starts in the strip
-            self.span = (0.0, 0.0)
-            self.buffer = None                # scratch image for the highlight line
 
         def paintEvent(self, event):  # noqa: N802 (Qt name)
             self.glow.paint(self)
@@ -473,10 +377,11 @@ def _glow_class():
             self.text = ""
             self.level = 0.0          # fade, 0 (hidden) .. 1 (full)
             self.target = 0.0
+            self.phase = 0.0          # degrees the colour sweep has turned
             self.palette = GLOW_PALETTES["listening"]
             self.speed = GLOW_SPEED["listening"]
-            self.flow = 0.0           # how far the colours have drifted (speed changes stay smooth)
             self.screen = QRectF()
+            self.masks: dict = {}
             self.clock = QElapsedTimer()
             self.clock.start()
             self.last = 0
@@ -494,34 +399,14 @@ def _glow_class():
             if screen is None:
                 return
             g = screen.geometry()        # the whole screen, taskbar included
-            if QRectF(g) == self.screen and all(s.halo is not None for s in self.strips.values()):
+            if QRectF(g) == self.screen and self.masks:
                 return
             self.screen = QRectF(g)
             for side, (x, y, w, h) in edge_strips(g.x(), g.y(), g.width(), g.height(),
                                                   self.depth).items():
-                strip = self.strips[side]
-                strip.setGeometry(x, y, w, h)
-                lx, ly = x - g.x(), y - g.y()
-                strip.span = perimeter_span(side, lx, ly, w, h, g.width(), g.height())
-                strip.halo = strip.line = strip.buffer = None
-                if w > 0 and h > 0:
-                    try:
-                        import numpy as np
-
-                        halo, line = glow_masks(lx, ly, w, h, g.width(), g.height(), self.depth)
-                    except ImportError:          # no numpy: show nothing rather than fail
-                        continue
-                    strip.halo = to_image(halo)
-                    # The bright line only lives in a thin band (wider at the
-                    # corners): keep just that part, so drawing it is cheap.
-                    rows = np.flatnonzero(line.any(axis=1))
-                    cols = np.flatnonzero(line.any(axis=0))
-                    if rows.size and cols.size:
-                        r0, r1, c0, c1 = rows[0], rows[-1] + 1, cols[0], cols[-1] + 1
-                        strip.line = to_image(np.ascontiguousarray(line[r0:r1, c0:c1]))
-                        strip.line_at = QPointF(float(c0), float(r0))
-                        strip.buffer = QImage(int(c1 - c0), int(r1 - r0),
-                                              QImage.Format.Format_ARGB32_Premultiplied)
+                self.strips[side].setGeometry(x, y, w, h)
+                self.masks[side] = mask_image(x - g.x(), y - g.y(), w, h,
+                                              g.width(), g.height(), self.depth)
 
         @Slot(str, str)
         def apply(self, state: str, text: str) -> None:
@@ -545,7 +430,7 @@ def _glow_class():
             now = self.clock.elapsed()
             dt = min(0.1, (now - self.last) / 1000)
             self.last = now
-            self.flow += dt * self.speed / GLOW_SPEED["listening"]
+            self.phase = (self.phase + self.speed * 360 * dt) % 360
             self.level = step_toward(self.level, self.target, dt)
             if self.level <= 0.0 and self.target <= 0.0:
                 self.timer.stop()
@@ -555,53 +440,41 @@ def _glow_class():
             for strip in self.strips.values():
                 strip.update()
 
-        def gradients(self, strip):
-            """The flowing colours along this strip: (halo gradient, glossy line gradient)."""
-            w, h = strip.width(), strip.height()
-            horizontal = strip.side in ("top", "bottom")
-            # span[0] is where this strip's own left (or top) end sits along the
-            # edge, so the gradients always run from there to its other end.
-            far = QPointF(w, 0) if horizontal else QPointF(0, h)
-            halo, line = QLinearGradient(QPointF(0, 0), far), QLinearGradient(QPointF(0, 0), far)
-            start, end = strip.span
-            ts = [i / GLOW_STOPS for i in range(GLOW_STOPS + 1)]
-            colours = flow_colours([(start + (end - start) * t) % 1.0 for t in ts], self.flow,
-                                   self.palette, GLOW_SPEED["listening"])
-            for t, rgb in zip(ts, colours):
-                halo.setColorAt(t, QColor(*rgb))
-                line.setColorAt(t, QColor(*glossy(rgb)))
-            return halo, line
-
         def paint(self, strip) -> None:
             alpha = glow_alpha(self.level, self.state if self.state != "idle" else "speaking",
                                self.clock.elapsed() / 1000)
-            if alpha <= 0.0 or strip.halo is None:
+            if alpha <= 0.0 or self.screen.isEmpty():
                 return
-            halo_colours, line_colours = self.gradients(strip)
             p = QPainter(strip)
-            # The halo: colours over the whole strip, cut to the soft halo shape.
-            p.setOpacity(alpha)
-            p.fillRect(strip.rect(), halo_colours)
-            p.setOpacity(1.0)
-            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
-            p.drawImage(0, 0, strip.halo)
-            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
-            if strip.buffer is not None:
-                # The glossy line, made in a small scratch image covering only
-                # its band, then laid on top of the halo.
-                buf = strip.buffer
-                buf.fill(0)
-                bp = QPainter(buf)
-                bp.translate(-strip.line_at.x(), -strip.line_at.y())
-                bp.fillRect(QRectF(strip.line_at, QPointF(strip.line_at.x() + buf.width(),
-                                                          strip.line_at.y() + buf.height())),
-                            line_colours)
-                bp.resetTransform()
-                bp.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
-                bp.drawImage(0, 0, strip.line)
-                bp.end()
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            # Paint in screen coordinates, so the four strips join up seamlessly.
+            g = strip.geometry()
+            dx, dy = self.screen.x() - g.x(), self.screen.y() - g.y()
+            p.translate(dx, dy)
+            w, h = self.screen.width(), self.screen.height()
+            sweep = QConicalGradient(QPointF(w / 2, h / 2), self.phase)
+            colours = self.palette + (self.palette[0],)
+            for i, colour in enumerate(colours):
+                sweep.setColorAt(i / (len(colours) - 1), QColor(colour))
+            mask = self.masks.get(strip.side)
+            if mask is not None:
+                # The colours fill the strip; the mask then fades them out
+                # smoothly from the screen edge inwards.
                 p.setOpacity(alpha)
-                p.drawImage(strip.line_at, buf)
+                p.fillRect(QRectF(-dx, -dy, g.width(), g.height()), QBrush(sweep))
+                p.resetTransform()
+                p.setOpacity(1.0)
+                p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+                p.drawImage(QRectF(0, 0, g.width(), g.height()), mask)
+            else:
+                edge = QRectF(0, 0, w, h)
+                for share, opacity in GLOW_LAYERS:
+                    pen = QPen(QBrush(sweep), max(1.0, 2 * self.depth * share))
+                    pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
+                    p.setPen(pen)
+                    p.setBrush(Qt.BrushStyle.NoBrush)
+                    p.setOpacity(opacity * alpha)
+                    p.drawRect(edge)
             p.end()
 
         def close(self) -> None:
