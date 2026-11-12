@@ -4,10 +4,11 @@
     python -m red startup off      remove it
     python -m red startup          say whether it's on
 
-The shortcut runs this Python with "-m red --home <RED_HOME>" in a minimized
-window, so you can restore the window and press Ctrl+C to quit Red. The .lnk
-file is written by a fixed PowerShell script; the paths reach it only through
-environment variables, so nothing is parsed as script.
+The shortcut runs pythonw.exe with "-m red --home <RED_HOME> background", so
+Red starts hidden with no console window, and "python -m red stop" / "status"
+still work through the pid file. The .lnk file is written by a fixed
+PowerShell script; the paths reach it only through environment variables, so
+nothing is parsed as script.
 """
 
 from __future__ import annotations
@@ -52,10 +53,12 @@ def startup_folder() -> Path:
 
 
 def _python() -> str:
-    # Prefer python.exe over pythonw.exe: Red needs a console for typed confirmations.
+    # pythonw.exe has no console window, so Red starts hidden at sign-in.
     exe = Path(sys.executable)
-    if exe.name.lower() == "pythonw.exe" and (exe.parent / "python.exe").is_file():
-        exe = exe.parent / "python.exe"
+    if exe.name.lower() != "pythonw.exe":
+        candidate = exe.with_name("pythonw.exe")
+        if candidate.is_file():
+            exe = candidate
     return str(exe)
 
 
@@ -91,7 +94,7 @@ class Startup:
         env = dict(os.environ,
                    RED_LNK_PATH=str(path),
                    RED_LNK_TARGET=self._python(),
-                   RED_LNK_ARGS=subprocess.list2cmdline(["-m", "red", "--home", str(self.home)]),
+                   RED_LNK_ARGS=subprocess.list2cmdline(["-m", "red", "--home", str(self.home), "background"]),
                    RED_LNK_CWD=str(self.workdir),
                    RED_LNK_STYLE=str(WINDOW_MINIMIZED))
         encoded = base64.b64encode(_SCRIPT.encode("utf-16-le")).decode("ascii")

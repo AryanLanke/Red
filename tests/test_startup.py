@@ -30,7 +30,7 @@ def folder(tmp_path):
 
 def make(folder, runner, home=Path("D:/RED")):
     return st.Startup(home, folder=lambda: folder, runner=runner,
-                      python=lambda: "D:\\RED\\.venv\\Scripts\\python.exe",
+                      python=lambda: "D:\\RED\\.venv\\Scripts\\pythonw.exe",
                       workdir=Path("D:/RED/red"))
 
 
@@ -47,8 +47,8 @@ def test_on_creates_shortcut_through_fixed_script(folder):
     assert "D:\\RED" not in script                # paths only travel in environment variables
     env = kwargs["env"]
     assert env["RED_LNK_PATH"] == str(folder / "Red.lnk")
-    assert env["RED_LNK_TARGET"].endswith("python.exe")
-    assert env["RED_LNK_ARGS"] == f"-m red --home {Path('D:/RED')}"
+    assert env["RED_LNK_TARGET"].endswith("pythonw.exe")
+    assert env["RED_LNK_ARGS"] == f"-m red --home {Path('D:/RED')} background"
     assert env["RED_LNK_CWD"] == str(Path("D:/RED/red"))
     assert env["RED_LNK_STYLE"] == "7"
     assert "shell" not in kwargs
@@ -57,7 +57,7 @@ def test_on_creates_shortcut_through_fixed_script(folder):
 def test_home_with_spaces_is_quoted(folder):
     ps = FakePowerShell()
     make(folder, ps, home=Path("C:/Users/A B/Red")).on()
-    assert ps.calls[0][1]["env"]["RED_LNK_ARGS"] == f'-m red --home "{Path("C:/Users/A B/Red")}"'
+    assert ps.calls[0][1]["env"]["RED_LNK_ARGS"] == f'-m red --home "{Path("C:/Users/A B/Red")}" background'
 
 
 def test_on_failure_is_reported(folder):
