@@ -301,6 +301,7 @@ class Listener:
 
     def _listen(self) -> None:
         detector = self._detector
+        failures = 0
         while True:
             with self._cond:
                 while not self._stopping and not self._should_listen():
@@ -308,6 +309,7 @@ class Listener:
                 if self._stopping:
                     return
                 self._mic_closed.clear()
+            wait = 0.0
             try:
                 detector.reset()
                 with self._mic_factory() as mic:
@@ -315,11 +317,20 @@ class Listener:
                         frame = mic.read()
                         if detector.score(to_int16(frame)) >= self.threshold:
                             self._fire("wakeword")
+                failures = 0
+                self.last_error = None
             except AudioError as e:
+                failures += 1
                 self.last_error = e
-                log.warning("Wake word microphone problem: %s. Retrying.", e)
-                with self._cond:
-                    self._mic_closed.set()
-                    self._cond.wait(timeout=2)
+                wait = min(0.25 * (2 ** (failures - 1)), 5.0)
+                log.warning("Wake word microphone problem: %s. Retrying in %.1f s.", e, wait)
+            except Exception as e:  # noqa: BLE001 - a crash here would deafen Red for good
+                failures += 1
+                self.last_error = e
+                wait = min(0.25 * (2 ** (failures - 1)), 5.0)
+                log.exception("Wake word crashed; retrying in %.1f s.", wait)
             finally:
                 self._mic_closed.set()
+            if wait:
+                with self._cond:
+                    self._cond.wait(timeout=wait)
