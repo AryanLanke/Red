@@ -97,14 +97,14 @@ def test_hey_red_is_the_default_and_no_other_assistant_name_is_offered():
     assert params["detector_factory"].default is make_detector
 
 
-def test_download_hey_red_fetches_pinned_tiny_whisper(tmp_path, monkeypatch):
+def test_download_hey_red_fetches_pinned_base_whisper(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(audio, "download", fake_download(calls))
     wake_dir = tmp_path / "wakeword"
     path = download_wakeword(wake_dir, "hey_red")
-    assert path == tmp_path / "whisper" / "tiny.en"
+    assert path == tmp_path / "whisper" / "base.en"
     assert {d.name for _, d, _ in calls} == {"config.json", "model.bin", "tokenizer.json", "vocabulary.txt"}
-    assert all("Systran/faster-whisper-tiny.en/resolve/0d3d19a" in u for u, _, _ in calls)
+    assert all("Systran/faster-whisper-base.en/resolve/3d3d5de" in u for u, _, _ in calls)
 
 
 def test_make_detector_picks_the_hey_red_detector(tmp_path, monkeypatch):

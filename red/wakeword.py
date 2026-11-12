@@ -6,7 +6,7 @@ How it works:
 2. Only a short burst of speech with a pause before and after it, the way
    people say a wake phrase, is passed on. Long speech, as in a conversation
    or a video, is skipped without running anything else.
-3. That clip goes to Whisper tiny.en on the CPU (about 0.3 s of work on two
+3. That clip goes to Whisper base.en on the CPU (well under a second on four
    threads), nudged towards "Hey Red" with Whisper's hotwords option.
 4. The transcript is matched against "hey red" and close variants.
 
@@ -32,8 +32,8 @@ from red.audio import SAMPLE_RATE, to_float32
 log = logging.getLogger(__name__)
 
 HEY_RED = "hey_red"
-WAKE_WHISPER_MODEL = "tiny.en"
-WAKE_CPU_THREADS = 2
+WAKE_WHISPER_MODEL = "base.en"
+WAKE_CPU_THREADS = 4
 
 VAD_CHUNK = 512                    # Silero works on 32 ms chunks at 16 kHz
 VAD_CONTEXT = 64
@@ -48,7 +48,7 @@ LONG_PHRASE_SECONDS = 1.25         # a "Hey Red" alone is shorter; longer has a 
 HEAD_SECONDS = 1.3                 # the start of a longer burst that is checked for "Hey Red"
 
 _HEY = {"hey", "hay", "hei", "heh", "hej"}
-_HEY_CLOSE = {"hi", "eh", "ay"}     # not "a": "a red car" must not match
+_HEY_CLOSE = {"hi", "eh", "ay", "ey", "heyy"}   # not "a": "a red car" must not match
 _RED = {"red"}
 _RED_CLOSE = {"redd", "rhed", "read", "wred", "rad", "rid"}
 _MERGED = {"heyred": 0.9, "hayred": 0.8, "heyread": 0.5}
@@ -170,7 +170,7 @@ def make_wake_transcriber(model_dir: Path):
                             cpu_threads=WAKE_CPU_THREADS)
 
     return Transcriber(Path(model_dir).parent / "whisper", WAKE_WHISPER_MODEL, device="cpu",
-                       beam_size=1, vad_filter=False, hotwords="Hey Red", max_new_tokens=12,
+                       beam_size=5, vad_filter=False, hotwords="Hey Red", max_new_tokens=12,
                        model_factory=factory)
 
 

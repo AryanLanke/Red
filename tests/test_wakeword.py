@@ -15,6 +15,8 @@ from voice_fakes import noise, tone
     ("Hey Red, stop.", 0.45),          # below the default threshold of 0.5
     ("Hey Red Light", 0.45),
     ("Hi Red", 0.7),
+    ("Ey Red", 0.7),
+    ("Heyy Red", 0.7),
     ("Hey, read.", 0.6),
 ])
 def test_wake_phrase_variants(text, expected):
