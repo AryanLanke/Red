@@ -179,6 +179,75 @@ answers first. README "Privacy and safety" says what is sent.
   all 6 it catches were look-ups for the model too. "Compare X with Y" fetches Y alongside the search.
   Question to first spoken sentence, routing included: average 2.9 s (2.0–4.5 s), was 4.5 s (3.3–5.1 s).
 
+## Speed plan: the first word in about a second (2026-11-11)
+
+The user's test: answers "take a really large amount of time". The targets are already in "The
+goal" above (a question or chat starts speaking in 1–2 s, an action is done in 1–3 s). This is the
+plan to get there, in the order to do it. Measure with the `Timing` lines in `red.log`
+(red/__main__.py:672) before and after every step, and never ship a step without numbers.
+
+### Where the time goes (one command, from when you stop talking)
+
+listen → transcribe (Whisper) → route → tool → speak.
+
+1. **route** — `Router.route` (red/router.py:145) tries `red/fastpath.py` (regex, 0 s) first;
+   everything else is one local-model call to Qwen3.5 4B writing a full JSON tool call.
+2. **tool** — an action (open, volume, shutdown) is just the action. A question is a *second*
+   model call: `answer` (red/tools/assistant.py) or `look_up` (red/tools/online.py), which also
+   waits for SearXNG (budget 6 s, red/tools/sources.py:42) and reads up to 3 pages (1.5 s).
+3. **speak** — Kokoro, streamed sentence by sentence (red/speech.py), so it overlaps the model.
+
+So a question today is two full 4B generations in a row, plus a web search. That is the delay.
+
+### The tasks, in order
+
+1. **Numbers first.** Confirm the `Timing` lines land in `red.log` when Red runs hidden
+   (`python -m red background`), and write down real first-word times for "open Edge", "what is a
+   black hole" (answer), "who made Siri" (look_up), "weather in Pune", and one chat line.
+   Everything below is judged against this table.
+
+2. **Widen the fast path so routing is free.** `red/fastpath.py` already catches plain "what is X"
+   (plan.md 7). Add the other common phrasings so they never pay for a routing call: "who is/was
+   X", "when was X", "where is X", "how tall/big/far is X", "what does X mean", "how do I X" →
+   straight to `answer`/`look_up` with the user's own words. Check against `commands.jsonl`:
+   every sentence the fast path now answers must be one the model would have routed the same way.
+   *Win: one whole 4B call off the front of every caught question.*
+
+3. **One model call for a question, not two.** For `answer`, when the fast path already knows it
+   is an `answer`, skip the router call and go straight to `Answer.run` (it only needs the
+   question). `look_up` needs its topic extracted, but "who/what/where is X" gives it for free —
+   same idea. The router's JSON call then remains only for sentences that genuinely need a tool
+   choice. *Win: questions start speaking roughly one generation earlier.*
+
+4. **Cut look_up's web wait.** SearXNG's two engines answered in 0.3–0.7 s warm (red/searxng.py),
+   so the 6 s gather budget and 1.5 s page budget (red/tools/sources.py:42–47) are mostly
+   headroom. Lower them to ~3 s and ~1.0 s; the page read already keeps the snippet when it misses
+   its deadline. *Win: a slow lower site can no longer hold up the answer.*
+
+5. **Cache the router prompt in Ollama.** The router system prompt (the whole tool list) is
+   identical every call; only the command changes. Ollama 0.40 caches the prompt prefix, so the
+   prefill is paid once per keep-alive. Check that `num_ctx=4096` fits it and that nothing varies
+   the prefix between calls (red/llm.py:252). Noted in "Later" already; re-test with the pinned
+   Ollama version. *Win: routing's time-to-first-token drops to near zero while the model stays
+   loaded.*
+
+6. **Route with a small model, answer with the big one.** Routing is classification; it doesn't
+   need 4B. If steps 2–5 aren't enough, run a second, smaller model for routing (qwen3.5-2b, or
+   qwen2.5-3b which measured 1.4 s a command on CPU in 2024, red/llm.py:148) and keep 4B for the
+   answers. Needs both loaded (VRAM) or a fast swap. *Win: the routing generation itself gets
+   2–4× faster for the commands that still use it.*
+
+7. **The first spoken word.** The model is already kept loaded and primed (`keep_model_warm`,
+   red/__main__.py:749) and TTS is streamed. If the step-1 numbers show the first sentence is slow
+   after idle, the fix is preloading the Kokoro voice at startup and checking Ollama isn't
+   unloading between the 240 s warm-ups. Whisper already reuses the pause-check transcript
+   (red/__main__.py:434); if transcribe is a big slice, drop `small.en` → `base.en`.
+
+### Definition of done
+
+The step-1 table, re-measured after the work: "open Edge" in 1–3 s, a question or chat's first word
+in 1–2 s, "play Believer" in 2–3 s — matching the targets in "The goal".
+
 ## Roadmap 2.0: shipping, personality and beating the competition
 
 Merged from the user's plan2.md (2026-11-09). Do these after the tasks above, in the phase order at the end.
