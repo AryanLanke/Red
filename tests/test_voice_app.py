@@ -237,10 +237,10 @@ def test_cancel_never_asks(world):
 def test_silence_and_empty_transcript(world):
     app, speaker, overlay, _, _ = make_app(world, audio_size=0)
     app.handle("hotkey")
-    assert speaker.said == ["I didn't hear anything."] and overlay.names[-1] == "idle"
+    assert speaker.said == ["I didn't hear anything. Could you say it again?"] and overlay.names[-1] == "idle"
     app, speaker, _, _, _ = make_app(world, "  ")
     app.handle("hotkey")
-    assert speaker.said == ["Sorry, I didn't catch that."]
+    assert speaker.said == ["Sorry, I didn't catch that. Could you say it again?"]
 
 
 def test_route_error_and_none(world):
@@ -249,7 +249,8 @@ def test_route_error_and_none(world):
     app, speaker, _, _, _ = make_app(world, "Banana split.", "Banana.")
     app.handle("hotkey")
     app.handle("hotkey")
-    assert speaker.said == ["Sorry, I didn't understand that.", "What should I do?"]
+    assert speaker.said == ["Sorry, I didn't understand that. Could you say it another way?",
+                            "What should I do?"]
 
 
 def test_crash_in_one_command_is_reported_and_red_keeps_going(world):
@@ -509,13 +510,15 @@ def test_a_question_in_the_reply_is_not_followed_by_another(world, monkeypatch):
     assert speaker.said[1:] == ["Okay."]
 
 
-def test_no_follow_up_after_a_failure(world, monkeypatch):
+def test_a_routing_failure_keeps_listening(world, monkeypatch):
     from red.llm import LLMError
     world["llm"].replies["Banana split."] = LLMError("the model is down")
-    app, speaker, overlay, record, out = follow_app(world, monkeypatch, "Banana split.", speech_calls=1)
+    app, speaker, overlay, record, out = follow_app(
+        world, monkeypatch, "Banana split.", "Open my downloads.")
     app.handle("wakeword")
-    assert speaker.said == ["Sorry, I didn't understand that."]
-    assert len(record.calls) == 1
+    assert speaker.said == ["Sorry, I didn't understand that. Could you say it another way?",
+                            "Opening Downloads."]
+    assert len(record.calls) == 2
 
 
 def test_follow_ups_are_capped(world, monkeypatch):

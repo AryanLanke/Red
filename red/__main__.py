@@ -472,16 +472,16 @@ class VoiceApp:
                 if self.chat.is_debate:
                     self.chat.end_debate()   # they stopped answering: the debate is over
                 return "", tool, False       # nothing more to do: just go quiet
-            last = "I didn't hear anything."
+            last = "I didn't hear anything. Could you say it again?"
             self._say(last)
-            return last, tool, False
+            return last, tool, True
         self._state("thinking", "")
         text = early if early is not None else (self.voice.transcriber.transcribe(audio) or "").strip()
         timer.mark("transcribe")
         if not text:
-            last = "Sorry, I didn't catch that."
+            last = "Sorry, I didn't catch that. Could you say it again?"
             self._say(last)
-            return last, tool, False
+            return last, tool, True
         self.out(f"You said: {text}")
         if is_filler(text):
             # "you know", "hmm": nothing to do. Said first, you're probably
@@ -515,9 +515,9 @@ class VoiceApp:
             timer.mark("route")
         except (RouteError, LLMError) as e:
             log.warning("Couldn't route %r: %s", text, e)
-            last = "Sorry, I didn't understand that."
+            last = "Sorry, I didn't understand that. Could you say it another way?"
             self._say(last)
-            return last, tool, False
+            return last, tool, True
         if len(steps) > 1:
             return self._run_steps(text, steps, timer)
         route = steps[0][1]

@@ -23,15 +23,15 @@ def greeting(now: datetime) -> str:
         return "Good morning"
     if 12 <= now.hour < 17:
         return "Good afternoon"
-    return "Good evening"
+    if 17 <= now.hour < 21:
+        return "Good evening"
+    return "Good night"
 
 
 _RED = r"(?: red)?"   # "thanks red", "hi red"
 
 _RULES: list[tuple[str, Reply]] = [
     (rf"(?:hi|hello|hey|hey there|hiya|yo){_RED}",
-     lambda now: f"{greeting(now)}! What can I do for you?"),
-    (rf"good (?:morning|afternoon|evening){_RED}",
      lambda now: f"{greeting(now)}! What can I do for you?"),
     (rf"good ?night{_RED}",
      lambda now: "Good night! Sleep well."),
@@ -49,6 +49,10 @@ _RULES: list[tuple[str, Reply]] = [
 
 _COMPILED = [(re.compile(pattern), reply) for pattern, reply in _RULES]
 
+# "Good morning", "good evening": mirror the user's own word, so "good evening"
+# at 11 pm doesn't get "corrected" to "good night".
+_GOOD_TIME = re.compile(rf"good (morning|afternoon|evening){_RED}")
+
 
 def normalize(text: str) -> str:
     """Lower case, curly quotes made straight, punctuation and extra spaces gone."""
@@ -63,6 +67,9 @@ def quick_reply(text: str, now: datetime | None = None) -> str | None:
     said = normalize(text)
     if not said:
         return None
+    good_time = _GOOD_TIME.fullmatch(said)
+    if good_time:
+        return f"Good {good_time.group(1)}! What can I do for you?"
     for pattern, reply in _COMPILED:
         if pattern.fullmatch(said):
             return reply(now or datetime.now())

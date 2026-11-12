@@ -17,6 +17,7 @@ from red.smalltalk import is_goodbye, normalize, quick_reply  # noqa: E402
 
 MORNING = datetime(2026, 11, 9, 9, 0)
 EVENING = datetime(2026, 11, 9, 20, 0)
+NIGHT = datetime(2026, 11, 9, 22, 37)
 
 
 # --- small talk ---------------------------------------------------------------
@@ -24,7 +25,7 @@ EVENING = datetime(2026, 11, 9, 20, 0)
 @pytest.mark.parametrize("said, expected", [
     ("Hello.", "Good morning! What can I do for you?"),
     ("Hey Red!", "Good morning! What can I do for you?"),
-    ("Good evening", "Good morning! What can I do for you?"),   # greets by the clock
+    ("Good evening", "Good evening! What can I do for you?"),   # mirrors your word
     ("Thanks, Red.", "You're welcome!"),
     ("What’s your name?", "I'm Red, your assistant on this PC."),
     ("Are you there?", "Yes, I'm here."),
@@ -36,6 +37,8 @@ def test_small_talk_gets_an_instant_reply(said, expected):
 
 def test_greeting_follows_the_time_of_day():
     assert quick_reply("hi", EVENING) == "Good evening! What can I do for you?"
+    assert quick_reply("hi", NIGHT) == "Good night! What can I do for you?"
+    assert quick_reply("good evening", NIGHT) == "Good evening! What can I do for you?"
 
 
 @pytest.mark.parametrize("said", [
@@ -218,68 +221,37 @@ def test_glow_alpha_breathes_within_bounds():
     assert ov.glow_alpha(0.0, "listening", 0.3) == 0.0
 
 
-def test_glass_layers_have_no_hard_line():
+def test_rounded_corners_have_no_seam():
     np = pytest.importorskip("numpy")
-    d = np.arange(0, 120, dtype=np.float32)
-    layers = ov.glass_profile(d, 96)
-    assert set(layers) == set(ov.LAYERS) == {"haze", "swell", "clouds", "sheen"}
-    for name, v in layers.items():
-        # Soft everywhere: no layer jumps by much from one pixel to the next.
-        assert np.abs(np.diff(v)).max() < 0.05, name
-        assert v[96:].max() == 0.0, name                             # gone by the depth
-    haze, swell = layers["haze"], layers["swell"]
-    assert haze.max() < 0.5 and (haze + swell).max() < 0.6           # translucent, never solid
-    assert swell[40] > haze[40]                                      # a swell reaches further in
-    assert layers["sheen"].argmax() > 5                              # the sheen sits inside the haze, not at the rim
+    ys, xs = np.mgrid[0:100, 0:200].astype(np.float32)
+    d = ov.rounded_edge_distance(xs, ys, 200, 100, 20)
+    assert d[50, 0] == 0 and d[0, 100] == 0 and d[50, 7] == 7        # straight edges
+    assert d[0, 0] < 0                                                # the square corner is outside the arc
+    # Moving along the arc keeps the same distance: no diagonal crease.
+    assert d[20 - 14, 20 - 14] == pytest.approx(20 - np.hypot(14, 14), abs=1e-4)
+    # The field is continuous where a corner meets a straight edge.
+    assert abs(float(d[5, 20]) - float(d[5, 21])) < 1e-4
 
 
-def test_soft_distance_rounds_the_corners():
+def test_glow_profile_is_a_bright_line_with_a_soft_halo():
     np = pytest.importorskip("numpy")
-    ys, xs = np.mgrid[0:300, 0:400].astype(np.float32)
-    soft = ov.soft_edge_distance(xs, ys, 400, 300)
-    assert abs(float(soft[150, 10]) - 10) < 0.5                      # about the plain distance mid-edge
-    # Near a corner it is lower than the plain minimum, which curves the haze.
-    assert float(soft[40, 40]) < 40 - 10
-    # And it changes smoothly across the diagonal: no crease.
-    row = soft[60, 40:81]
-    steps = np.diff(row)
-    assert np.all(np.abs(np.diff(steps)) < 0.2)
+    halo, line = ov.glow_profile(np.array([0.0, 2.0, 6.0, 20.0, 47.0, 60.0]), 48)
+    assert line[0] == pytest.approx(1.0) and line[2] < 0.01         # the line is narrow
+    assert halo[0] > halo[2] > halo[3] > halo[4] >= 0.0              # the halo fades steadily
+    assert halo[5] == 0.0                                            # and ends at the depth
+    assert halo.max() < line.max()                                   # a soft halo, never louder than the line
 
 
-def test_glass_masks_shapes():
+def test_glow_masks_shapes_and_inset():
     pytest.importorskip("numpy")
-    masks = ov.glass_masks(0, 0, 400, 96, 400, 300)
-    assert all(m.shape == (96, 400) for m in masks.values())
-    assert masks["haze"][0, 200] > masks["haze"][40, 200] > 0
+    halo, line = ov.glow_masks(0, 0, 400, 48, 400, 300)
+    assert halo.shape == line.shape == (48, 400)
+    assert line[int(ov.GLOW_INSET), 200] == 255                      # the line sits just inside the edge
+    assert line[30, 200] == 0 and halo[30, 200] > 0
 
 
-def test_liquid_waves_flow_and_stay_in_range():
-    a = ov.liquid([i / 40 for i in range(40)], 0.0)
-    b = ov.liquid([i / 40 for i in range(40)], 10.0)
-    assert all(0.0 <= v <= 1.0 for v in a + b)
-    assert max(a) - min(a) > 0.5                                     # real swells and dips
-    assert a != b                                                    # and they move
-    assert abs(ov.liquid([0.0], 3.0)[0] - ov.liquid([1.0], 3.0)[0]) < 1e-9   # seamless all the way round
-
-
-def test_corner_snap_makes_strips_agree_in_corners():
-    W, H, d = 800, 800, 96
-    P = 2 * (W + H)
-    # Top strip at x=20 and left strip at y=96 cover the same corner patch.
-    top, left = ov.corner_snap([20 / P, (2 * W + 2 * H - d) / P], W, H, d)
-    assert abs(top - left) < 1e-9 or abs(abs(top - left) - 1) < 1e-9
-    # Far from corners nothing changes, and just past the hold it catches up smoothly.
-    assert ov.corner_snap([0.125], W, H, d) == [0.125]
-    edge = [ov.corner_snap([(d + k) / P], W, H, d)[0] for k in range(0, 2 * d, 4)]
-    assert all(b >= a for a, b in zip(edge, edge[1:]))
-
-
-def test_the_gleam_travels():
-    a = ov.shine([0.12, 0.5], 0.0)
-    assert a[0] == pytest.approx(1.0) and a[1] < 0.1                 # bright only where the gleam is
-    later = ov.shine([0.12], 3.0)[0]
-    assert later < a[0]                                              # it has moved on
-    assert all(0.0 <= v <= 1.0 for v in ov.shine([i / 50 for i in range(50)], 7.0))
+def test_gloss_is_lighter():
+    assert ov.glossy((0, 100, 200), 0.5) == (128, 178, 228)
 
 
 def test_colours_flow_smoothly_and_wrap_round():
