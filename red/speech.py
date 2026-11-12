@@ -20,11 +20,15 @@ from __future__ import annotations
 
 import logging
 import queue
+import random
 import re
 import threading
 import time
 from contextlib import contextmanager
 from typing import Callable, Iterable, Iterator
+
+from .laugh import SAMPLE_RATE as LAUGH_RATE
+from .laugh import split_laughs
 
 log = logging.getLogger(__name__)
 
@@ -198,7 +202,8 @@ class SpeechStream:
     """
 
     def __init__(self, speaker, on_text: Callable[[str], None] | None = None,
-                 clock: Callable[[], float] = time.perf_counter):
+                 clock: Callable[[], float] = time.perf_counter,
+                 laugh_clips: Callable[[], list] | list | None = None):
         self.speaker = speaker
         self.on_text = on_text            # the text so far, for the overlay
         self._clock = clock
@@ -207,6 +212,11 @@ class SpeechStream:
         self.cancelled = False
         self.spoken: list[str] = []       # what was handed over to be said, in order
         self.first_word_at: float | None = None
+        # A callable or list of laugh clips (red.laugh.load_clips); loaded once.
+        self._laugh = (laugh_clips if callable(laugh_clips)
+                       else (lambda: laugh_clips or []))
+        self._laugh_cache: list | None = None
+        self._last_laugh = None
 
     @property
     def used(self) -> bool:
@@ -242,6 +252,22 @@ class SpeechStream:
             log.exception("Couldn't stop speaking")
         self._queue.put(_DONE)
 
+    def _clips(self) -> list:
+        if self._laugh_cache is None:
+            self._laugh_cache = self._laugh()
+        return self._laugh_cache
+
+    def _pick_laugh(self, clips: list):
+        """A clip, avoiding the one just played so two laughs don't repeat."""
+        if not clips:
+            return None
+        if len(clips) == 1:
+            return clips[0]
+        candidates = [c for c in clips if c is not self._last_laugh]
+        clip = random.choice(candidates)
+        self._last_laugh = clip
+        return clip
+
     def _run(self) -> None:
         synthesize = getattr(self.speaker, "synthesize", None)
         player = getattr(self.speaker, "player", None)
@@ -255,18 +281,33 @@ class SpeechStream:
                     self._mark_first()
                     self.speaker.say(item, block=True)
                     continue
-                audio, rate = synthesize(item)       # while the last sentence still plays
-                if self.cancelled:
-                    break
-                if playing:
-                    player.wait()
-                    if not self.cancelled:
-                        time.sleep(_INTER_SENTENCE_PAUSE)
-                if self.cancelled or getattr(audio, "size", 0) == 0:
-                    continue
-                self._mark_first()
-                player.play(audio, rate)
-                playing = True
+                for kind, value in split_laughs(item, self._clips(), choose=self._pick_laugh):
+                    if self.cancelled:
+                        break
+                    if kind == "laugh":
+                        if playing:
+                            player.wait()
+                            playing = False
+                            if not self.cancelled:
+                                time.sleep(_INTER_SENTENCE_PAUSE)
+                        if self.cancelled:
+                            break
+                        self._mark_first()
+                        player.play(value, LAUGH_RATE)
+                        playing = True
+                        continue
+                    audio, rate = synthesize(value)       # while the last part still plays
+                    if self.cancelled:
+                        break
+                    if playing:
+                        player.wait()
+                        if not self.cancelled:
+                            time.sleep(_INTER_SENTENCE_PAUSE)
+                    if self.cancelled or getattr(audio, "size", 0) == 0:
+                        continue
+                    self._mark_first()
+                    player.play(audio, rate)
+                    playing = True
             except Exception:  # noqa: BLE001 - no speakers: the text is still shown
                 log.exception("Couldn't speak %r", item[:60])
         if playing and not self.cancelled:

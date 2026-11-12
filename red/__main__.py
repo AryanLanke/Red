@@ -293,6 +293,7 @@ class VoiceApp:
         self._stream: SpeechStream | None = None   # what Red is saying right now, if streamed
         self._interrupted = False       # "Hey Red" (or the hotkey) while Red was talking
         self._interruptible = False
+        self._laughs: list | None = None   # the laugh clips, loaded on first speech
 
     # --- starting and stopping ------------------------------------------------
 
@@ -528,7 +529,8 @@ class VoiceApp:
             self._state("thinking", "Checking your repos...")
         # Answers and chat are spoken sentence by sentence while the model
         # writes them (red/speech.py); actions just return their reply.
-        stream = SpeechStream(self.voice.speaker, on_text=self._speaking)
+        stream = SpeechStream(self.voice.speaker, on_text=self._speaking,
+                              laugh_clips=self._laugh_clips)
         self._stream = stream
         try:
             with speaking_to(stream):
@@ -613,6 +615,17 @@ class VoiceApp:
         question = FOLLOW_UP_QUESTIONS[self._next_question % len(FOLLOW_UP_QUESTIONS)]
         self._next_question += 1
         return question
+
+    def _laugh_clips(self) -> list:
+        """The bundled laugh clips, loaded once so typed mode never reads them."""
+        if self._laughs is None:
+            try:
+                from . import laugh
+                self._laughs = laugh.load_clips()
+            except Exception:  # noqa: BLE001 - laughter is a nicety; the words still read out
+                log.exception("Couldn't load the laugh clips")
+                self._laughs = []
+        return self._laughs
 
     def _speaking(self, text: str) -> None:
         """The first streamed sentence is on its way: show it, and let you cut in."""
