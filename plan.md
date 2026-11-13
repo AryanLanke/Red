@@ -188,14 +188,18 @@ what works with no account, and adds a sign-in only where it's needed. Sign-in t
 PC, encrypted with Windows DPAPI (`CryptProtectData` through ctypes, a signed system API), in
 `RED_HOME\config\`, never in git. An app's data goes only to that app and to the local model.
 
-1. **Coding tools: VS Code, Qoder, Freebuff and other coding agents** (first; it goes with B2)
+1. **Coding tools: VS Code, Qoder, Freebuff, Antigravity and other coding agents** (first; it goes with B2)
    The user codes with several tools: VS Code, Qoder (an agentic IDE), Freebuff (Codebuff's free
-   desktop coding agent) and others. Red sits between the user and them, like a friend at the desk.
+   desktop coding agent), Google Antigravity (an agentic IDE) and others. Red sits between the user and them, like a friend at the desk.
    - **Know the tools.** A `[coding]` table in `allowlist.toml` names each tool and how to start it.
      Found on this PC (2026-11-13): VS Code (`code.cmd` on PATH), Qoder
      (`%LOCALAPPDATA%\Qoder\Qoder Launcher\Qoder Launcher.exe`), Freebuff
-     (`%LOCALAPPDATA%\Programs\@codebufffreebuff-desktop\Freebuff.exe`). Neither Qoder nor Freebuff has a
-     command on PATH. The first-run wizard finds the installed ones on other PCs.
+     (`%LOCALAPPDATA%\Programs\@codebufffreebuff-desktop\Freebuff.exe`), and Google's Antigravity in two
+     installs: the IDE (`%LOCALAPPDATA%\Programs\Antigravity IDE\_\Antigravity IDE.exe`, with a
+     command-line launcher `bin\antigravity-ide.cmd` that isn't on PATH, likely VS Code-style folder and
+     `--goto` arguments; check) and the Antigravity app (`%LOCALAPPDATA%\Programs\antigravity\Antigravity.exe`).
+     Qoder, Freebuff and the Antigravity app have no command on PATH. The first-run wizard finds the
+     installed ones on other PCs.
    - **Open:** "open Red in Qoder", "open Freebuff", "open plan.md in VS Code at line 40". Project names
      come from `repos.toml` and files must exist; only those reach the tool's command line, never model
      text. Spike whether Qoder's launcher and Freebuff take a folder argument (Qoder is a VS Code fork).
@@ -213,7 +217,8 @@ PC, encrypted with Windows DPAPI (`CryptProtectData` through ctypes, a signed sy
    - **VS Code extras:** a file at a line (`code --goto`), compare two files (`code --diff`), and code
      from `write_code` opening as a new file. Later, Red's own small extension (TypeScript), talking to
      Red on loopback with a token: insert at the cursor, "explain what I selected", "what's this error?"
-     (the Problems list). Check whether it also loads in Qoder. Spike it before building.
+     (the Problems list). Check whether it also loads in Qoder and Antigravity (both VS Code forks).
+     Spike it before building.
 2. **Spotify**
    - No account: open Spotify, play/pause/next/back (media keys, already there), "search Spotify for X"
      (a `spotify:search:` link), "what's playing?" (the Windows media session through PowerShell).
@@ -345,7 +350,7 @@ the glow design (D1), picking the character sketch (D2).
 ### For the user to decide
 - **Chattiness default:** Friendly (greetings only) is the plan's default. Chatty instead?
 - **Decided 2026-11-13:** Red uses the user's name (A2, A3). Plugins wanted, with sign-ins where needed
-  (B3): coding tools (VS Code, Qoder, Freebuff and other agents), Spotify, Discord, WhatsApp, mail.
+  (B3): coding tools (VS Code, Qoder, Freebuff, Antigravity and other agents), Spotify, Discord, WhatsApp, mail.
 - **Mascot shape:** the Rules forbid rounded edges and an outline on the glow. Does that apply to the
   character too?
 
