@@ -321,7 +321,10 @@ def test_general_page_shows_the_hotkey_and_overlay(app, settings):
     assert page.overlay.currentData() == "glow"
     page.hotkey.setText("Ctrl+Shift+R")
     page.overlay.setCurrentIndex(page.overlay.findData("card"))
-    assert page.values() == {"RED_HOTKEY": "Ctrl+Shift+R", "RED_OVERLAY": "card"}
+    assert page.values() == {"RED_HOTKEY": "Ctrl+Shift+R", "RED_OVERLAY": "card",
+                             "RED_CHATTINESS": "friendly"}
+    page.chattiness.setCurrentIndex(page.chattiness.findData("chatty"))
+    assert page.values()["RED_CHATTINESS"] == "chatty"
 
 
 def test_no_hotkey_shows_as_off(app, settings):
