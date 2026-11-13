@@ -99,6 +99,8 @@ class Settings:
     voice_match_threshold: float | None = None    # None: voice-setup's own pick
     # How often Red speaks unasked (red/greeter.py): quiet, friendly (greetings) or chatty.
     chattiness: str = "friendly"
+    # Opens and hides the chat window (red/chat_window.py); None turns the hotkey off.
+    chat_hotkey: str | None = "<ctrl>+<alt>+<space>"
 
     @property
     def bin_dir(self) -> Path:
@@ -271,6 +273,7 @@ def load_settings(home: Path | None = None) -> Settings:
         voice_match=match_text in {"on", "1", "true", "yes"},
         voice_match_threshold=float(match_threshold) if match_threshold is not None else None,
         chattiness=chattiness,
+        chat_hotkey=_switchable("RED_CHAT_HOTKEY", "<ctrl>+<alt>+<space>"),
     )
 
 

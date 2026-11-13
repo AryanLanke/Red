@@ -412,6 +412,12 @@ class VoiceApp:
         greeter = getattr(self, "greeter", None)
         if greeter is not None:
             greeter.stop()
+        hotkey = getattr(getattr(self, "chat_window", None), "hotkey", None)
+        if hotkey is not None:
+            try:
+                hotkey.stop()
+            except Exception:  # noqa: BLE001 - best effort while quitting
+                log.exception("Couldn't stop the chat window hotkey")
         if self.reminders is not None and getattr(self.reminders, "on_due", None) == self.announce:
             self.reminders.on_due = None
         for part in (self.listener, self.voice.speaker):
@@ -432,6 +438,8 @@ class VoiceApp:
         self._state("idle", f"Red is ready. {ready}")
         from .greeter import attach_greeter
         self.greeter = attach_greeter(self)     # hello, never a briefing (RED_CHATTINESS)
+        from . import chat_window
+        self.chat_window = chat_window.attach_chat_window(self)   # Ctrl+Alt+Space or "open chat"
         try:
             while not stop.wait(0.25):
                 pass

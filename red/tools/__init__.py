@@ -4,6 +4,7 @@ from .. import google_auth as _google
 
 from .assistant import Answer
 from .base import Tool, ToolRegistry
+from .chat import OpenChat
 from .files import FindFile, OpenFoundFile
 from .git_sync import CheckRepos
 from .mail import ComposeMail
@@ -34,7 +35,7 @@ def default_registry(google: bool | None = None) -> ToolRegistry:
         SetTimer(), SetReminder(), ListReminders(), CancelReminder(),
         NotifyWhenDone(watchers), CancelWatch(watchers),
         CheckRepos(),
-        *memory_tools(),
+        *memory_tools(), OpenChat(),
     ])
     if google if google is not None else _google.signed_in():
         # After python -m red google-login: one API, shared by mail, calendar and contacts.
