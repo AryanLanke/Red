@@ -1,0 +1,5 @@
+name = "whatsapp"
+version = "1.0"
+description = "Message someone on WhatsApp Desktop: opens the chat with your text filled in, reads it back, and sends only on a clear yes. Red can't read your messages (WhatsApp has no API for that)."
+author = "Red"
+needs = ["WhatsApp Desktop", "a [phones] table in contacts.toml"]

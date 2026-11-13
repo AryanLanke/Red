@@ -512,6 +512,13 @@ Every command writes a `Timing` line to `red.log`: listen, transcribe, route, ac
 - Routing, real model (48 sentences across memory, chat, code and coding): all right after two description fixes. "open Freebuff/Antigravity/Qoder" went to `open_app` until the description said "always this, not open_app, for Qoder, Freebuff and Antigravity".
 - Tool descriptions are the router's budget: each plugin adds about 130 tokens. Keep new ones short.
 
+#### Spotify, WhatsApp, Discord (2026-11-13, plan.md B3.2-4)
+
+- Spotify: `spotify_search` (`spotify:search:<URL-quoted query>`), `whats_playing` (the title of Spotify's window: "Artist - Song" while playing). "search Spotify for X" used to hit the fast path's web search, which now skips queries naming Spotify.
+- WhatsApp: `open_whatsapp`, `whatsapp_message` (destructive, read back; numbers from a `[phones]` table in contacts.toml; `whatsapp://send?phone=..&text=..`, both quoted; Enter only with WhatsApp in front). No message reading.
+- Discord: `open_discord` (only `discord://` links saved under `[discord.channels]`), `discord_voice` (your own keybinds from `[discord]`, only with Discord in front). No messages read or sent.
+- Router, real model: 14 sentences right. The prompt grew again, so `fit_context` grew the context once more (one 16 s model reload, then 0.9–1.2 s). Each plugin tool costs ~130 prompt tokens; before adding many more, consider routing in two steps.
+
 ### 7.3 Overlay (Track C)
 
 - PySide6. Frameless, always on top, translucent, and doesn't take keyboard focus. Sits in the bottom-right corner of the primary screen.

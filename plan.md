@@ -265,6 +265,15 @@ opens Qoder and puts the task on the clipboard; it presses nothing in Qoder, whi
 shortcut, so you paste), "what did it change?". Tell me each tool's chat shortcut to make it paste and
 send by itself (`[coding.qoder] chat_key = "ctrl+l"` in allowlist.toml).
 
+**Spotify (no account), WhatsApp and Discord ✅ built 2026-11-13** with fakes (`red/plugins/spotify|whatsapp|discord`).
+Spotify: `spotify_search`, `whats_playing` (reads Spotify's window title instead of PowerShell: simpler, no
+network). The Spotify Web API sign-in (play a named song, playlists, like) is **not built**: it needs the user
+to register a developer app and Premium; ask first. WhatsApp: add `[phones]` to contacts.toml, then
+"message Rahul on WhatsApp: running late" reads back, opens the chat filled in and presses Enter only with
+WhatsApp in front. Discord: set `mute_key`, `deafen_key` and saved channels under `[discord]` in
+allowlist.toml. **Left for the user:** try each once; the WhatsApp link behaviour on this PC is unchecked
+(no live app was opened).
+
 1. **Coding tools: VS Code, Qoder, Freebuff, Antigravity and other coding agents** (first; it goes with B2) ✅
    The user codes with several tools: VS Code, Qoder (an agentic IDE), Freebuff (Codebuff's free
    desktop coding agent), Google Antigravity (an agentic IDE) and others. Red sits between the user and them, like a friend at the desk.

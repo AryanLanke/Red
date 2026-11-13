@@ -1,0 +1,5 @@
+name = "discord"
+version = "1.0"
+description = "Open Discord or a saved server or channel, and mute or deafen with the keybinds you set in Discord. Red never reads or sends messages as you (that breaks Discord's terms)."
+author = "Red"
+needs = ["Discord Desktop", "a [discord] table in allowlist.toml for channels and keybinds"]

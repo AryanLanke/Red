@@ -1,0 +1,5 @@
+name = "spotify"
+version = "1.0"
+description = "Search Spotify and say what's playing. No account needed. Playing a named song through Spotify's Web API (sign-in, Premium) is not built yet."
+author = "Red"
+needs = ["the Spotify desktop app"]

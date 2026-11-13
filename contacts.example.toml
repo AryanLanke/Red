@@ -7,4 +7,9 @@
 
 [contacts]
 mom = "mom@example.com"
+
+# Phone numbers for the WhatsApp plugin ("message Rahul on WhatsApp: running late").
+# With the country code. Optional: old files without this table keep working.
+[phones]
+# rahul = "+919876543210"
 # "alex kim" = "alex.kim@example.com"

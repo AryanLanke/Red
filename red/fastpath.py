@@ -256,7 +256,8 @@ def _match(said: str, apps: Callable[[str], bool], folders: Callable[[str], bool
     m = _SEARCH_WEB.fullmatch(said)
     if m:
         query, browser = _browser(m.group(1).strip())
-        if not query or _NOT_A_WEB_SEARCH.search(query) or named_in(query):
+        if (not query or _NOT_A_WEB_SEARCH.search(query) or named_in(query)
+                or re.search(r"\bspotify\b", query, re.I)):     # the spotify plugin's search
             return None
         return _call("web_search", query=query, **({"browser": browser} if browser else {}))
     m = _PLAY.fullmatch(said)
