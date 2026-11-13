@@ -56,6 +56,9 @@ def _no_real_memory(monkeypatch, tmp_path):
     monkeypatch.setattr(red.memory.Learner, "start", lambda self: None)
     import red.greeter
     monkeypatch.setattr(red.greeter.Greeter, "start", lambda self: None)   # no real idle checks or hellos
+    import red.plugins
+    monkeypatch.setattr(red.plugins, "user_plugins_dir", lambda home: tmp_path / "plugins")   # never the user's
+    monkeypatch.setattr(red.plugins, "state_path", lambda home: tmp_path / "config" / "plugins.json")
     import red.chat_window
     monkeypatch.setattr(red.chat_window, "attach_chat_window", lambda app: None)   # no window, no hotkey
     monkeypatch.setattr(red.chat_window, "start_hotkey", _no_hotkey)

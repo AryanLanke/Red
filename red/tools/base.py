@@ -50,6 +50,7 @@ class Tool(ABC):
 class ToolRegistry:
     def __init__(self, tools: Iterable[Tool] = ()):
         self._tools: dict[str, Tool] = {}
+        self.plugins: list = []       # red.plugins.Plugin, for the ones default_registry loaded
         for tool in tools:
             self.add(tool)
 

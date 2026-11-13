@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter
-from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
                                QListWidget, QListWidgetItem, QPlainTextEdit, QPushButton, QSlider,
                                QVBoxLayout, QWidget)
 
@@ -487,6 +487,75 @@ class GeneralSettingsPage(QWidget):
         return {"RED_HOTKEY": self.hotkey.text().strip() or "off",
                 "RED_OVERLAY": self.overlay.currentData(),
                 "RED_CHATTINESS": self.chattiness.currentData()}
+
+
+class PluginsPage(QWidget):
+    """Every plugin, on or off (plan.md B1). Reads plugin.toml only: no plugin code runs here."""
+
+    def __init__(self, settings: Settings, *, discover=None, parent=None):
+        super().__init__(parent)
+        from red import plugins as plugins_mod
+        self._settings = settings
+        self._discover = discover or (lambda: plugins_mod.discover(settings.home))
+        layout = QVBoxLayout(self)
+        layout.addWidget(_title("Plugins"))
+        layout.addWidget(_hint("Red grows through plugins: a folder with plugin.toml and tools.py in "
+                               f"{plugins_mod.user_plugins_dir(settings.home)}. Changes apply when "
+                               "Red starts again."))
+        self.list_layout = QVBoxLayout()
+        self.list_layout.setSpacing(8)
+        layout.addLayout(self.list_layout)
+        layout.addStretch(1)
+        self.boxes: dict[str, QCheckBox] = {}
+        self.refresh()
+
+    def refresh(self) -> None:
+        from red import plugins as plugins_mod
+        _clear(self.list_layout)
+        self.boxes = {}
+        try:
+            found = self._discover()
+        except Exception as e:  # noqa: BLE001 - show it instead of closing the app
+            self.list_layout.addWidget(QLabel(f"Couldn't look for plugins: {e}"))
+            return
+        if not found:
+            self.list_layout.addWidget(_hint("No plugins yet."))
+            return
+        state = plugins_mod.read_state(self._settings.home)
+        for plugin in found:
+            frame = QFrame()
+            frame.setFrameShape(QFrame.Shape.StyledPanel)
+            row = QHBoxLayout(frame)
+            text = QVBoxLayout()
+            head = f"{plugin.name} {plugin.version}".strip()
+            box = QCheckBox(head)
+            box.setStyleSheet("font-weight: 600;")
+            box.setChecked(plugins_mod.is_enabled(state, plugin.name, plugin.default_on)
+                           and not plugin.error)
+            box.setEnabled(not plugin.error)
+            text.addWidget(box)
+            detail = plugin.error and f"Can't load: {plugin.error}" or plugin.description
+            extra = [f"by {plugin.author}"] if plugin.author else []
+            extra += [f"needs {', '.join(plugin.needs)}"] if plugin.needs else []
+            extra += ["built in"] if plugin.builtin else []
+            label = QLabel(" · ".join([detail] + extra) if detail else " · ".join(extra))
+            label.setWordWrap(True)
+            label.setStyleSheet("color: #b3261e;" if plugin.error else "color: #6b6b6b;")
+            text.addWidget(label)
+            row.addLayout(text, 1)
+            self.list_layout.addWidget(frame)
+            if not plugin.error:
+                self.boxes[plugin.name] = box
+
+    def save(self) -> None:
+        from red import plugins as plugins_mod
+        state = plugins_mod.read_state(self._settings.home)
+        found = {p.name: p for p in self._discover()}
+        for name, box in self.boxes.items():
+            plugin = found.get(name)
+            default = plugin.default_on if plugin else True
+            if box.isChecked() != plugins_mod.is_enabled(state, name, default):
+                plugins_mod.set_enabled(self._settings.home, name, box.isChecked())
 
 
 class MemoryPage(QWidget):

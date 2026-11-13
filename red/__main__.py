@@ -897,6 +897,11 @@ def _install_examples(settings: Settings) -> None:
         if not target.exists() and example.is_file():
             shutil.copyfile(example, target)
             print(f"Created {target}; edit it to add your own entries.")
+    try:
+        from .plugins import install_examples
+        print(f"Example plugins are in {install_examples(settings.home)}.")
+    except OSError as e:
+        print(f"Couldn't copy the example plugins: {e}")
 
 
 EXAMPLE_ENV = REPO_ROOT / ".env.example"
@@ -1033,6 +1038,8 @@ def main(argv: list[str] | None = None) -> int:
                        ("hotkey", "watch for Ctrl+Alt+R and start Red when it isn't running"),
                        ("stop", "stop the hidden Red"), ("status", "is the hidden Red running?")):
         sub.add_parser(name, help=text)
+    p_plugins = sub.add_parser("plugins", help="list plugins, or turn one on or off")
+    p_plugins.add_argument("action", nargs="*", metavar="list | on NAME | off NAME")
     p_startup = sub.add_parser("startup", help="start Red when you sign in: on, off, or show")
     p_startup.add_argument("action", nargs="?", choices=("on", "off"))
     p_route = sub.add_parser("route", help="show the tool call for one command")
@@ -1070,6 +1077,9 @@ def main(argv: list[str] | None = None) -> int:
                                 format="%(asctime)s %(name)s %(levelname)s %(message)s")
         from .background import main as background_main
         return background_main(args.cmd, settings.home, hotkey=settings.hotkey)
+    if args.cmd == "plugins":
+        from .plugins import main as plugins_main
+        return plugins_main(settings.home, args.action)
     if args.cmd == "startup":
         from .startup import main as startup_main
         return startup_main(args.action, settings.home)

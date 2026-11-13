@@ -20,8 +20,13 @@ from .web import OpenUrl, WebSearch
 from .youtube import PlayOnline
 
 
-def default_registry(google: bool | None = None) -> ToolRegistry:
-    """Every tool. google: the Gmail and Calendar tools (None: if Red is signed in)."""
+def default_registry(google: bool | None = None, plugins: bool | None = None,
+                     home=None) -> ToolRegistry:
+    """Every tool. google: the Gmail and Calendar tools (None: if Red is signed in).
+
+    plugins: the tools of every plugin that's on (red/plugins.py), from Red's own
+    red/plugins/ and RED_HOME\\plugins (`home`, or RED_HOME). False: Red's own tools only.
+    """
     # No local music: every "play ..." goes to play_online (YouTube), and pause,
     # resume, next, previous and stop are the media keys, which control it.
     watchers = Watchers()              # notify_when_done and cancel_watch share the watches
@@ -44,6 +49,19 @@ def default_registry(google: bool | None = None) -> ToolRegistry:
         api = _google.GoogleApi()
         for tool in mail_tools(api) + calendar_tools(api):
             registry.add(tool)
+    if plugins is not False:
+        from .. import plugins as _plugins
+        from ..config import red_home
+        try:
+            loaded = _plugins.load(home or red_home(), {t.name for t in registry})
+        except Exception:  # noqa: BLE001 - Red's own tools still work
+            import logging
+            logging.getLogger(__name__).exception("Plugins couldn't load")
+            loaded = []
+        for plugin in loaded:
+            for tool in plugin.tools:
+                registry.add(tool)
+        registry.plugins = loaded
     return registry
 
 
