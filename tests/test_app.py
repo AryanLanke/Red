@@ -318,7 +318,7 @@ def test_speed_slider_covers_its_whole_range(app, settings):
 def test_general_page_shows_the_hotkey_and_overlay(app, settings):
     page = pages.GeneralSettingsPage(settings)
     assert page.hotkey.text() == "Ctrl+Alt+R"
-    assert page.overlay.currentData() == "glow"
+    assert page.overlay.currentData() == "companion"
     page.hotkey.setText("Ctrl+Shift+R")
     page.overlay.setCurrentIndex(page.overlay.findData("card"))
     assert page.values() == {"RED_HOTKEY": "Ctrl+Shift+R", "RED_OVERLAY": "card",

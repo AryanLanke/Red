@@ -449,6 +449,7 @@ class GeneralSettingsPage(QWidget):
 
         grid.addWidget(QLabel("Overlay"), 2, 0)
         self.overlay = QComboBox()
+        self.overlay.addItem("A companion peeking over the screen edge", "companion")
         self.overlay.addItem("Glow around the screen edges", "glow")
         self.overlay.addItem("A small corner card", "card")
         self.overlay.addItem("Windows notifications", "notify")

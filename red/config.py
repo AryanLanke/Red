@@ -32,10 +32,14 @@ SEARCH_ENGINE_CHOICES = ("google", "bing", "duckduckgo")
 BROWSER_CHOICES = ("chrome", "edge", "firefox", "default")
 TTS_CHOICES = ("kokoro", "piper")
 DEFAULT_BROWSER = "chrome"
-# How Red shows what it's doing: a glow around the screen edges, the small
-# corner card, Windows notifications, or nothing.
-OVERLAY_CHOICES = ("glow", "card", "notify", "off")
-DEFAULT_OVERLAY = "glow"
+# How Red shows what it's doing: the companion peeking over the screen edge
+# (red/avatar; the glow if its pictures aren't installed), a glow around the
+# screen edges, the small corner card, Windows notifications, or nothing.
+OVERLAY_CHOICES = ("companion", "glow", "card", "notify", "off")
+DEFAULT_OVERLAY = "companion"
+# The companions with a look today (red/avatar COMPANIONS) and their sizes.
+COMPANION_CHOICES = ("red", "remy", "asha")
+COMPANION_SIZES = ("small", "medium", "large")
 # Natural pauses mid-sentence run up to about a second, so wait longer than
 # that before deciding you've finished.
 DEFAULT_END_SILENCE = 1.5      # seconds of quiet that end a command
@@ -90,6 +94,9 @@ class Settings:
     search_url: str | None = None
     browser: str = DEFAULT_BROWSER
     overlay: str = DEFAULT_OVERLAY
+    # Which companion is on screen; None means the last one picked from its menu (or Red).
+    companion: str | None = None
+    companion_size: str = "medium"
     end_silence_seconds: float = DEFAULT_END_SILENCE
     quick_end_silence_seconds: float = DEFAULT_QUICK_END_SILENCE
     max_command_seconds: float = DEFAULT_MAX_COMMAND
@@ -205,7 +212,13 @@ def load_settings(home: Path | None = None) -> Settings:
     overlay = (_env("RED_OVERLAY") or DEFAULT_OVERLAY).lower()
     if overlay not in OVERLAY_CHOICES:
         raise ValueError(f"RED_OVERLAY must be one of {OVERLAY_CHOICES}, got {overlay!r}")
-    end_silence = _seconds("RED_END_SILENCE", DEFAULT_END_SILENCE, 0.3, 5.0)
+    companion = (_env("RED_COMPANION") or "").lower() or None
+    if companion is not None and companion not in COMPANION_CHOICES:
+        raise ValueError(f"RED_COMPANION must be one of {COMPANION_CHOICES}, got {companion!r}")
+    companion_size = (_env("RED_COMPANION_SIZE") or "medium").lower()
+    if companion_size not in COMPANION_SIZES:
+        raise ValueError(f"RED_COMPANION_SIZE must be one of {COMPANION_SIZES}, got {companion_size!r}")
+    end_silence =_seconds("RED_END_SILENCE", DEFAULT_END_SILENCE, 0.3, 5.0)
     quick_end = _seconds("RED_QUICK_END_SILENCE", DEFAULT_QUICK_END_SILENCE, 0.0, 5.0)
     max_command = _seconds("RED_MAX_COMMAND_SECONDS", DEFAULT_MAX_COMMAND, 3.0, 120.0)
     follow_up = _seconds("RED_FOLLOW_UP_SECONDS", DEFAULT_FOLLOW_UP, 0.0, 30.0)
@@ -266,6 +279,8 @@ def load_settings(home: Path | None = None) -> Settings:
         search_url=_env("RED_SEARCH_URL"),
         browser=browser,
         overlay=overlay,
+        companion=companion,
+        companion_size=companion_size,
         end_silence_seconds=end_silence,
         quick_end_silence_seconds=quick_end,
         max_command_seconds=max_command,

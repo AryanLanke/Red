@@ -1,8 +1,10 @@
 """What Red shows on screen while it works.
 
-Two looks, picked with RED_OVERLAY:
+The looks, picked with RED_OVERLAY:
 
-- "glow" (the default): an animated glow in Red's colours along all four
+- "companion" (the default): a character peeking over the bottom edge of the
+  screen (red/avatar). Without its pictures, the glow below is shown instead.
+- "glow": an animated glow in Red's colours along all four
   edges of the screen, like a phone assistant. It appears when Red starts
   listening, changes colour and speed while Red thinks, asks or speaks, and
   fades away when Red is done. It never covers the middle of the screen.
@@ -609,7 +611,7 @@ def _run_worker(worker: Worker, overlay: Overlay) -> int:
         return 1
 
 
-def _start_qt(hide_after: float, style: str = "card"):
+def _start_qt(hide_after: float, style: str = "card", settings=None):
     """Return (app, overlay), or raise if Qt can't be used."""
     from PySide6.QtGui import QGuiApplication
     from PySide6.QtWidgets import QApplication
@@ -618,16 +620,24 @@ def _start_qt(hide_after: float, style: str = "card"):
     if QGuiApplication.primaryScreen() is None:
         raise RuntimeError("no screen")
     app.setQuitOnLastWindowClosed(False)
+    if style == "companion":
+        try:
+            from .avatar.window import companion_overlay
+            return app, companion_overlay(settings)
+        except Exception as e:  # noqa: BLE001 - no pictures yet, or no settings: the glow instead
+            log.warning("Companion unavailable (%s); showing the glow instead", e)
+            style = "glow"
     return app, (GlowOverlay() if style == "glow" else QtOverlay(hide_after))
 
 
 def run_with_overlay(worker: Worker, *, hide_after: float = HIDE_AFTER_IDLE_SECONDS,
                      fallback: Callable[[], Overlay] = NotificationOverlay,
-                     style: str = "card") -> int:
+                     style: str = "card", settings=None) -> int:
     """Run Qt on this (main) thread and `worker(overlay)` on a background thread.
 
-    `style` is "glow" (screen edges), "card" (corner card), "notify" (Windows
-    notifications only) or "off" (nothing on screen).
+    `style` is "companion" (the character peeking over the screen edge, from
+    `settings`; the glow if it can't load), "glow" (screen edges), "card"
+    (corner card), "notify" (Windows notifications only) or "off" (nothing).
     Returns 0 when the worker finishes, 1 if it raised, and 130 on Ctrl+C.
     If Qt isn't available, runs the worker here with `fallback()` instead.
     """
@@ -636,7 +646,7 @@ def run_with_overlay(worker: Worker, *, hide_after: float = HIDE_AFTER_IDLE_SECO
     if style == "notify":
         return _run_worker(worker, fallback())
     try:
-        app, overlay = _start_qt(hide_after, style)
+        app, overlay = _start_qt(hide_after, style, settings)
     except Exception as e:  # noqa: BLE001 - ImportError, missing DLLs, no screen
         log.warning("Overlay unavailable (%s); using Windows notifications instead", e)
         return _run_worker(worker, fallback())

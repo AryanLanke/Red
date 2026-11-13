@@ -369,8 +369,9 @@ def test_main_voice_mode_end_to_end(world, monkeypatch, capsys):
     monkeypatch.setattr(cli, "attach_reminders", lambda on_due: None)
     overlay = FakeOverlay()
 
-    def fake_run_with_overlay(worker, style="card"):
-        assert style == "glow"   # the default look
+    def fake_run_with_overlay(worker, style="card", settings=None):
+        assert style == "companion"   # the default look
+        assert settings is not None   # the companion needs RED_HOME's pictures
         thread = threading.Thread(target=worker, args=(overlay,), daemon=True)
         thread.start()
         for _ in range(200):

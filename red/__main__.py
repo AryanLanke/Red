@@ -873,10 +873,17 @@ def _voice_mode(settings: Settings, router: Router, registry) -> int:
         app = VoiceApp(settings, router, registry, voice, overlay,
                        log_path=settings.command_log_path)
         apps.append(app)
+        attach = getattr(overlay, "attach_speaker", None)      # the companion's mouth follows the voice
+        if attach is not None:
+            try:
+                attach(voice.speaker)
+                overlay.on_click = lambda: app.chat_window.show() if getattr(app, "chat_window", None) else None
+            except Exception:  # noqa: BLE001 - the companion is only a display
+                log.exception("Couldn't connect the companion to the voice")
         app.run(stop)
 
     try:
-        code = run_with_overlay(worker, style=settings.overlay)
+        code = run_with_overlay(worker, style=settings.overlay, settings=settings)
     except KeyboardInterrupt:
         code = 130
     stop.set()

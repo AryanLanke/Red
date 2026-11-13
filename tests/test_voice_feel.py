@@ -96,7 +96,7 @@ def clean_env(monkeypatch):
 
 def test_new_settings_defaults(clean_env, tmp_path):
     s = load_settings(tmp_path)
-    assert s.overlay == DEFAULT_OVERLAY == "glow"
+    assert s.overlay == DEFAULT_OVERLAY == "companion"
     assert s.end_silence_seconds == DEFAULT_END_SILENCE == 1.5
     assert s.max_command_seconds == DEFAULT_MAX_COMMAND == 20.0
     assert s.follow_up_seconds == 7.0
