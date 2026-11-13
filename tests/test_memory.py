@@ -228,7 +228,7 @@ def test_matching_facts_go_into_the_prompt(memory):
 
 def test_no_memory_no_change():
     llm = ChatLLM()
-    Chat(llm, now=lambda: NOW).reply("hey")
+    Chat(llm, now=lambda: NOW).reply("hey, it's late")
     assert llm.calls[0][0] == CHAT_SYSTEM and llm.calls[0][1].startswith("It's ")
 
 

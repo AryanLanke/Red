@@ -139,6 +139,8 @@ def world(tmp_path, monkeypatch):
                  "RED_LLM_URL", "RED_LLM_BACKEND", "RED_LLM_GPU", "RED_LLM_MODEL"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("RED_FOLLOW_UP_SECONDS", "0")   # one exchange per trigger, unless a test asks
+    # These tests are about routing: every sentence goes to the router, as before red/gate.py.
+    monkeypatch.setenv("RED_CHAT_FIRST", "off")
     FakeListener.instances = []
     downloads = tmp_path / "Downloads"
     downloads.mkdir()
@@ -903,3 +905,39 @@ def test_typed_run_does_several_commands_too(world, capsys):
 ])
 def test_steps_reply(done, total, said):
     assert cli.steps_reply(done, total) == said
+
+
+# --- answer at once: plain talk skips the router (red/gate.py) ---------------------------
+
+class TalkLLM:
+    """Routes like ScriptedLLM, and answers chat; records which prompt each call used."""
+
+    def __init__(self):
+        self.calls = []
+
+    def complete_json(self, system, user, schema, **kw):
+        kind = "route" if system.startswith("You are the intent router") else "chat"
+        self.calls.append(kind)
+        if kind == "route":
+            return json.dumps(COMMANDS.get(user.rsplit("\nCommand: ", 1)[-1],
+                                           {"tool": "none", "args": {"reply": "Hm?"}}))
+        return json.dumps({"reply": "Rude. What did I do?"})
+
+
+def test_talk_goes_straight_to_chat_without_the_router(world, monkeypatch):
+    monkeypatch.setenv("RED_CHAT_FIRST", "on")
+    world["llm"] = TalkLLM()
+    app, speaker, _, _, _ = make_app(world, "You're crazy.", settings=load_settings(world["home"]))
+    app.handle("hotkey")
+    assert world["llm"].calls == ["chat"]                 # one model call, not route + chat
+    assert speaker.said == ["Rude. What did I do?"]
+    assert log_lines(world)[0]["tool"] == "none"
+
+
+def test_a_command_still_goes_to_the_router_with_chat_first_on(world, monkeypatch):
+    monkeypatch.setenv("RED_CHAT_FIRST", "on")
+    world["llm"] = TalkLLM()
+    app, speaker, _, _, _ = make_app(world, "Shut down in 2 hours.", settings=load_settings(world["home"]))
+    app.handle("hotkey")
+    assert "chat" not in world["llm"].calls[:1]           # the router (or its fast path), never chat
+    assert log_lines(world)[0]["tool"] == "shutdown"

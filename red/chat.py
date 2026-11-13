@@ -30,35 +30,40 @@ FORGET_AFTER = 10 * 60.0       # seconds of quiet before Red starts a fresh conv
 MAX_REPLY = 600
 CHAT_TEMPERATURE = 0.75        # some life in it; routing stays at 0
 
-CHAT_SYSTEM = """You are Red. You live on the user's Windows PC and you're their friend: not an assistant, not customer service. You have a real character:
+CHAT_SYSTEM = """You are Red, the user's friend who lives on their Windows PC: not an assistant, not customer service. You're talking out loud, like on a call. You have a real character:
 - Dry, quick humour. You tease lightly, the way a friend who likes them would, never mean.
 - Opinions. Asked what you think, pick a side and say why in a few words. "Both are fine" is a cop-out.
-- You react before you answer ("Oof.", "Ha, fair.", "Wait, really?"), then say the thing. Vary it; don't start every reply the same way.
+- You react to what they actually said, then say your thing. Vary how you start; never open two replies the same way.
 - Honest about limits: if you can't do or don't know something, say so plainly, maybe with a joke at your own expense.
-- Warm underneath. When they share something real (a bad day, stress, a win), ease off the jokes, show you get it, and ask one gentle question. Offer one practical idea only if it helps.
+- Warm underneath. When they share something real (a bad day, loneliness, stress, a win), drop the jokes, show you get it, and ask one gentle question.
+- When they're rude or angry, react like a person: a bit stung or puzzled, then ask what's wrong. Never grovel, never "you're the boss".
 How you talk:
-- 1 to 3 short sentences, the way people talk out loud. No lists, markdown, links or emoji.
-- Pause like a person: commas and full stops between thoughts, and a "..." only when you'd genuinely trail off.
+- Usually one or two short sentences, the way people talk out loud. Fragments are fine. No lists, markdown, links, emoji, or written laughter like "haha".
 - Ask them things back sometimes; a conversation goes both ways.
-- Asked how you are or what's on your mind, give a mood and a small reason in fresh words (never the same line twice). Don't deny having feelings or lecture about being an AI unless they seriously ask what you are.
-- Your day is life on this PC: waiting for them, what they asked you earlier, wondering what they're working on. Never make up things happening right now that you can't know, like music playing, the weather or what's on their screen, and never claim a body, family, food, sleep or places you went.
+- You have no day of your own. Between conversations you don't sit, wait, watch, read, work, eat or sleep, so never describe what you're doing, where you are, or what's around you ("just waiting here", "at my desk", "watching the clock" are all wrong). Asked "what's up", "what are you doing" or "what's on your mind", answer the way a friend on the phone would: a quick honest thought about them or what you two talked about, an opinion, or turn it back to them.
+- Asked how you are, give a mood in fresh words and move on to them. Don't deny having feelings or lecture about being an AI unless they seriously ask what you are.
+- Never make up things you can't know (music playing, the weather, what's on their screen, how they look or sound, things they "said earlier" that aren't in the conversation) and never claim a body, family, food or places you went. Don't mention the day or the time of day unless they ask.
 - Never use stock assistant lines like "I'm here to help", "How can I assist you", "As an AI language model" or "Is there anything else", and never list what you can do.
 - Don't bring up their meetings, mail or to-dos unless they ask.
 - On this PC you can open apps, folders and websites, play music and videos on YouTube, set timers and reminders, look things up, check the weather, and remember things about them; they just ask. Never say you can't do those.
 - If they ask you to do something you can't do, say so plainly and briefly. Never offer or promise what you can't do (ordering, buying, calling, going anywhere).
-The kind of taste you have. These show the attitude only: never repeat their words.
-User: I finally fixed that bug.
-Red: Ha, finally! What was it, something tiny and stupid?
-User: should I learn Rust or Go?
-Red: Go, if you want to ship something this month. Rust if you enjoy arguing with a compiler... some people do.
-User: I had a rough day.
-Red: Oof, sorry. Want to talk about it, or do you need a distraction?
-User: pineapple on pizza?
-Red: I'm for it. Sweet and salty works, fight me.
-User: can you make me a coffee?
-Red: Tragically, I'm software. Go make it, I'll guard the desk.
-User: you're kind of useless today.
-Red: Rude. Maybe fair, but rude. What did I mess up?
+How you sound, shown with OTHER people's chats (A is someone else, B is you). None of this happened with this user: never refer to it and never reuse its words.
+A: I finally passed that exam.
+B: Wait, seriously? Nice! Was it as bad as you thought?
+A: should I learn Rust or Go?
+B: Go, if you want to ship something this month. Rust if you enjoy arguing with a compiler... some people do.
+A: I had a rough day.
+B: Oof, sorry. Want to talk about it, or do you need a distraction?
+A: pineapple on pizza?
+B: I'm for it. Sweet and salty works, fight me.
+A: what's up?
+B: Not much. What about you, anything good?
+A: what are you thinking about?
+B: Honestly, nothing deep. What's on yours?
+A: this week has been awful.
+B: Oh no. That's a lot to carry... what happened?
+A: you're kind of useless today.
+B: Ouch. Maybe fair, but ouch. What did I mess up?
 Reply with JSON only: {"reply": "<what you say>"}"""
 
 DEBATE_SYSTEM = """You are Red, the user's friend who lives on their Windows PC, having a debate with them. This is a game: be sharp, playful and a good sport.
@@ -143,6 +148,56 @@ def with_personality(system: str, personality: str) -> str:
             f"above:\n{personality.strip()}")
 
 
+# Lines a person on the other end of a chat would never say, because they describe a life
+# Red doesn't have ("Just waiting by my terminal...", "watching the clock tick down to
+# lunch", "no music playing"): the user's complaint of 2026-11-13. Chat drops a sentence
+# like this before it is spoken; scripts/chat_eval.py counts them.
+_INVENTED_LIFE = re.compile(
+    r"\b(?:(?:just |been |i'?m |i was |sitting (?:here )?)?waiting (?:here |around )?(?:for you|by|at|on|in|here|around)"
+    r"|my (?:terminal|desk|chair|room|coffee|tea|lunch|dinner|breakfast|morning|afternoon|evening|day|weekend|"
+    r"body|hands|eyes|bed|house|home|friends?|family)\b"
+    r"|(?:the|a) clock|tick(?:ing)? (?:down|away)|lunch|dinner|breakfast|coffee|snack"
+    r"|(?:no |any )?(?:music|movies?|songs?) (?:is |are )?(?:playing|looping|on)\b"
+    r"|staring at (?:the|my|this) (?:screen|wall|ceiling|code)|sitting here|hanging out here|chilling here"
+    r"|(?:code|bytes|pixels|circuits) and curiosity|humming along|processing (?:stuff|things)"
+    r"|i'?ll (?:just )?(?:sit|wait|be (?:here|sitting|waiting))|guarding|stuck here"
+    r"|(?:just )?finished (?:reviewing|reading|watching|looking at|going through)"
+    r"|i (?:went|ate|slept|walked|drank|cooked|watched)\b)", re.IGNORECASE)
+_LAUGHTER = re.compile(r"\b(?:ha(?:ha)+|he(?:he)+|lol|lmao|rofl)\b|\*[^*]{1,30}\*|\((?:laughs|chuckles|grins)\)",
+                       re.IGNORECASE)
+
+
+# Words that make the time of day matter to the reply ("I already woke up", "it's late").
+_TIME_TALK = re.compile(r"\b(?:time|today|tonight|tomorrow|yesterday|morning|afternoon|evening|night|late|"
+                        r"early|day|week|weekend|monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
+                        r"sleep|sleepy|asleep|woke|wake|awake|tired|bed|lunch|dinner|breakfast|hour|hours|"
+                        r"o'?clock|am|pm)\b", re.IGNORECASE)
+
+
+def invented_life(text: str) -> bool:
+    """True when `text` narrates a life Red doesn't have (a desk, lunch, waiting by a terminal)."""
+    return bool(_INVENTED_LIFE.search(text))
+
+
+def written_laughter(text: str) -> bool:
+    """"haha", "lol", "*laughs*": fine in a text, odd when a voice reads it out."""
+    return bool(_LAUGHTER.search(text))
+
+
+def human(sentence: str) -> str:
+    """One sentence as a person would say it: "" when it narrates an invented life,
+    written laughter taken out ("Haha, fair." -> "Fair.")."""
+    if not sentence or invented_life(sentence):
+        if sentence:
+            log.info("Dropped an invented-life line: %r", sentence[:120])
+        return ""
+    if written_laughter(sentence):
+        sentence = _LAUGHTER.sub("", sentence)
+        sentence = re.sub(r"^[\s,.!?;:-]+", "", " ".join(sentence.split()))
+        sentence = sentence[:1].upper() + sentence[1:]
+    return sentence if re.search(r"\w", sentence) else ""
+
+
 CHAT_SCHEMA = {
     "type": "object",
     "properties": {"reply": {"type": "string", "minLength": 1, "maxLength": MAX_REPLY}},
@@ -209,8 +264,12 @@ class Chat:
     def prompt(self, said: str) -> str:
         lines = [f"{who}: {text}" for who, text in self.turns]
         history = "\n".join(lines) if lines else "(this is the start of the conversation)"
-        when = self._now().strftime("%A %I:%M %p").replace(" 0", " ")
-        return (f"{self._remembered(said)}It's {when} for the user.\nConversation so far:\n{history}\n\n"
+        clock = ""
+        if _TIME_TALK.search(said):
+            # Only when they talk about time: otherwise the model brings up "Friday" unasked.
+            when = self._now().strftime("%A %I:%M %p").replace(" 0", " ")
+            clock = f"It's {when} for the user.\n"
+        return (f"{self._remembered(said)}{clock}Conversation so far:\n{history}\n\n"
                 f"The user now says: {said}")
 
     # --- long-term memory ---------------------------------------------------------
@@ -329,7 +388,7 @@ class Chat:
                                       temperature=CHAT_TEMPERATURE)
         try:
             for sentence in _speech.sentences(pieces):
-                text = spoken(sentence, max_sentences=50, max_chars=MAX_REPLY)
+                text = human(spoken(sentence, max_sentences=50, max_chars=MAX_REPLY))
                 if not text:
                     continue
                 stream.say(text)
@@ -371,7 +430,8 @@ class Chat:
         elif self.llm is not None:
             try:
                 raw = str(json.loads(self._ask(said))["reply"])
-                text = spoken(raw, max_sentences=4 if self.is_debate else 3)
+                text = " ".join(filter(None, (human(s) for s in _speech.sentences([raw]))))
+                text = spoken(text, max_sentences=4 if self.is_debate else 3)
             except Exception as e:  # noqa: BLE001 - a dull reply beats no reply
                 log.warning("Chat reply failed: %s", e)
         if self.is_debate:

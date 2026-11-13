@@ -25,10 +25,12 @@ class ChatLLM:
 
 
 def test_the_character_is_a_friend_not_a_help_desk():
-    for line in ("not an assistant", "Opinions", "react before you answer", "Honest about limits",
+    for line in ("not an assistant", "Opinions", "react to what they actually said", "Honest about limits",
                  "tease lightly"):
         assert line in CHAT_SYSTEM
-    assert CHAT_SYSTEM.count("\nUser: ") >= 4 and CHAT_SYSTEM.count("\nRed: ") >= 4
+    # Examples are other people's chats, so the model doesn't take them for this user's history.
+    assert CHAT_SYSTEM.count("\nA: ") >= 4 and CHAT_SYSTEM.count("\nB: ") >= 4
+    assert "\nUser: " not in CHAT_SYSTEM and "None of this happened with this user" in CHAT_SYSTEM
     assert "Don't bring up their meetings, mail or to-dos" in CHAT_SYSTEM
     assert "Jarvis" not in CHAT_SYSTEM + DEBATE_SYSTEM + ANSWER_SYSTEM
     assert CHAT_SYSTEM.rstrip().endswith('{"reply": "<what you say>"}')

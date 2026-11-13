@@ -54,7 +54,9 @@ def test_chat_answers_like_a_friend_and_remembers():
 
 def test_the_persona_never_uses_stock_lines():
     assert "How can I assist you" in CHAT_SYSTEM          # listed as a thing never to say
-    assert "Never make up things happening right now" in CHAT_SYSTEM
+    assert "Never make up things you can't know" in CHAT_SYSTEM
+    assert "You have no day of your own" in CHAT_SYSTEM            # no "just waiting by my terminal"
+    assert "waiting for them" not in CHAT_SYSTEM
 
 
 def test_commands_join_the_memory():
