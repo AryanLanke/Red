@@ -161,3 +161,76 @@ def test_openai_compatible_server_sent_events(monkeypatch):
         'data: {"choices": [{"delta": {"content": "late"}}]}\n']))
     client = llm.OpenAICompatClient("http://x/v1", "m")
     assert "".join(client.stream_json("s", "u", {})) == '{"answer": "ok"}'
+
+
+# --- a faster Ollama start (plan.md task 2.1) ---------------------------------
+
+def test_vulkan_is_off_when_an_nvidia_driver_is_present():
+    env = llm.ollama_gpu_env(which=lambda name: r"C:\Windows\System32\nvidia-smi.exe", environ={})
+    assert env == {"OLLAMA_VULKAN": "0"}
+
+
+def test_vulkan_stays_on_for_a_pc_with_only_amd_or_intel_graphics():
+    assert llm.ollama_gpu_env(which=lambda name: None, environ={}) == {}
+
+
+def test_the_users_own_ollama_vulkan_wins():
+    env = llm.ollama_gpu_env(which=lambda name: "nvidia-smi.exe", environ={"OLLAMA_VULKAN": "1"})
+    assert env == {}
+
+
+def test_ollama_start_waits_long_enough_for_a_cold_boot():
+    assert llm.OLLAMA_START_TIMEOUT >= 120
+
+
+# Real lines from RED_HOME\logs\ollama.log (2026-11-13), shortened.
+GPU_LINE = ('time=2026-11-13T05:18:08.740-08:00 level=INFO source=types.go:32 msg="inference compute" id=0 '
+            'filter_id=0 library=CUDA compute=8.9 name=CUDA0 description="NVIDIA GeForce RTX 4050 Laptop GPU" '
+            'libdirs=ollama,cuda_v13 driver=13.5 pci_id=0000:01:00.0 type=discrete')
+CPU_LINE = ('time=2026-11-13T05:18:08.740-08:00 level=INFO source=types.go:32 msg="inference compute" id=cpu '
+            'library=cpu compute="" name=cpu description=cpu libdirs=ollama driver="" pci_id="" type=""')
+
+
+def test_the_gpu_library_is_read_from_ollamas_log():
+    assert llm.gpu_library_from_log("other\n" + GPU_LINE + "\n[GIN] ...") == ("CUDA", "cuda_v13")
+    assert llm.gpu_library_from_log(CPU_LINE) == ("cpu", "")
+    assert llm.gpu_library_from_log("nothing here") is None
+
+
+def test_the_library_ollama_chose_is_pinned_next_time(tmp_path):
+    libs = tmp_path / "lib" / "ollama"
+    (libs / "cuda_v13").mkdir(parents=True)
+    remembered = tmp_path / "cache" / llm.GPU_LIBRARY_FILE
+    assert llm.learn_gpu_library(remembered, GPU_LINE, pinned=False)
+    env = llm.ollama_gpu_env(remembered, libs, which=lambda name: "nvidia-smi.exe", environ={})
+    assert env == {"OLLAMA_VULKAN": "0", "OLLAMA_LLM_LIBRARY": "cuda_v13"}
+
+
+def test_a_pin_that_finds_no_gpu_is_dropped_and_ollama_starts_again(tmp_path):
+    remembered = tmp_path / llm.GPU_LIBRARY_FILE
+    remembered.write_text("cuda_v13")
+    assert llm.learn_gpu_library(remembered, CPU_LINE, pinned=True) is False
+    assert not remembered.exists()
+
+
+def test_an_unpinned_start_with_no_gpu_is_fine_and_pins_nothing(tmp_path):
+    remembered = tmp_path / llm.GPU_LIBRARY_FILE
+    assert llm.learn_gpu_library(remembered, CPU_LINE, pinned=False) is True
+    assert not remembered.exists()
+
+
+def test_a_remembered_library_that_is_gone_or_odd_is_not_pinned(tmp_path):
+    libs = tmp_path / "lib" / "ollama"
+    libs.mkdir(parents=True)
+    remembered = tmp_path / llm.GPU_LIBRARY_FILE
+    remembered.write_text("cuda_v13")                    # an Ollama update removed that folder
+    assert llm.ollama_gpu_env(remembered, libs, which=lambda n: None, environ={}) == {}
+    remembered.write_text("..\\evil")
+    assert llm.ollama_gpu_env(remembered, None, which=lambda n: None, environ={}) == {}
+
+
+def test_the_users_own_ollama_llm_library_wins(tmp_path):
+    remembered = tmp_path / llm.GPU_LIBRARY_FILE
+    remembered.write_text("cuda_v13")
+    env = llm.ollama_gpu_env(remembered, None, which=lambda n: None, environ={"OLLAMA_LLM_LIBRARY": "cpu"})
+    assert env == {}

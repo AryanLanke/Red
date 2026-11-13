@@ -17,10 +17,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import secrets
 import shutil
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -407,6 +409,69 @@ def ensure_ollama(settings: Settings) -> Path:
     return exe
 
 
+OLLAMA_START_TIMEOUT = 120.0   # a cold boot's GPU discovery has taken up to 48 s
+GPU_LIBRARY_FILE = "ollama-gpu-library.txt"
+
+
+def ollama_gpu_env(library_file: Path | None = None, libs_dir: Path | None = None,
+                   which=shutil.which, environ=os.environ) -> dict[str, str]:
+    """Settings that make Ollama's start faster on this PC (plan.md task 2.1).
+
+    Ollama 0.40 probes every GPU library it ships before it answers: Vulkan, cuda_v12 and
+    cuda_v13. Measured on an RTX 4050 laptop with 15 GB of RAM, mostly in use:
+    - The Vulkan probe of the AMD integrated GPU took 5-25 s, only for Ollama to drop it
+      ("dropping integrated GPU"). With NVIDIA's driver present, CUDA runs the model, so
+      Vulkan is turned off. A PC whose only GPU is AMD or Intel keeps Vulkan.
+    - Probing both CUDA builds (2 GB of DLLs) took about 20 s on every start; pinned to the
+      one this GPU uses (OLLAMA_LLM_LIBRARY=cuda_v13) Ollama answered in 4.6 s. Which one
+      fits depends on the driver, so it is learned from Ollama's own choice on an unpinned
+      start (`learn_gpu_library`) and pinned from then on.
+    A user's own OLLAMA_VULKAN or OLLAMA_LLM_LIBRARY wins.
+    """
+    env: dict[str, str] = {}
+    if "OLLAMA_VULKAN" not in environ and which("nvidia-smi"):
+        env["OLLAMA_VULKAN"] = "0"
+    if "OLLAMA_LLM_LIBRARY" not in environ and library_file is not None:
+        try:
+            library = library_file.read_text(encoding="utf-8").strip()
+        except OSError:
+            library = ""
+        if re.fullmatch(r"[a-z0-9_]+", library) and (libs_dir is None or (libs_dir / library).is_dir()):
+            env["OLLAMA_LLM_LIBRARY"] = library
+    return env
+
+
+def gpu_library_from_log(text: str) -> tuple[str, str] | None:
+    """(library, folder) from the last 'inference compute' line Ollama wrote, e.g.
+    ('CUDA', 'cuda_v13'), or ('cpu', '') when it found no GPU. None if there is no such line."""
+    lines = [l for l in text.splitlines() if 'msg="inference compute"' in l]
+    if not lines:
+        return None
+    line = lines[-1]
+    library = re.search(r"\blibrary=(\S+)", line)
+    dirs = re.search(r"\blibdirs=(\S+)", line)
+    folders = [d for d in (dirs.group(1).split(",") if dirs else []) if d and d != "ollama"]
+    return (library.group(1) if library else "cpu", folders[0] if folders else "")
+
+
+def learn_gpu_library(library_file: Path, log_text: str, pinned: bool) -> bool:
+    """Remember the GPU library Ollama chose, for the next start. Returns False when a pinned
+    library found no GPU (the driver changed): the pin is dropped and Ollama must start again."""
+    found = gpu_library_from_log(log_text)
+    on_gpu = found is not None and found[0].lower() != "cpu" and found[1]
+    if on_gpu:
+        try:
+            library_file.parent.mkdir(parents=True, exist_ok=True)
+            library_file.write_text(found[1], encoding="utf-8")
+        except OSError:
+            pass
+        return True
+    if pinned:
+        library_file.unlink(missing_ok=True)
+        return False
+    return True
+
+
 def start_ollama(settings: Settings) -> tuple[str, ManagedServer | None]:
     """Use a running Ollama, or start Red's own. Returns (base_url, server or None)."""
     if http_ok(f"{OLLAMA_DEFAULT_URL}/api/version"):
@@ -414,20 +479,41 @@ def start_ollama(settings: Settings) -> tuple[str, ManagedServer | None]:
         return OLLAMA_DEFAULT_URL, None
 
     exe = ensure_ollama(settings)
-    port = free_port()
-    base_url = f"http://127.0.0.1:{port}"
-    home = settings.cache_dir / "ollama-home"
-    home.mkdir(parents=True, exist_ok=True)
-    env = child_env(
-        OLLAMA_HOST=f"127.0.0.1:{port}",
-        OLLAMA_MODELS=str(settings.models_dir / "ollama"),
-        OLLAMA_KEEP_ALIVE=settings.llm_keep_alive,
-        USERPROFILE=str(home),                         # Ollama's ~/.ollama goes to RED_HOME
-        CUDA_CACHE_PATH=str(settings.cache_dir / "cuda"),
-    )
-    server = ManagedServer("ollama", [str(exe), "serve"], f"{base_url}/api/version",
-                           settings.logs_dir / "ollama.log", env)
-    server.start(timeout=60)
+    library_file = settings.cache_dir / GPU_LIBRARY_FILE
+    log_path = settings.logs_dir / "ollama.log"
+    for attempt in range(2):
+        port = free_port()
+        base_url = f"http://127.0.0.1:{port}"
+        home = settings.cache_dir / "ollama-home"
+        home.mkdir(parents=True, exist_ok=True)
+        gpu_env = ollama_gpu_env(library_file, exe.parent / "lib" / "ollama")
+        env = child_env(
+            OLLAMA_HOST=f"127.0.0.1:{port}",
+            OLLAMA_MODELS=str(settings.models_dir / "ollama"),
+            OLLAMA_KEEP_ALIVE=settings.llm_keep_alive,
+            USERPROFILE=str(home),                         # Ollama's ~/.ollama goes to RED_HOME
+            CUDA_CACHE_PATH=str(settings.cache_dir / "cuda"),
+            **gpu_env,
+        )
+        server = ManagedServer("ollama", [str(exe), "serve"], f"{base_url}/api/version", log_path, env)
+        offset = log_path.stat().st_size if log_path.exists() else 0
+        started = time.perf_counter()
+        server.start(timeout=OLLAMA_START_TIMEOUT)
+        log.info("Startup: Ollama answered in %.1f s (%s)", time.perf_counter() - started,
+                 ", ".join(f"{k}={v}" for k, v in gpu_env.items()) or "no GPU settings")
+        try:
+            with log_path.open("rb") as f:
+                f.seek(offset)
+                new_text = f.read().decode("utf-8", "replace")
+        except OSError:
+            break
+        pinned = "OLLAMA_LLM_LIBRARY" in gpu_env
+        if learn_gpu_library(library_file, new_text, pinned) or attempt:
+            break
+        # The pinned library found no GPU (a new driver?): start again and let Ollama choose.
+        log.warning("Ollama found no GPU with %s; starting it again without the pin.",
+                    gpu_env["OLLAMA_LLM_LIBRARY"])
+        server.stop()
     return base_url, server
 
 
