@@ -74,14 +74,24 @@ on 2026-11-13 were the user trying Copilot: not misses.)
    (never in git: it's their voice). `red wake-test --replay` runs the whole detector over it and prints
    hits and false wakes. Target: **≥ 95% hits, no false wakes on the talk.** Every step below is judged
    on it.
-2. Log every guard's rejection in `HeyRedDetector._step` (no pause before, too long, too short, VAD).
-3. `match_score`: "Hey Red" at the start of the clip plus more words scores 1.0, and those words become
-   the command (no second recording). Keep the guard against "a red light".
+   **Done (2026-11-13): the tool.** Waiting for the user to record. Numbers go in progress.md.
+2. ✅ Log every guard's rejection in `HeyRedDetector._step` ("Wake skip:" lines: too short, too faint,
+   no pause before). **Finding:** a burst only ends after 0.3 s of quiet (PAUSE_AFTER), which is already
+   more than PAUSE_BEFORE (0.25 s), so "no pause before" never fires. A "Hey Red" said less than 0.3 s
+   after other speech merges into it, and only the start of the merged burst (the other speech) is
+   checked. Step 5 should look at that, not at PAUSE_BEFORE. The first live lines also show faint
+   speech at VAD 0.42–0.49 with peaks of 0.02–0.03.
+3. ✅ `match_score`: a comma or full stop after "Hey Red" means a command follows, so it scores 1.0
+   ("Hey Red Light", with no comma, stays at 0.45). Re-scored all 1,936 logged checks: only the user's
+   own two tries changed, no new false wakes. The words after it become the command: the detector keeps
+   the burst, the recording carries on from it with no beep, and "Hey Red" is cut from the transcript.
 4. Personal spellings through `voice-setup` (`red/voice_setup.py`), run with the user now and part of the
    first-run wizard: "Headed" or "Hit it" wake for this user only.
 5. Looser guards, each measured: pause before ~0.1 s, always check the first 1.3 s of a long burst, VAD
    start ~0.35, loudness normalised before Whisper.
 6. Wake checks on their own worker thread, off the mic thread; `beam_size=1` if the corpus allows.
+   (Lower priority than first thought: the mic keeps buffering while Whisper runs, so this costs delay,
+   not missed words.)
 7. Only if 3–6 miss 95%: retrain the openWakeWord model (`scripts/train_hey_red/`) with Kokoro's
    Indian-English voices and the user's clips, as a fast first stage that triggers a Whisper check.
 - **Files:** `red/wakeword.py`, `red/wake_test.py`, `red/listener.py`, `red/voice_setup.py`,
@@ -89,22 +99,23 @@ on 2026-11-13 were the user trying Copilot: not misses.)
 - **Check:** unit tests with the logged transcripts; replay numbers before and after each step in
   progress.md; then the user's 100 tries by voice.
 
-### 2. On whenever the PC is on, and ready fast
+### 2. ✅ On whenever the PC is on, and ready fast (2026-11-13; a reboot test by the user is left)
 **Why:** the Startup shortcuts exist (`Red.lnk`, `Red Hotkey.lnk`; the hotkey is Ctrl+Alt+R), but a cold
-start takes ~70 s, ~48 s of it Ollama's GPU discovery (the AMD iGPU's Vulkan check times out), close to
-`start_ollama`'s 60 s limit.
-1. Skip the iGPU discovery for Red's child Ollama (find the env var for the pinned version); wait up to
-   120 s.
-2. Load Whisper, Kokoro and the wake listener while Ollama starts; "Hey Red" and the hotkey work as soon
-   as Whisper is up; a command before the model is ready gets "One sec, still waking up".
-3. `Startup:` timing lines in `red.log`. Target: wake word live ≤ 15 s after logon, warm ≤ 30 s.
-4. Watchdog in `red hotkey`: restart a crashed Red (at most 3 times an hour).
-- **Files:** `red/llm.py`, `red/__main__.py`, `red/background.py`, `red/startup.py`.
-- **Check:** a reboot with the timing lines; `taskkill` Red and see it come back.
+start took ~70 s, 20–48 s of it Ollama answering.
+1. ✅ Ollama answers in **2.4–4.9 s instead of 19.7–21.6 s**. It probed Vulkan (the AMD iGPU it then
+   drops) and both CUDA builds (2 GB of DLLs, slow with 0.5 GB of 15 GB RAM free) on every start. With
+   NVIDIA's driver present Vulkan is off (`OLLAMA_VULKAN=0`), and the library Ollama picked on an
+   unpinned start is remembered (`RED_HOME\cache\ollama-gpu-library.txt`, here `cuda_v13`) and pinned
+   (`OLLAMA_LLM_LIBRARY`). A pin that finds no GPU is dropped and Ollama starts again unpinned. Wait 120 s.
+2. Skipped: with Ollama fast, loading in parallel would save at most ~2 s.
+3. ✅ `Startup:` lines in `red.log`: listening for "Hey Red" **9.4 s** after start, model warm **18.3 s**
+   (targets 15 s and 30 s).
+4. ✅ Watchdog in `red hotkey`: a crashed Red (red.pid left, no process) is started again within 30 s,
+   at most 3 times an hour. Checked by killing Red: back and listening 38 s later.
+5. Skipped: the ready chime (Red is up in 10 s).
 
 ### 3. No laugh clips; Red with taste on today's voice
-1. Remove the laugh clips: revert `4f63934` (`red/laugh.py`, `red/assets/laugh/`, the speech and
-   `__main__` changes, tests) and the laugh line in `CHAT_SYSTEM`.
+1. ✅ Remove the laugh clips: reverted `4f63934` and dropped the laugh line in `CHAT_SYSTEM` (2026-11-13).
 2. Rewrite `CHAT_SYSTEM` (`red/chat.py`): a concrete character (dry humour, opinions, reacts before
    answering), with 4–6 short example exchanges that show taste. A light touch in `ANSWER_SYSTEM` too.
 3. Pauses from punctuation instead of a flat 0.12 s: comma ~0.15 s, sentence ~0.3 s, "..." or a dash
