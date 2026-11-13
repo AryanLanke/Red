@@ -241,6 +241,15 @@ class Endpointer:
             self._quiet_run += n
         return self._quiet_run >= self.silence_samples
 
+    def begin_with(self, speech: np.ndarray) -> None:
+        """Speech has already started: `speech` (e.g. "Hey Red, open...") was heard just before."""
+        speech = to_float32(speech)
+        if speech.size == 0:
+            return
+        self._blocks.append(speech)
+        self.start = self.total
+        self.total += speech.size
+
     @property
     def quiet_seconds(self) -> float:
         """How long it has been quiet since the last speech (0 before speech starts)."""
@@ -260,8 +269,12 @@ def record_command(max_seconds: float = 8.0, silence_seconds: float = 0.8, *,
                    mic: AudioSource | None = None,
                    stop_event: threading.Event | None = None,
                    quick_silence: float = 0.0,
-                   is_complete: Callable[[np.ndarray], bool] | None = None) -> np.ndarray:
+                   is_complete: Callable[[np.ndarray], bool] | None = None,
+                   prefix: np.ndarray | None = None) -> np.ndarray:
     """Record one spoken command from the microphone.
+
+    `prefix`: speech already heard (the wake word's "Hey Red, open..." said in one
+    breath). Recording carries on from it and ends at the next pause.
 
     Recording stops `silence_seconds` after you stop talking, or after
     `max_seconds` in total. If no speech starts within `start_timeout`
@@ -279,7 +292,9 @@ def record_command(max_seconds: float = 8.0, silence_seconds: float = 0.8, *,
         start_timeout = max_seconds
     mic = mic if mic is not None else Microphone()
     ep = Endpointer(silence_seconds=silence_seconds)
-    max_samples = int(max_seconds * SAMPLE_RATE)
+    if prefix is not None:
+        ep.begin_with(prefix)
+    max_samples = int(max_seconds * SAMPLE_RATE) + (ep.total if prefix is not None else 0)
     start_samples = int(start_timeout * SAMPLE_RATE)
     quick = is_complete is not None and 0 < quick_silence < silence_seconds
     checked = False         # this pause was already checked

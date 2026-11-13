@@ -34,6 +34,23 @@ def test_pause_between_words_shorter_than_silence_does_not_stop():
     assert out.size / SAMPLE_RATE > 1.7      # both words are in
 
 
+def test_a_prefix_said_with_the_wake_word_ends_at_the_next_pause():
+    # "Hey Red, open YouTube" already heard in one breath; the user has stopped talking.
+    prefix = tone(1.5, amp=0.3)
+    mic = FakeMic(noise(3.0))
+    out = record_command(silence_seconds=0.8, start_timeout=0.5, mic=mic, prefix=prefix)
+    assert out[:prefix.size].tolist() == prefix.tolist()        # kept, from its first sample
+    assert mic.seconds_read == pytest.approx(0.8, abs=0.15)      # only the closing pause
+    assert out.size / SAMPLE_RATE == pytest.approx(1.5 + mic.seconds_read, abs=0.01)
+
+
+def test_a_prefix_carries_on_while_you_keep_talking():
+    prefix = tone(1.5, amp=0.3)
+    mic = FakeMic(tone(1.0, amp=0.3), noise(3.0))
+    out = record_command(silence_seconds=0.8, mic=mic, prefix=prefix)
+    assert out.size / SAMPLE_RATE > 2.5                          # the prefix and the rest
+
+
 def test_no_speech_returns_empty_after_start_timeout():
     mic = FakeMic()
     out = record_command(max_seconds=8.0, start_timeout=1.0, mic=mic)
