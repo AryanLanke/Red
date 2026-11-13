@@ -97,6 +97,8 @@ class Settings:
     # Answer only the owner's voice (red/voice_match.py). Off until tested.
     voice_match: bool = False
     voice_match_threshold: float | None = None    # None: voice-setup's own pick
+    # How often Red speaks unasked (red/greeter.py): quiet, friendly (greetings) or chatty.
+    chattiness: str = "friendly"
 
     @property
     def bin_dir(self) -> Path:
@@ -230,6 +232,11 @@ def load_settings(home: Path | None = None) -> Settings:
         if not 0.0 < value < 1.0:
             raise ValueError(f"RED_VOICE_MATCH_THRESHOLD must be between 0 and 1, got {match_threshold!r}")
 
+    # Like the search engine: an unknown value means the default, not an error.
+    chattiness = (_env("RED_CHATTINESS") or "friendly").lower()
+    if chattiness not in ("quiet", "friendly", "chatty"):
+        chattiness = "friendly"
+
     # Keep model caches under RED_HOME for this process only.
     # This doesn't change any system or user environment variables.
     os.environ.setdefault("HF_HOME", str(home / "cache" / "huggingface"))
@@ -263,6 +270,7 @@ def load_settings(home: Path | None = None) -> Settings:
         follow_up_seconds=follow_up,
         voice_match=match_text in {"on", "1", "true", "yes"},
         voice_match_threshold=float(match_threshold) if match_threshold is not None else None,
+        chattiness=chattiness,
     )
 
 

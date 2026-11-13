@@ -457,14 +457,25 @@ class GeneralSettingsPage(QWidget):
         self.overlay.setCurrentIndex(index if index >= 0 else 0)
         grid.addWidget(self.overlay, 2, 1)
 
-        grid.addWidget(QLabel("Personality"), 3, 0, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(QLabel("Chattiness"), 3, 0)
+        self.chattiness = QComboBox()
+        self.chattiness.addItem("Quiet: only answers", "quiet")
+        self.chattiness.addItem("Friendly: says hello (default)", "friendly")
+        self.chattiness.addItem("Chatty: hellos and the odd one-liner", "chatty")
+        index = self.chattiness.findData(getattr(settings, "chattiness", "friendly"))
+        self.chattiness.setCurrentIndex(index if index >= 0 else 1)
+        grid.addWidget(self.chattiness, 3, 1)
+        grid.addWidget(_hint("Never meetings, mail or to-dos unless you ask, and never over a "
+                             "full-screen game or app."), 4, 1)
+
+        grid.addWidget(QLabel("Personality"), 5, 0, Qt.AlignmentFlag.AlignTop)
         self.personality = QPlainTextEdit(read_personality(settings.home))
         self.personality.setPlaceholderText(
             "Optional. Tune how Red talks, in your own words: \"Fewer jokes\", "
             "\"Roast my code\", \"Talk like a calm coach\".")
         self.personality.setMaximumHeight(110)
-        grid.addWidget(self.personality, 3, 1)
-        grid.addWidget(_hint(f"Added to Red's own character. Up to {MAX_PERSONALITY} characters."), 4, 1)
+        grid.addWidget(self.personality, 5, 1)
+        grid.addWidget(_hint(f"Added to Red's own character. Up to {MAX_PERSONALITY} characters."), 6, 1)
         grid.setColumnStretch(1, 1)
         layout.addLayout(grid)
         layout.addStretch(1)
@@ -474,7 +485,8 @@ class GeneralSettingsPage(QWidget):
 
     def values(self) -> dict[str, str]:
         return {"RED_HOTKEY": self.hotkey.text().strip() or "off",
-                "RED_OVERLAY": self.overlay.currentData()}
+                "RED_OVERLAY": self.overlay.currentData(),
+                "RED_CHATTINESS": self.chattiness.currentData()}
 
 
 class MemoryPage(QWidget):

@@ -379,7 +379,7 @@ class VoiceApp:
         text = " or ".join(ways) or "nothing is listening"
         return f"{text[0].upper()}{text[1:]}, then speak."
 
-    def announce(self, text: str) -> None:
+    def announce(self, text: str, label: str = "reminder") -> None:
         """Say a due reminder. Called by the scheduler from its own thread.
 
         Waits for a command in progress to finish, and pauses the wake word
@@ -387,7 +387,7 @@ class VoiceApp:
         """
         with self._turn:
             try:
-                self.out(f"Red (reminder): {text}")
+                self.out(f"Red ({label}): {text}")
                 self._state("speaking", text)
                 paused = getattr(self.listener, "paused_while", None)
                 if paused is not None:
@@ -398,7 +398,20 @@ class VoiceApp:
             finally:
                 self._state("idle", text)
 
+    def greet(self, text: str) -> bool:
+        """A hello from red/greeter.py: said only when Red is free, never queued behind a command."""
+        if not self._turn.acquire(blocking=False):
+            return False
+        try:
+            self.announce(text, label="hello")
+        finally:
+            self._turn.release()
+        return True
+
     def shutdown(self) -> None:
+        greeter = getattr(self, "greeter", None)
+        if greeter is not None:
+            greeter.stop()
         if self.reminders is not None and getattr(self.reminders, "on_due", None) == self.announce:
             self.reminders.on_due = None
         for part in (self.listener, self.voice.speaker):
@@ -417,6 +430,8 @@ class VoiceApp:
         ready = self.ready_text()
         self.out(f"Ready. {ready} Ctrl+C quits.")
         self._state("idle", f"Red is ready. {ready}")
+        from .greeter import attach_greeter
+        self.greeter = attach_greeter(self)     # hello, never a briefing (RED_CHATTINESS)
         try:
             while not stop.wait(0.25):
                 pass

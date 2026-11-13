@@ -54,6 +54,8 @@ def _no_real_memory(monkeypatch, tmp_path):
     import red.memory
     monkeypatch.setattr(red.memory, "memory_dir", lambda home: tmp_path / "memory")
     monkeypatch.setattr(red.memory.Learner, "start", lambda self: None)
+    import red.greeter
+    monkeypatch.setattr(red.greeter.Greeter, "start", lambda self: None)   # no real idle checks or hellos
 
 
 @pytest.fixture(autouse=True)
