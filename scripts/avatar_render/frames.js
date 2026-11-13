@@ -13,9 +13,8 @@ const F = {
   happy: { Fcl_BRW_Joy: 1, Fcl_EYE_Joy: 1, Fcl_MTH_Joy: 1 },
   happyOpen: { Fcl_BRW_Joy: 1, Fcl_EYE_Joy: 1, Fcl_MTH_Joy: 0.5, Fcl_MTH_A: 0.6 },
   laugh: { Fcl_BRW_Fun: 1, Fcl_EYE_Joy: 1, Fcl_MTH_A: 1, Fcl_MTH_Large: 0.6 },
-  // Sad, angry and surprised start from the model's own whole-face morph (Fcl_ALL_*), then push the
-  // brows and mouth further. The separate Fcl_EYE_Sorrow/Angry/Surprised morphs close the eyes on
-  // some VRoid models (samples A and B), so they stay out.
+  // Sad, angry and surprised start from the model's own whole-face morph (Fcl_ALL_*, the balance its
+  // maker chose), then push the brows and mouth further.
   sad: { Fcl_ALL_Sorrow: 1, Fcl_BRW_Sorrow: 0.5, Fcl_MTH_Down: 0.5 },
   sadTalk: { Fcl_ALL_Sorrow: 0.9, Fcl_BRW_Sorrow: 0.4, Fcl_MTH_U: 0.45 },
   cry: { Fcl_BRW_Sorrow: 1, Fcl_EYE_Close: 0.8, Fcl_MTH_Sorrow: 1, Fcl_MTH_A: 0.35 },
@@ -145,4 +144,45 @@ const BODY = [
     legs: kick(5, 5, 6), head: [4, 0, 6] }),
 ];
 
-export const FRAMES = [...PEEK, ...BODY];
+// --- Peeking around a bottom corner -------------------------------------------------------------------
+// cornerR: the companion is behind the bottom-right corner. It leans in from the right, its body turned
+// toward the middle of the screen, the left hand gripping the right edge beside its face and the right
+// arm doing what the peek frame's right arm does (resting on the bottom edge, waving, chin in hand...).
+// finish.py cuts these at the bottom edge and at the gripping hand. cornerL is the mirror image, posed
+// (not flipped), so hair clips and logos stay on the right side.
+// Elbow out and down behind the edge, forearm up, the hand at cheek height with the fingers pointing
+// into the screen: from the front only the fingers show, curled round the edge.
+const grip = {
+  leftUpperArm: [0.45, -0.6, 0.66],
+  leftLowerArm: [-0.2, 0.9, 0.38],
+  leftHand: [-0.88, 0.15, 0.45],
+};
+const cornerLean = { hips: [0, -18, 0], spine: [6, 0, 14], chest: [2, 0, 8] };
+
+function corner(frame) {
+  const bones = { ...frame.bones, ...cornerLean };
+  const head = frame.bones.head || [0, 0, 0];
+  bones.head = [head[0], head[1], head[2] - 6];
+  const aim = { ...frame.aim, ...grip };
+  return { ...frame, name: frame.name.replace(/^peek_/, 'cornerR_'), set: 'cornerR', bones, aim };
+}
+
+// Mirror a pose across the body's middle: left <-> right, and turns about y and z change sign.
+function swapSide(name) {
+  if (name.startsWith('left')) return 'right' + name.slice(4);
+  if (name.startsWith('right')) return 'left' + name.slice(5);
+  return name;
+}
+function mirror(frame, set) {
+  const bones = {};
+  for (const [k, [x, y, z]] of Object.entries(frame.bones || {})) bones[swapSide(k)] = [x, -y, -z];
+  const aim = {};
+  for (const [k, [x, y, z]] of Object.entries(frame.aim || {})) aim[swapSide(k)] = [-x, y, z];
+  const look = frame.look ? [-frame.look[0], frame.look[1]] : undefined;
+  return { ...frame, name: frame.name.replace(/^cornerR_/, `${set}_`), set, bones, aim, look };
+}
+
+const CORNER_R = PEEK.map(corner);
+const CORNER_L = CORNER_R.map((f) => mirror(f, 'cornerL'));
+
+export const FRAMES = [...PEEK, ...CORNER_R, ...CORNER_L, ...BODY];

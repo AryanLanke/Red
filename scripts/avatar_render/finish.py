@@ -63,9 +63,14 @@ def contact_sheet(frames: list[tuple[str, Image.Image]], path: Path, columns: in
 def finish_set(name: str, entries: list[dict], raw: Path, out: Path, ppm: float) -> dict:
     images = [Image.open(raw / f"{e['name']}.png").convert("RGBA") for e in entries]
     left, top, right, bottom = union_box(images)
-    if name == "peek":
-        idle = next((e for e in entries if e["name"] == "peek_idle"), entries[0])
+    if name in ("peek", "cornerR", "cornerL"):
+        idle = next((e for e in entries if e["name"] == f"{name}_idle"), entries[0])
         bottom = edge_line(idle)
+    # Corners: the side edge runs through the wrist of the hand gripping it, so only its fingers show.
+    if name == "cornerR":
+        right = idle["marks"]["leftHand"][0]
+    elif name == "cornerL":
+        left = idle["marks"]["rightHand"][0]
     scale = ppm / entries[0]["pxPerMetre"]
     width, height = round((right - left) * scale), round((bottom - top) * scale)
 
@@ -86,18 +91,24 @@ def main() -> None:
     ap.add_argument("raw", type=Path)
     ap.add_argument("out", type=Path)
     ap.add_argument("--ppm", type=float, default=560, help="output pixels per metre (both sets)")
+    ap.add_argument("--name", help="the companion's name, shown in its menu (default: the folder name)")
+    ap.add_argument("--voice", help="the Kokoro voice for its pickup clips (default: Red's voice)")
     args = ap.parse_args()
 
     meta = json.loads((args.raw / "frames.json").read_text(encoding="utf-8"))
     args.out.mkdir(parents=True, exist_ok=True)
+    old = args.out / "frames.json"
+    kept = json.loads(old.read_text(encoding="utf-8")) if old.exists() else {}
     sets = {}
-    for name in ("peek", "body"):
+    for name in ("peek", "cornerR", "cornerL", "body"):
         entries = [f for f in meta["frames"] if f["set"] == name and (args.raw / f"{f['name']}.png").exists()]
         if entries:
             sets[name] = finish_set(name, entries, args.raw, args.out, args.ppm)
             print(f"{name}: {len(entries)} frames, {sets[name]['size'][0]}x{sets[name]['size'][1]}")
     (args.out / "frames.json").write_text(json.dumps({
         "model": meta["model"].get("title"),
+        "name": args.name or kept.get("name") or args.out.name.title(),
+        "voice": args.voice or kept.get("voice"),
         "pxPerMetre": args.ppm,
         "sets": sets,
     }, indent=1), encoding="utf-8")

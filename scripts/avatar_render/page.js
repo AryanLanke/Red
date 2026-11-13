@@ -18,6 +18,9 @@ const SETS = {
   body: { width: 800, height: 1400 },
   // Peeking over the screen edge: head, shoulders and forearms, closer up.
   peek: { width: 1000, height: 1000 },
+  // Peeking around a bottom corner: the same framing (finish.py cuts the side off).
+  cornerR: { width: 1000, height: 1000 },
+  cornerL: { width: 1000, height: 1000 },
 };
 
 const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
@@ -54,6 +57,16 @@ const CHILD = {
 const AIM_ORDER = Object.keys(CHILD);
 const MARKS = ['head', 'neck', 'hips', 'leftHand', 'rightHand', 'leftLowerArm', 'rightLowerArm'];
 
+// For models without VRoid's face morphs (see renderFrame).
+const FCL_TO_EXPRESSION = {
+  Fcl_EYE_Close: 'blink', Fcl_EYE_Joy: 'happy', Fcl_MTH_Joy: 'happy', Fcl_BRW_Joy: 'happy',
+  Fcl_ALL_Sorrow: 'sad', Fcl_BRW_Sorrow: 'sad', Fcl_MTH_Sorrow: 'sad',
+  Fcl_ALL_Angry: 'angry', Fcl_BRW_Angry: 'angry', Fcl_MTH_Angry: 'angry',
+  Fcl_ALL_Surprised: 'surprised', Fcl_BRW_Surprised: 'surprised',
+  Fcl_BRW_Fun: 'relaxed', Fcl_ALL_Fun: 'relaxed',
+  Fcl_MTH_A: 'aa', Fcl_MTH_I: 'ih', Fcl_MTH_U: 'ou', Fcl_MTH_E: 'ee', Fcl_MTH_O: 'oh',
+};
+
 function deg(v) { return (v || 0) * Math.PI / 180; }
 function node(name) { return vrm.humanoid.getNormalizedBoneNode(name); }
 
@@ -84,6 +97,8 @@ window.loadModel = async (url) => {
   const bodyVisible = top * 1.35;        // room for raised arms when dangling
   views.body = { centerY: top * 0.6, visible: bodyVisible };
   views.peek = { centerY: headY - 0.12, visible: 1.0 };
+  views.cornerR = views.peek;
+  views.cornerL = views.peek;
   vrm.lookAt.target = lookTarget;
   vrm.lookAt.autoUpdate = true;
 
@@ -159,8 +174,25 @@ window.renderFrame = (frame) => {
   if (vrm.springBoneManager) vrm.springBoneManager.reset();
   for (let i = 0; i < 150; i++) vrm.update(1 / 60);
 
-  // Face morphs go on after the expression manager has written its own weights.
+  // Models not made in VRoid have no Fcl_* morphs: their faces come from the standard VRM expressions.
+  if (!morphMeshes.length) {
+    const wanted = {};
+    for (const [name, value] of Object.entries(frame.face || {})) {
+      const expr = FCL_TO_EXPRESSION[name];
+      if (expr) wanted[expr] = Math.max(wanted[expr] || 0, value);
+    }
+    for (const [name, value] of Object.entries(wanted)) {
+      if (em.getExpression(name)) em.setValue(name, value);
+      else if (name === 'surprised' && em.getExpression('Surprised')) em.setValue('Surprised', value);
+    }
+    vrm.update(0);
+  }
+
+  // Face morphs go on after the expression manager has written its own weights. Every morph is cleared
+  // first: the manager only resets the morphs its presets use, so others (Fcl_EYE_Joy...) would carry
+  // over from the frame before and close the eyes of the next one.
   for (const mesh of morphMeshes) {
+    mesh.morphTargetInfluences.fill(0);
     for (const [name, value] of Object.entries(frame.face || {})) {
       const i = mesh.morphTargetDictionary[name];
       if (i !== undefined) mesh.morphTargetInfluences[i] = value;
