@@ -176,3 +176,50 @@ def test_counts_whisper_time():
     assert det.evaluations == 2
     assert det.busy_seconds == pytest.approx(0.55)
     assert det.last_text == "Hey Red."
+
+
+# Every burst that never reaches Whisper says why in red.log (plan.md task 1.2).
+
+def skips(caplog):
+    return [r.getMessage() for r in caplog.records if r.getMessage().startswith("Wake skip:")]
+
+
+def test_a_too_short_burst_logs_why(caplog):
+    caplog.set_level("INFO", logger="red.wakeword")
+    det, _, _ = make()
+    run(det, noise(1.0), tone(0.15), noise(1.0))
+    assert len(skips(caplog)) == 1 and "too short" in skips(caplog)[0]
+
+
+def test_a_phrase_run_into_earlier_speech_is_one_burst_whose_start_is_checked(caplog):
+    # A burst only ends after PAUSE_AFTER (0.3 s) of quiet, which is already more than
+    # PAUSE_BEFORE (0.25 s): a "Hey Red" with a shorter gap before it merges into the earlier
+    # speech, and only the start of that merged burst (the earlier speech) is checked.
+    caplog.set_level("INFO", logger="red.wakeword")
+    det, _, whisper = make("Something else, hey red")
+    assert max(run(det, noise(0.5), tone(0.8), noise(0.1), tone(0.9), noise(1.0))) == 0.0
+    assert len(whisper.clips) == 1
+    assert any("start of a longer phrase" in r.getMessage() for r in caplog.records)
+
+
+class FaintVAD(LoudnessVAD):
+    """Speech the VAD is unsure of: above the 'too faint' line, below the start of a clip."""
+
+    def __call__(self, chunk):
+        return 0.4 if super().__call__(chunk) > 0.5 else 0.05
+
+
+def test_speech_too_faint_to_start_a_clip_logs_why(caplog):
+    caplog.set_level("INFO", logger="red.wakeword")
+    whisper = FakeWhisper()
+    det = HeyRedDetector(FaintVAD(), whisper)
+    run(det, noise(1.0), tone(0.7), noise(1.0))
+    assert whisper.clips == []
+    assert len(skips(caplog)) == 1 and "too faint" in skips(caplog)[0] and "VAD 0.40" in skips(caplog)[0]
+
+
+def test_a_checked_phrase_logs_no_skip(caplog):
+    caplog.set_level("INFO", logger="red.wakeword")
+    det, _, _ = make()
+    run(det, noise(1.0), tone(0.7), noise(1.0))
+    assert skips(caplog) == []

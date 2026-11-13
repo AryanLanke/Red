@@ -32,6 +32,9 @@ class _Show(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         text = record.getMessage()
+        if text.startswith("Wake skip: "):
+            self.out(f"  skipped: {text[len('Wake skip: '):]}")
+            return
         if not text.startswith("Wake check:"):
             return
         import re

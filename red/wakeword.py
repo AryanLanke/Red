@@ -39,6 +39,7 @@ VAD_CHUNK = 512                    # Silero works on 32 ms chunks at 16 kHz
 VAD_CONTEXT = 64
 SPEECH_ON = 0.5                    # VAD probability that starts speech
 SPEECH_OFF = 0.35                  # ... and that counts as silence again
+SOFT_SPEECH = 0.25                 # below SPEECH_ON but maybe speech: logged as "too faint"
 MIN_CLIP_SECONDS = 0.35            # "Hey Red" takes about 0.5-1.1 s
 MAX_CLIP_SECONDS = 1.6
 PAUSE_BEFORE_SECONDS = 0.25        # quiet needed before the phrase
@@ -223,7 +224,9 @@ class HeyRedDetector:
         self._speech_chunks = 0
         self._quiet_run = 0
         self._quiet_before = 10 ** 6         # the stream starts quiet
+        self._start_quiet = self._quiet_before
         self._too_long = False
+        self._soft_peak = self._soft_peak_audio = 0.0
 
     def _chunks_for(self, seconds: float) -> int:
         return int(round(seconds * SAMPLE_RATE / VAD_CHUNK))
@@ -245,6 +248,13 @@ class HeyRedDetector:
             return 0.0                       # the right words, but not your voice
         return score
 
+    def _skip(self, reason: str) -> None:
+        """Logged so a "Hey Red" that never reached Whisper can be explained too."""
+        log.info("Wake skip: %s (speech %.2f s, quiet before %.2f s, peak %.2f)", reason,
+                 self._speech_chunks * VAD_CHUNK / SAMPLE_RATE,
+                 min(self._start_quiet, 99) * VAD_CHUNK / SAMPLE_RATE,
+                 float(max(np.abs(c).max() for c in self._clip)) if self._clip else 0.0)
+
     def _step(self, chunk: np.ndarray) -> float:
         p = self._vad(chunk)
         if self._clip is None:
@@ -255,8 +265,17 @@ class HeyRedDetector:
                 self._quiet_run = 0
                 self._too_long = False
                 self._start_quiet = self._quiet_before
+                self._soft_peak = self._soft_peak_audio = 0.0
             else:
                 self._quiet_before += 1
+                # Speech too faint for the VAD to start a clip: a quiet microphone or a mumbled "Hey".
+                if p >= SOFT_SPEECH:
+                    self._soft_peak = max(self._soft_peak, p)
+                    self._soft_peak_audio = max(self._soft_peak_audio, float(np.abs(chunk).max()))
+                elif self._soft_peak:
+                    log.info("Wake skip: speech too faint to check (VAD %.2f, needs %.2f; peak %.2f)",
+                             self._soft_peak, SPEECH_ON, self._soft_peak_audio)
+                    self._soft_peak = self._soft_peak_audio = 0.0
             self._history.append(chunk)
             return 0.0
 
@@ -266,22 +285,30 @@ class HeyRedDetector:
         else:
             self._quiet_run = 0
             self._speech_chunks = len(self._clip) - self._preroll
+        paused_before = self._start_quiet >= self._chunks_for(PAUSE_BEFORE_SECONDS)
         if self._speech_chunks > self._chunks_for(self.max_clip_seconds) and not self._too_long:
             self._too_long = True
             # Said in one breath ("Hey Red, open YouTube"): look at just the start, once.
-            if self._start_quiet >= self._chunks_for(PAUSE_BEFORE_SECONDS):
+            if paused_before:
                 head = self._clip[:self._preroll + self._chunks_for(HEAD_SECONDS)]
                 score = self._evaluate(head, head=True)
                 if score > 0:
                     return score
+            else:
+                self._skip("long speech with no pause before it")
         if self._quiet_run < self._chunks_for(PAUSE_AFTER_SECONDS):
             return 0.0
 
         # The burst of speech is over.
         score = 0.0
         long_enough = self._speech_chunks >= self._chunks_for(MIN_CLIP_SECONDS)
-        if (not self._too_long and long_enough
-                and self._start_quiet >= self._chunks_for(PAUSE_BEFORE_SECONDS)):
+        if self._too_long:
+            pass                             # its start was checked (or skipped) above
+        elif not long_enough:
+            self._skip("too short")
+        elif not paused_before:
+            self._skip("no pause before it")
+        else:
             # Over about 1.25 s it is "Hey Red" plus words, not a bare phrase: only its start counts.
             score = self._evaluate(head=self._speech_chunks > self._chunks_for(LONG_PHRASE_SECONDS))
         self._clip = None

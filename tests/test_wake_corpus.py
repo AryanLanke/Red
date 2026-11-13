@@ -93,7 +93,7 @@ def test_replay_counts_hits_misses_and_false_wakes(tmp_path):
     assert summary["hey-red-cmd"] == [1, 1]
     assert summary["false_wakes"] == 2
     assert "\"Hey Red\": 3/4 woke Red (75%)" in text
-    assert "missed hey-red-04: never checked" in text
+    assert "missed hey-red-04: never checked (the microphone heard no speech)" in text
     assert "Normal talk: 2 false wakes" in text
     logged = json.loads((settings.logs_dir / wake_corpus.REPLAY_LOG).read_text().splitlines()[-1])
     assert logged["hey-red"] == [3, 4] and logged["time"] == 100.0

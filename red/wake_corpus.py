@@ -97,7 +97,7 @@ def record(settings, *, out: Callable[[str], None] = print, microphone: Callable
 
 
 class _Heard(logging.Handler):
-    """Collects the detector's 'Wake check' lines for the file being replayed."""
+    """Collects the detector's 'Wake check' and 'Wake skip' lines for the file being replayed."""
 
     def __init__(self):
         super().__init__()
@@ -105,8 +105,10 @@ class _Heard(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         text = record.getMessage()
-        if text.startswith("Wake check:"):
+        if text.startswith("Wake check: "):
             self.lines.append(text[len("Wake check: "):])
+        elif text.startswith("Wake skip: "):
+            self.lines.append("skipped, " + text[len("Wake skip: "):])
 
 
 @dataclass
@@ -168,15 +170,15 @@ def replay(settings, *, out: Callable[[str], None] = print, make_detector: Calla
         out(f"\n\"{phrase}\": {hits}/{len(rs)} woke Red ({100 * hits / len(rs):.0f}%)")
         for r in rs:
             if r.wakes == 0:
-                out(f"  missed {r.name}: " + ("; ".join(r.heard) if r.heard else "never checked (no "
-                                               "burst passed the detector's pause and length rules)"))
+                out(f"  missed {r.name}: " + ("; ".join(r.heard) if r.heard else "never checked (the "
+                                               "microphone heard no speech)"))
         summary[prefix] = [hits, len(rs)]
     talk = groups.get(TALK_NAME)
     if talk:
         false = talk[0].wakes
         out(f"\nNormal talk: {false} false wake{'s' if false != 1 else ''}")
         for line in talk[0].heard:
-            if "score 0.00" not in line:
+            if line.startswith("heard") and "score 0.00" not in line:
                 out(f"  {line}")
         summary["false_wakes"] = false
     try:
