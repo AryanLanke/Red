@@ -68,6 +68,32 @@ def phrase_key(text: str) -> str:
     return " ".join(_words(text)[:2])
 
 
+PERSONAL_CLOSE_SCORE = 0.7
+PERSONAL_CLOSE_EDITS = 2               # letters that may differ from a learned phrase
+PERSONAL_CLOSE_MIN_LETTERS = 5         # short phrases must match exactly
+
+
+def _edits(a: str, b: str) -> int:
+    """Levenshtein distance (letters added, removed or changed)."""
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def _close_to_personal(merged: str, personal: frozenset[str]) -> bool:
+    """A one- or two-word clip that is within a couple of letters of a learned phrase."""
+    for phrase in personal:
+        target = phrase.replace(" ", "")
+        if (len(target) >= PERSONAL_CLOSE_MIN_LETTERS and merged != target and merged[:1] == target[:1]
+                and _edits(merged, target) <= PERSONAL_CLOSE_EDITS):
+            return True
+    return False
+
+
 def _separated_after_two_words(text: str) -> bool:
     """Is there a comma, full stop, '!' or '?' right after the transcript's second word?"""
     m = re.match(r"\s*[^\w']*[\w'-]+[\s,.!?-]+[\w']+(\s*[,.!?])", text)
@@ -98,6 +124,7 @@ def match_score(text: str, personal: frozenset[str] = frozenset(), head: bool = 
     (from python -m red voice-setup); those count as a strong match.
     """
     words = collapse_repeats(_words(text))
+    whole_clip_words = len(words)
     # "Hey Red, open YouTube": Whisper puts a comma (or a full stop) after a wake phrase that has a
     # command after it, and none in a misheard "a red light" ("Hey Red Light"). So the words after
     # a separated "Hey Red" don't count against it.
@@ -109,6 +136,9 @@ def match_score(text: str, personal: frozenset[str] = frozenset(), head: bool = 
         return 0.0
     if personal and " ".join(words[:2]) in personal:
         return 0.9 if len(words) <= 2 else 0.6
+    # Only a clip that is just those one or two words: "The rest of us..." starts like "here at".
+    if personal and whole_clip_words <= 2 and _close_to_personal("".join(words), personal):
+        return PERSONAL_CLOSE_SCORE      # "Headered", "Head in": how the user says it, heard a bit off
     if words[0] in _MERGED:
         return _MERGED[words[0]]
     if len(words) < 2:

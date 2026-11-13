@@ -261,6 +261,31 @@ def test_strip_wake_phrase(heard, command):
     assert strip_wake_phrase(heard) == command
 
 
+# The user's real recordings (2026-11-13): Whisper wrote their "Hey Red" as "Headed" most often, and
+# as "Headered" or "Head in" now and then. --learn added "headed" and "here at".
+LEARNED = frozenset({"headed", "here at"})
+
+
+@pytest.mark.parametrize("heard", ["Headered", "Head in", "Heded."])
+def test_a_clip_close_to_a_learned_phrase_wakes(heard):
+    assert match_score(heard, LEARNED) == 0.7
+
+
+@pytest.mark.parametrize("heard", [
+    "The rest of us are scared to open",     # starts like "here at": a real false wake in red.log
+    "The rest",                              # a different first letter
+    "Hidden",                                # three letters off
+    "Headed home now",                       # more than two words
+    "Hello",
+])
+def test_close_matching_stays_narrow(heard):
+    assert match_score(heard, LEARNED) < 0.5
+
+
+def test_close_matching_needs_a_learned_phrase():
+    assert match_score("Headered") == 0.0
+
+
 def test_strip_wake_phrase_knows_your_own_spelling():
     assert strip_wake_phrase("Headed, open YouTube", frozenset({"headed"})) == "Headed, open YouTube"
     assert strip_wake_phrase("Hit it, open YouTube", frozenset({"hit it"})) == "open YouTube"
