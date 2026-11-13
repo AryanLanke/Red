@@ -204,7 +204,12 @@ be seen, and a missed "Hey Red" stops being a dead end.
 
 ### Phase B: plugins and doing your work
 
-#### B1. Plugins
+#### B1. Plugins ✅ (2026-11-13)
+**Done:** `red/plugins.py`, a Plugins page (reads `plugin.toml` only, never imports), `python -m red
+plugins list | on NAME | off NAME`, and `default_registry(plugins=…)`. Red's own plugins load straight
+from `red/plugins/` (so updates reach them); setup copies them to `RED_HOME\plugins\_examples\` to read
+(folders starting with `_` never load). A plugin that's broken, exits, ships `.pyd`/`.dll`, or clashes
+on a tool name is skipped with the reason shown. An off plugin isn't imported at all. MCP stays later.
 **Why:** the user wants Red to grow through many plugins.
 1. A plugin is a folder `RED_HOME\plugins\<name>\` with `plugin.toml` (name, version, description,
    author, what it needs) and `tools.py` (plain `Tool` subclasses, the same format as `red/tools/`).

@@ -472,6 +472,15 @@ Every command writes a `Timing` line to `red.log`: listen, transcribe, route, ac
 - **Hotkey:** its own `pynput.GlobalHotKeys` (`RED_CHAT_HOTKEY`, default Ctrl+Alt+Space), so session 1's `listener.py` is unchanged. Esc or ✕ hides it.
 - **Routing (real model):** "open chat", "open the chat window", "let me type to you", "show me the chat" → `open_chat`; "let's chat" and "let's talk" stay conversation; WhatsApp, Discord, Telegram, Spotify → `open_app`. The first description named WhatsApp as a "not this" example, and the model then refused to open WhatsApp at all. Don't name other apps in a tool description.
 
+#### Plugins (2026-11-13, plan.md B1, fifth plan)
+
+- A plugin is a folder: `plugin.toml` (`name` lower case, `version`, `description`, `author`, `needs`, optional `default_on = false`) and `tools.py` (Tool subclasses, or a `tools()` function that returns them). Classes starting with `_` are helpers, not tools.
+- Where: `red/plugins/<name>/` (Red's own, loaded from the package so an update reaches them) and `RED_HOME\plugins\<name>\` (the user's, winning over a built-in of the same name). `red/plugins/` must never get an `__init__.py`: `red.plugins` is the loader module (a test checks).
+- On or off: `RED_HOME\config\plugins.json` (`{"off": [...], "on": [...]}`), set from the Plugins page or `python -m red plugins on|off NAME`. Off means `tools.py` is never imported.
+- Skipped, with the reason (Plugins page and `plugins list`): no or bad `plugin.toml`, no `tools.py`, an import error or `sys.exit()`, native code (`.pyd`, `.dll`, `.exe`, `.so`: Smart App Control), no tools, or every tool name already taken (Red's own tools always win).
+- Safety doesn't change: the model picks a plugin tool and fills its schema-checked arguments, and the Executor confirms destructive ones. The Plugins page reads manifests only, so opening the settings app never runs plugin code.
+- Tests never see the user's plugins (`tests/conftest.py` points `user_plugins_dir` and `state_path` at the test's tmp folder).
+
 ### 7.3 Overlay (Track C)
 
 - PySide6. Frameless, always on top, translucent, and doesn't take keyboard focus. Sits in the bottom-right corner of the primary screen.
