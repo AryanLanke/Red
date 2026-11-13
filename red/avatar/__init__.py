@@ -112,8 +112,9 @@ def available_companions(models_dir: Path) -> dict[str, str]:
     return found
 
 
-# Where the companion sits on the bottom of the screen, and the frame set for it.
-SIDES = {"edge": "peek", "left": "cornerL", "right": "cornerR"}
+# Where the companion sits, and the frame set for it: the bottom edge, a bottom corner, or hanging
+# upside down from the top edge.
+SIDES = {"edge": "peek", "left": "cornerL", "right": "cornerR", "top": "top"}
 
 
 def frame_for_side(name: str, side: str, available: Callable[[str], bool] = lambda n: True) -> str:
@@ -125,8 +126,12 @@ def frame_for_side(name: str, side: str, available: Callable[[str], bool] = lamb
     return corner if available(corner) else name
 
 
-def side_for(x: float, left: float, right: float, snap: float) -> str:
-    """Dropped within `snap` pixels of a side of the screen: that corner. Otherwise the bottom edge."""
+def side_for(x: float, left: float, right: float, snap: float, y: float | None = None,
+             top: float | None = None) -> str:
+    """Dropped within `snap` pixels of the top of the screen: hanging from the top edge. Near a side:
+    that bottom corner. Otherwise the bottom edge."""
+    if y is not None and top is not None and y <= top + snap:
+        return "top"
     if x >= right - snap:
         return "right"
     if x <= left + snap:

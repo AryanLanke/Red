@@ -45,7 +45,8 @@ GREETING_SECONDS = 1.6
 EMOTION_HOLD = 4.0         # an emotion lingers this long after Red stops talking
 FAST, NORMAL, SLOW = 33, 100, 500      # timer intervals (ms): animating, awake, asleep
 SIDE_PAD = 24
-CORNER_SNAP = 180          # dropped this close to a side of the screen: it goes into that corner
+CORNER_SNAP = 180          # dropped this close to a side (or the top) of the screen: it goes there
+ANIM_SECONDS = 1.2         # the longest of the little animations below
 
 
 def fullscreen_app_in_front() -> bool:
@@ -128,7 +129,8 @@ def _window_class():
             self.pickup_clips: list[Path] = []
             self.drop_clips: list[Path] = []
             self.x_center: float | None = None
-            self.side = "right"                          # edge, left or right (a bottom corner)
+            self.side = "right"                          # edge, left, right (bottom corners) or top
+            self.anims: dict[str, float] = {}
             self.load(sprites)
             self._restore()
 
@@ -157,7 +159,7 @@ def _window_class():
                 self.pixmaps[name] = pm
             peek = self.pixmaps["peek_idle"]
             self.set_size = {}                           # frame set -> (width, height) on screen
-            for set_name in ("peek", "cornerR", "cornerL", "body"):
+            for set_name in ("peek", "cornerR", "cornerL", "top", "body"):
                 pm = next((p for n, p in self.pixmaps.items() if n.startswith(set_name + "_")), None)
                 if pm is not None:
                     self.set_size[set_name] = (pm.width() / dpr, pm.height() / dpr)
@@ -204,7 +206,17 @@ def _window_class():
                     self.x_center = area.right() - w / 2 - SIDE_PAD
                 self.x_center = min(max(self.x_center, area.left() + w / 2), area.right() - w / 2)
                 left = self.x_center - width / 2
+            if self.hanging:
+                top = area.top()                         # hanging: the picture's top on the top edge
             self.setGeometry(round(left), top, round(width), round(height))
+
+        @property
+        def hanging(self) -> bool:
+            """Upside down from the top edge: the picture is at the top and the bubble below it."""
+            return self.prefix == "top"
+
+        def sprite_top(self, h: float) -> float:
+            return 0.0 if self.hanging else self.height() - h
 
         def sprite_left(self, w: float) -> float:
             """Where the picture starts inside the window: flush with the screen side in a corner."""
@@ -219,6 +231,23 @@ def _window_class():
             self.perch()
             self._save()
             self.until["notice"] = self.clock() + NOTICE_SECONDS
+            self.animate("land")
+
+        # --- little animations ------------------------------------------------
+        # pop: picked up (a springy stretch); land: a squash when it settles; hop: a hop toward you on
+        # hover, with a heart floating off; jolt: a startled shake when woken.
+
+        def animate(self, name: str) -> None:
+            self.anims[name] = self.clock()
+
+        def anim_age(self, name: str, now: float, length: float) -> float | None:
+            start = self.anims.get(name)
+            if start is None or now - start > length:
+                return None
+            return now - start
+
+        def animating(self, now: float) -> bool:
+            return any(now - start < ANIM_SECONDS for start in self.anims.values())
 
         def _area_for(self, x: float):
             for screen in QGuiApplication.screens():
@@ -320,7 +349,7 @@ def _window_class():
             self.shown = shown
 
             busy = (look.dragging or look.falling or look.state in ("speaking", "greeting") or self.until
-                    or self._typing(now))
+                    or self._typing(now) or self.animating(now))
             self._speed(FAST if busy else SLOW if look.state == "sleeping" else NORMAL)
             self.update()
 
@@ -367,9 +396,16 @@ def _window_class():
                 self.fall_v = 0.0
                 self.fall_y = self.geometry().top()
                 area = self._area_for(pos.x())
-                self.side = side_for(pos.x(), area.left(), area.right(), CORNER_SNAP)
+                self.side = side_for(pos.x(), area.left(), area.right(), CORNER_SNAP, pos.y(), area.top())
                 self._sound(self.drop_clips)
                 self._speed(FAST)
+                if self.side == "top":                   # it grabs the top edge: no falling
+                    self.look.falling = False
+                    self.x_center = pos.x()
+                    self.until["notice"] = self.clock() + NOTICE_SECONDS
+                    self.perch()
+                    self._save()
+                    self.animate("land")
                 return
             if pressed is not None and self.on_click:
                 try:
@@ -386,6 +422,7 @@ def _window_class():
             self.turn_emotion = "happy" if random.random() < 0.25 else None      # sometimes it enjoys it
             self.last_drag = (QPointF(pos), self.clock())
             self.swing = 0.0
+            self.animate("pop")
             self._sound(self.pickup_clips)
             # Hold it by the top of the head: the grab point is above the head mark.
             body_head = self.mark_point("body_drag_1")
@@ -421,6 +458,7 @@ def _window_class():
                 self.until["notice"] = now + NOTICE_SECONDS
                 self.perch()
                 self._save()
+                self.animate("land")
                 return
             g = self.geometry()
             self.setGeometry(g.left(), round(self.fall_y), g.width(), g.height())
@@ -450,8 +488,11 @@ def _window_class():
             if self.look.state == "sleeping":
                 self.look.state = "idle"
                 self.until["notice"] = now + NOTICE_SECONDS
+                self.animate("jolt")
             elif self.look.state == "idle":
                 self.until["hover"] = now + HOVER_SECONDS
+                if self.anim_age("hop", now, 1.5) is None:      # not again while it's still hopping
+                    self.animate("hop")
             self.last_activity = now
             self.tick()
 
@@ -461,8 +502,8 @@ def _window_class():
                 menu.addAction("Open chat", self.on_click)
             menu.addSeparator()
             for side, label in (("left", "Sit in the left corner"), ("edge", "Sit on the bottom edge"),
-                                ("right", "Sit in the right corner")):
-                if side != self.side:
+                                ("right", "Sit in the right corner"), ("top", "Hang from the top edge")):
+                if side != self.side and SIDES[side] in self.set_size:
                     menu.addAction(label, functools.partial(self.place, side))
             if self.models_dir is not None:
                 menu.addSeparator()
@@ -509,22 +550,51 @@ def _window_class():
                 self._paint_dangling(p, pm, w, h, now)
                 p.end()
                 return
+            unit = SIZES[self.size_name] / 300.0
+            inward = 1.0 if self.hanging else -1.0       # toward the middle of the screen
             left = self.sprite_left(w)
-            top = self.height() - h
+            top = self.sprite_top(h)
             asleep = self.look.state == "sleeping"
             breath = (0.014 if asleep else 0.007) * math.sin(now * 2 * math.pi / (5.0 if asleep else 3.6))
+            sx, sy, dx, dy = 1.0, 1.0 + breath, 0.0, 0.0
+            age = self.anim_age("land", now, 0.6)
+            if age is not None:                          # squash on the edge, then spring back
+                squash = 0.14 * math.exp(-age * 9) * math.cos(age * 22)
+                sx, sy = sx * (1 + squash * 0.6), sy * (1 - squash)
+            age = self.anim_age("hop", now, 0.38)
+            if age is not None:                          # a little hop toward you
+                dy += inward * 12 * unit * math.sin(math.pi * age / 0.38)
+                sy *= 1 + 0.04 * math.sin(math.pi * age / 0.38)
+            age = self.anim_age("jolt", now, 0.5)
+            if age is not None:                          # startled awake
+                dx += 5 * unit * math.sin(age * 70) * math.exp(-age * 7)
+            edge_y = 0.0 if self.hanging else self.height()   # it stretches and squashes from the edge
             p.save()
-            p.translate(left + w / 2, self.height())
-            p.scale(1.0, 1.0 + breath)
-            p.drawPixmap(QPointF(-w / 2, -h), pm)
+            p.translate(left + w / 2 + dx, edge_y + dy)
+            p.scale(sx, sy)
+            p.drawPixmap(QPointF(-w / 2, 0.0 if self.hanging else -h), pm)
             p.restore()
-            head = self.mark_point(self.frame_name) + QPointF(left, top)
+            head = self.mark_point(self.frame_name) + QPointF(left + dx, top + dy)
             mark = mark_for(self.shown) if hasattr(self, "shown") else None
             if mark:
                 self._paint_mark(p, mark, head, now)
+            age = self.anim_age("hop", now, 1.1)
+            if age is not None:
+                self._paint_heart(p, head, age, unit)
             if self.bubble_text and now < self.bubble_until:
                 self._paint_bubble(p, head, now)
             p.end()
+
+        def _paint_heart(self, p, head: QPointF, age: float, unit: float) -> None:
+            """A small heart that floats off the head and fades (on hover)."""
+            t = age / 1.1
+            away = -1.0 if not self.hanging else 1.0
+            x = head.x() - 30 * unit + 8 * unit * math.sin(t * 6)
+            y = head.y() + away * (60 + 45 * t) * unit
+            font = QFont("Segoe UI Symbol", max(8, round((14 + 6 * t) * unit)))
+            p.setFont(font)
+            p.setPen(QColor(230, 80, 130, int(255 * (1 - t))))
+            p.drawText(QPointF(x, y), "♥")
 
         def _paint_dangling(self, p, pm, w, h, now) -> None:
             # A pendulum: the body leans against the way you move it, then settles.
@@ -534,11 +604,28 @@ def _window_class():
             wobble = 3.0 * math.sin(now * 7.0) if self.look.dragging else 0.0
             p.translate(self.hold)
             p.rotate(self.swing + wobble)
+            age = self.anim_age("pop", now, 0.8)
+            if age is not None:                          # picked up: a springy stretch from your hand
+                stretch = 0.16 * math.exp(-age * 7) * math.cos(age * 18)
+                p.scale(1 - stretch * 0.5, 1 + stretch)
             p.drawPixmap(QPointF(-self.grab_offset.x(), -self.grab_offset.y()), pm)
+            age = self.anim_age("pop", now, 0.5)
+            if age is not None:                          # surprise lines around the head
+                unit = SIZES[self.size_name] / 300.0
+                head = self.mark_point("body_drag_1") - self.grab_offset
+                p.setPen(QPen(QColor(40, 40, 50, int(230 * (1 - age / 0.5))), 2.5 * unit))
+                for angle in (-150, -115, -65, -30):
+                    a = math.radians(angle)
+                    r1, r2 = (55 + 30 * age) * unit, (75 + 40 * age) * unit
+                    p.drawLine(QPointF(head.x() + r1 * math.cos(a), head.y() + r1 * math.sin(a)),
+                               QPointF(head.x() + r2 * math.cos(a), head.y() + r2 * math.sin(a)))
 
         def _paint_mark(self, p, mark: str, head: QPointF, now: float) -> None:
             unit = SIZES[self.size_name] / 300.0
-            top = QPointF(head.x() + 34 * unit, head.y() - 70 * unit)
+            # Upside down the head's top points at the floor, so the marks go below it.
+            down = -1.0 if self.hanging else 1.0
+            past_hair = 92 if self.hanging else 70      # hanging hair falls past the head
+            top = QPointF(head.x() + down * 34 * unit, head.y() - down * past_hair * unit)
             bob = 3 * unit * math.sin(now * 3.0)
             ink = QColor("#2b2b33")
             font = QFont("Segoe UI", max(9, round(20 * unit)))
@@ -575,8 +662,8 @@ def _window_class():
             elif mark in ("tear", "sweat"):
                 # The head mark is the base of the skull: the eyes are about 7 cm above it.
                 fall = ((now * 0.8) % 1.0) * 10 * unit if mark == "tear" else 0.0
-                x = head.x() + (11 if mark == "tear" else 27) * unit
-                y = head.y() - (19 if mark == "tear" else 44) * unit + fall
+                x = head.x() + down * (11 if mark == "tear" else 27) * unit
+                y = head.y() - down * (19 if mark == "tear" else 44) * unit + fall
                 path = QPainterPath()
                 path.moveTo(x, y - 9 * unit)
                 path.cubicTo(x + 7 * unit, y, x + 5 * unit, y + 7 * unit, x, y + 7 * unit)
@@ -598,15 +685,24 @@ def _window_class():
             width = min(inner, max(60.0, full.width())) + 24
             fade = 1.0 if self.bubble_until == float("inf") else max(0.0, min(1.0, (self.bubble_until - now)))
             x = min(max(head.x() - width / 2, 4.0), self.width() - width - 4)
-            y = max(4.0, head.y() - 0.27 * SIZES[self.size_name] - height)
+            gap = 0.27 * SIZES[self.size_name]
+            if self.hanging:                             # below the (upside-down) head
+                y = min(self.height() - height - 4.0, head.y() + gap)
+            else:
+                y = max(4.0, head.y() - gap - height)
             rect = QRectF(x, y, width, height)
             path = QPainterPath()
             path.addRoundedRect(rect, 10, 10)
             tail = QPainterPath()
             tx = min(max(head.x(), x + 18), x + width - 18)
-            tail.moveTo(tx - 8, rect.bottom() - 1)
-            tail.lineTo(tx + 2, rect.bottom() + 12)
-            tail.lineTo(tx + 8, rect.bottom() - 1)
+            if self.hanging:
+                tail.moveTo(tx - 8, rect.top() + 1)
+                tail.lineTo(tx + 2, rect.top() - 12)
+                tail.lineTo(tx + 8, rect.top() + 1)
+            else:
+                tail.moveTo(tx - 8, rect.bottom() - 1)
+                tail.lineTo(tx + 2, rect.bottom() + 12)
+                tail.lineTo(tx + 8, rect.bottom() - 1)
             path = path.united(tail)
             p.setOpacity(fade)
             p.setPen(QPen(QColor(0, 0, 0, 40), 1))

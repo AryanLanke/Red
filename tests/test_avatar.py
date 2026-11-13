@@ -23,16 +23,18 @@ PEEK = ["peek_idle", "peek_idle_blink", "peek_talk_1", "peek_talk_2", "peek_talk
         "peek_wave_3", "peek_sleep"]
 BODY = ["body_drag_1", "body_drag_2", "body_drag_3", "body_drag_fun", "body_drop"]
 CORNERS = [n.replace("peek_", "cornerR_") for n in PEEK] + [n.replace("peek_", "cornerL_") for n in PEEK]
+TOP = [n.replace("peek_", "top_") for n in PEEK]
 
 
 def make_sprites(folder, names=None):
     """A tiny sprite folder like finish.py writes: solid pictures, marks, frames.json."""
     from PIL import Image
     folder.mkdir(parents=True, exist_ok=True)
-    names = names or PEEK + BODY + CORNERS
+    names = names or PEEK + BODY + CORNERS + TOP
     sets = {}
     for set_name, size, head in (("peek", (100, 80), [50, 30]), ("cornerR", (70, 90), [30, 30]),
-                                 ("cornerL", (70, 90), [40, 30]), ("body", (80, 200), [40, 50])):
+                                 ("cornerL", (70, 90), [40, 30]), ("top", (100, 80), [50, 50]),
+                                 ("body", (80, 200), [40, 50])):
         frames = []
         for name in names:
             if not name.startswith(set_name):
@@ -49,7 +51,8 @@ def make_sprites(folder, names=None):
 def test_load_sprites(tmp_path):
     sprites = load_sprites(make_sprites(tmp_path / "red"))
     assert sprites.px_per_metre == 300
-    assert sprites.sizes == {"peek": (100, 80), "cornerR": (70, 90), "cornerL": (70, 90), "body": (80, 200)}
+    assert sprites.sizes == {"peek": (100, 80), "cornerR": (70, 90), "cornerL": (70, 90), "top": (100, 80),
+                             "body": (80, 200)}
     assert (sprites.name, sprites.voice) == ("Red", None)       # Red speaks with RED_VOICE
     assert sprites.frames["body_drop"].set == "body"
     assert sprites.frames["peek_idle"].marks["head"] == [50, 30]
@@ -78,6 +81,10 @@ def test_corners():
     assert avatar.side_for(1900, 0, 1919, 180) == "right"
     assert avatar.side_for(100, 0, 1919, 180) == "left"
     assert avatar.side_for(900, 0, 1919, 180) == "edge"
+    assert avatar.side_for(900, 0, 1919, 180, y=60, top=0) == "top"
+    assert avatar.side_for(1900, 0, 1919, 180, y=60, top=0) == "top"      # the top wins over a corner
+    assert avatar.side_for(900, 0, 1919, 180, y=600, top=0) == "edge"
+    assert avatar.frame_for_side("peek_sad", "top") == "top_sad"
 
 
 def test_load_sprites_needs_peek_idle(tmp_path):
@@ -428,6 +435,52 @@ def test_pick_up_carry_and_drop(window, tmp_path):
     assert w.x_center == pytest.approx(start.x() - 160, abs=2)
     assert w.geometry().bottom() == area.bottom()
     assert json.loads((tmp_path / "spot.json").read_text())["x"] == pytest.approx(w.x_center)
+
+
+def test_hangs_upside_down_from_the_top(window):
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QGuiApplication
+    w = window.window
+    area = QGuiApplication.primaryScreen().availableGeometry()
+    start = QPointF(area.center().x(), area.bottom() - 20)
+    w.press(start)
+    w.move(QPointF(area.center().x() + 100, area.top() + 30))
+    w.release(QPointF(area.center().x() + 100, area.top() + 30))
+    assert w.side == "top" and not w.look.falling          # it grabs the edge: no fall
+    assert w.geometry().top() == area.top()
+    assert w.x_center == pytest.approx(area.center().x() + 100, abs=2)
+    window.clock.t += 2
+    w._apply("speaking", "Sorry, I couldn't find that file.")
+    window.clock.t += 3
+    w.tick()
+    assert w.frame_name.startswith("top_")
+    assert not w.grab().isNull()                           # bubble and tear drawn below the head
+
+
+def test_little_animations(window):
+    from PySide6.QtCore import QPointF
+    w = window.window
+    w.enterEvent(None)
+    assert "hop" in w.anims and w.timer.interval() == 33   # hover: a hop, drawn fast
+    assert not w.grab().isNull()
+    window.clock.t += 5
+    w.tick()
+    assert not w.animating(window.clock.t)
+    w.press(QPointF(500, 500))
+    w.move(QPointF(520, 300))
+    assert "pop" in w.anims                                # picked up: a springy stretch
+    assert not w.grab().isNull()
+    window.clock.t += avatar.SLEEP_AFTER_SECONDS + 10
+    w.release(QPointF(520, 300))
+    for _ in range(300):
+        window.clock.t += 1 / 30
+        w.tick()
+        if not w.look.falling:
+            break
+    assert w.anims["land"] == pytest.approx(window.clock.t, abs=0.1)     # landed: a squash
+    w.look.state = "sleeping"
+    w.enterEvent(None)
+    assert "jolt" in w.anims                               # woken up: startled
 
 
 def test_dropped_near_a_side_goes_into_the_corner(window):
