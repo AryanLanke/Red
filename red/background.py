@@ -56,8 +56,10 @@ def _read(path: Path) -> int | None:
 
 def is_running(pid: int, runner: Callable = subprocess.run) -> bool:
     """Whether a python process with this id exists (asked through tasklist)."""
+    # CREATE_NO_WINDOW: the hidden watcher has no console, so without it Windows opens one for
+    # tasklist, and the watchdog's check every 30 s flashed a PowerShell-like window.
     out = runner(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
-                 capture_output=True, text=True, timeout=20)
+                 capture_output=True, text=True, timeout=20, creationflags=CREATE_NO_WINDOW)
     return f'"{pid}"' in out.stdout and "python" in out.stdout.lower()
 
 
@@ -90,7 +92,8 @@ def stop(home: Path, *, runner: Callable = subprocess.run) -> bool:
     try:
         if pid is None or not is_running(pid, runner):
             return False
-        runner(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, timeout=30)
+        runner(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, timeout=30,
+               creationflags=CREATE_NO_WINDOW)
         return True
     finally:
         pid_file(home).unlink(missing_ok=True)
