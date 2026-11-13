@@ -134,11 +134,18 @@ def match_score(text: str, personal: frozenset[str] = frozenset(), head: bool = 
         words = words[:2]                # the rest of the sentence was cut off; only its start counts
     if not words or len(words) > 4:
         return 0.0
+    mine = 0.0                           # how well it matches *your* "Hey Red" (voice-setup, --learn)
     if personal and " ".join(words[:2]) in personal:
-        return 0.9 if len(words) <= 2 else 0.6
+        mine = 0.9 if len(words) <= 2 else 0.6
     # Only a clip that is just those one or two words: "The rest of us..." starts like "here at".
-    if personal and whole_clip_words <= 2 and _close_to_personal("".join(words), personal):
-        return PERSONAL_CLOSE_SCORE      # "Headered", "Head in": how the user says it, heard a bit off
+    elif personal and whole_clip_words <= 2 and _close_to_personal("".join(words), personal):
+        mine = PERSONAL_CLOSE_SCORE      # "Headered", "Head in": how the user says it, heard a bit off
+    # A plain "Hey Red" keeps its full score even when it is also close to a learned phrase.
+    return max(mine, _standard_score(words))
+
+
+def _standard_score(words: list[str]) -> float:
+    """'hey red' and its close variants, from the start of the clip."""
     if words[0] in _MERGED:
         return _MERGED[words[0]]
     if len(words) < 2:

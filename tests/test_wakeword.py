@@ -282,6 +282,12 @@ def test_close_matching_stays_narrow(heard):
     assert match_score(heard, LEARNED) < 0.5
 
 
+def test_a_plain_hey_red_keeps_its_full_score_with_learned_phrases():
+    # Live, 2026-11-13 06:03: "Hey Red" scored 0.70 because "heyred" is also close to "headed".
+    assert match_score("Hey Red", LEARNED) == 1.0
+    assert match_score("Hey Red, open YouTube", LEARNED) == 1.0
+
+
 def test_close_matching_needs_a_learned_phrase():
     assert match_score("Headered") == 0.0
 
