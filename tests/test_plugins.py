@@ -167,6 +167,19 @@ def test_registry_and_router_get_plugin_tools(home):
     assert "flip_coin" not in default_registry(google=False, plugins=False)
 
 
+def test_the_router_prompt_always_fits_the_context():
+    from red.router import CHARS_PER_TOKEN, CONTEXT_HEADROOM, fit_context
+
+    class Client:
+        options = {}
+    client = Client()
+    router = Router(default_registry(google=False), client)
+    need = len(router.system_prompt) / CHARS_PER_TOKEN + CONTEXT_HEADROOM
+    assert client.options["num_ctx"] >= need and client.options["num_ctx"] % 2048 == 0
+    assert fit_context(client, "short") is None                 # never shrinks
+    assert fit_context(object(), "x" * 100_000) is None         # not Ollama: nothing to do
+
+
 def test_a_plugin_tool_runs_through_the_executor(home):
     from red.executor import Executor
     from red.router import Route

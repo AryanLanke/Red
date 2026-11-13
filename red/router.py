@@ -107,6 +107,35 @@ class Route:
         return json.dumps({"tool": self.tool, "args": self.args})
 
 
+CHARS_PER_TOKEN = 3.6          # measured: 17,492 characters of router prompt = 4,383 tokens
+CONTEXT_HEADROOM = 1_500       # the sentence, the conversation and the reply
+CONTEXT_STEP = 2_048
+DEFAULT_CONTEXT = 4_096        # red/llm.py's num_ctx
+
+
+def fit_context(llm, system_prompt: str) -> int | None:
+    """Make sure the router prompt fits the model's context window. Returns the new size, if changed.
+
+    Ollama silently cuts the start of a prompt that doesn't fit num_ctx, and the
+    router's instructions are at the start: on 2026-11-13 the prompt was 4,383
+    tokens against 4,096, and 5,204 with the built-in plugins, which sent "check
+    my repos" to list_reminders. Every call shares this one client, so Ollama
+    loads the model once at the new size instead of switching back and forth.
+    """
+    options = getattr(llm, "options", None)
+    if not isinstance(options, dict):
+        return None                        # not Ollama (or a test fake): nothing to fit
+    need = int(len(system_prompt) / CHARS_PER_TOKEN) + CONTEXT_HEADROOM
+    have = int(options.get("num_ctx", DEFAULT_CONTEXT))
+    if need <= have:
+        return None
+    size = -(-need // CONTEXT_STEP) * CONTEXT_STEP
+    options["num_ctx"] = size
+    log.info("Router prompt is about %d tokens; the model's context is now %d (was %d)",
+             need - CONTEXT_HEADROOM, size, have)
+    return size
+
+
 class Router:
     def __init__(self, registry: ToolRegistry, llm: LLM | None = None, *,
                  fast: Callable[[str], dict | None] | None = _fastpath.match):
@@ -128,6 +157,7 @@ class Router:
             f"- {t.name}: {t.description} args schema: {json.dumps(t.args_schema, separators=(',', ':'), ensure_ascii=False)}"
             for t in registry
         ))
+        fit_context(llm, self.system_prompt)
 
     def _build_schema(self) -> dict:
         options = [(t.name, t.args_schema) for t in self.registry]
