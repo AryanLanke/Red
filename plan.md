@@ -40,6 +40,25 @@ unattended sessions, and it wins over section 14's day order where they differ.
 7. **A one-click installer** that also lets you edit the companions' personalities.
 8. Work all night unattended, many small commits pushed to `main` (they count on the user's GitHub graph),
    test everything yourselves, leave a report.
+9. **Too slow to understand a simple question** ("like loading"). If an answer needs no online search, answer
+   at once; the user said "you're the boss" on how (prompting, routing, a smaller/faster model, caching,
+   fine-tuning only if measured to help).
+10. **Understand me like Wispr Flow does:** accurate transcription of how the user really talks (fillers,
+    self-corrections, names, app names), fast.
+11. **The bubble:** what *the user* said shows on the companion in a different look (grey, italic, "you: …"),
+    so it's clear what Red heard versus what Red says. **Red talks first and the text follows** the voice,
+    never text first.
+12. **Microphone off:** while the user talked to someone else (to Claude), the companion thought it was
+    spoken to. A "Microphone off" item on the companion (menu, hotkey, a visible muted badge); while off, Red
+    hears nothing, not even its wake word.
+13. **"No normal person talks like that. It should be fully human."** From the log (2026-11-13 11:18–11:45):
+    "What is going on in your mind right now?" → *"Just waiting by my terminal for you to show up with
+    something real. No movies playing, no music looping, just code and curiosity."* (route 11.9 s);
+    "Don't sleep, OK?" → "Got it. You're the boss." (route **32.3 s**); "You're crazy." → route 5.9 s +
+    chat 3.7 s, first word at 12.3 s. Routing alone takes **4–32 s** on chit-chat (the router prompt for every
+    sentence, sometimes while the GPU was busy with avatar renders), then a second model call for chat. The
+    replies narrate an invented life and sound written, not spoken. Lane 2's tasks 2 and 4 fix both; their
+    evals must include these exact sentences, and the numbers before/after go in progress.md.
 
 **How we read the unclear parts** (the user can redirect in the morning):
 - "I see all that Red is hearing" → show what Red heard: a small "you said …" line in the bubble while Red
@@ -111,7 +130,21 @@ every finished task (0.4). File ownership is section 16's table plus: lane 1 own
    Asha `af_kore` unless a better female voice wins the same test). Wire `make_speaker` to the active
    companion's voice (read `companions/<id>/companion.toml` directly until lane 2's loader lands; then use it).
    **Done when** Red speaks with a male voice by default and switching companion switches the voice.
-2. **Real reaction sounds, Japanese anime style.** Find sources whose licence allows use, changes and
+2. **Hear the user fast and right, like Wispr Flow** (0.1 items 9–10, the listening half; lane 2 owns the
+   answering half). Measure first: the `Timing` lines in `red.log` (end-of-speech wait, Whisper time) on the
+   user's last 50 commands. Then: end-of-speech 0.5 s when the sentence sounds finished (plan §14 day 1);
+   transcribe while the user is still talking (VAD chunks) so the text is ready when they stop; Whisper on
+   the GPU if it fits next to the LLM in 6 GB (try `small.en`/`distil-small.en`, int8_float16), else CPU;
+   a personal vocabulary as Whisper's prompt (the user's name and facts from memory, companion names, app
+   and folder names from the allowlist); a clean-up pass for fillers ("um", "like"), self-corrections ("no
+   wait, I mean …") and punctuation, with no model call. Measure word error and time on recorded clips
+   (`tests/fixtures/voice`, the wake corpus) before and after. **Done when** a short command's text is ready
+   ≤ 0.3 s after the user stops, with fewer errors than today.
+3. **Microphone off** (0.1 item 12): `Listener.mute(on)` that stops all hearing including the wake word,
+   remembered in `RED_HOME\cache\mic.json`, a hotkey (default Ctrl+Alt+M, a setting), an `events` `mic(muted)`
+   event (or a callback until events land), and "Microphone off/on" said once quietly by a chime, not words.
+   Lane 3 shows it on the companion and in its menu.
+4. **Real reaction sounds, Japanese anime style.** Find sources whose licence allows use, changes and
    redistribution, in this order: (a) **VOICEVOX** (free, local; per-character terms, most allow commercial
    use with a credit like "VOICEVOX:ずんだもん"; read each character's terms page and record it), used at build
    time to make short reactions (わっ!, きゃっ, えへへ, ふふっ, うーん, ふぁ〜 yawn, もう!, はぁ…) for 2 male and 2 female
@@ -123,38 +156,56 @@ every finished task (0.4). File ownership is section 16's table plus: lane 1 own
    `scripts/make_sounds.py` rebuilds them. `red/sounds.py` with the API in 0.2 and tests.
    **Done when** picking up, dropping, hovering and waking the companion play pack sounds (lane 3 wires the
    avatar; if lane 3 hasn't by the end, wire the three calls yourself in `red/avatar/window.py` `_sound`).
-3. **Expressive clips in the voice** (plan §6, short): laugh, "mm-hmm", sigh per companion voice from the
+5. **Expressive clips in the voice** (plan §6, short): laugh, "mm-hmm", sigh per companion voice from the
    packs or Kokoro, used by lane 2's tags.
-4. **Voice preview** helper for the app: `red.sounds.preview_voice(voice_id, text)` → WAV path (lane 3's page
+6. **Voice preview** helper for the app: `red.sounds.preview_voice(voice_id, text)` → WAV path (lane 3's page
    plays it).
-5. If time is left: plan §14 day 2 lane 1, multi-name wake stage 1 (Whisper-checked names from the packs).
-6. **Lane 1 alone restarts the hidden Red** (`python -m red stop`, then `python -m red background` from
+7. If time is left: plan §14 day 2 lane 1, multi-name wake stage 1 (Whisper-checked names from the packs).
+8. **Lane 1 alone restarts the hidden Red** (`python -m red stop`, then `python -m red background` from
    `D:\RED\red` after `git -C D:\RED\red pull --ff-only`) once after each batch shipped to `main`, and
    checks `red.log` for "listening for".
 
 **Lane 2, `night1/companions` (worktree `D:\RED\worktrees\n1-companions`): personalities and life.**
-1. `red/events.py` (0.2), first, shipped within the hour.
-2. `red/companions.py` + `companions/{red,remy,asha,bruno,winston}/companion.toml` + `persona.md`; user
+1. `red/events.py` (0.2), first, shipped within the hour. `speech.py` emits `heard(text)` when the
+   transcript is final and `said(text)` for each sentence **at the moment its audio starts playing** (not
+   when it's written), so the bubble can follow the voice.
+2. **Answer at once (N1, the user's top complaint, 0.1 item 9).** Measure the first-word time on the user's
+   real sentences from `commands.jsonl` (20 chit-chat, 20 questions, 20 commands) before you change
+   anything. Then: chit-chat and questions the model can answer from its own knowledge go straight to one
+   streamed chat/answer call, no router call first and no web search; the router runs only when a command
+   is likely (fast path words, verbs, app/folder names); look-up (web) only when the question needs fresh or
+   local facts (news, weather, prices, "today", "latest", a named recent event). Short replies by default.
+   Keep the model warm, cache the system prompt. A smaller or fine-tuned model only if measured faster with
+   equal quality on the chat eval. **Done when** chit-chat and simple questions start speaking ≤ 1.0 s after
+   the transcript (numbers before/after in progress.md), and routing accuracy on the 150-sentence set
+   doesn't drop.
+3. `red/companions.py` + `companions/{red,remy,asha,bruno,winston}/companion.toml` + `persona.md`; user
    overrides in `RED_HOME\companions\`; schema test; active companion from `RED_COMPANION` or the avatar's
    saved choice (`RED_HOME\cache\companion.json`, key `companion`). The chat prompt uses the active persona;
    switching companion (menu or "switch to Remy") changes persona, voice (lane 1) and look.
-3. **Personas written with care**, evaluated with `scripts/chat_eval.py` on the real local model (find Red's
+4. **Personas written with care**, evaluated with `scripts/chat_eval.py` on the real local model (find Red's
    Ollama port with netstat; never start a second Ollama): 20 lines per companion, 0 invented-life lines,
    0 written laughter, each sounds different. Numbers in progress.md.
-4. **Emotion tags**: the reply carries a feeling (`[happy]`, `[annoyed]`, …, stripped before speech) or a
+5. **Emotion tags**: the reply carries a feeling (`[happy]`, `[annoyed]`, …, stripped before speech) or a
    cheap classifier when the model omits it; emitted as `emotion` events for the avatar (replacing the word
    guess in `red/avatar emotion_from_text`, which stays as the fallback).
-5. **Idle life and temper** (`red/idle.py`): a scheduler that, while the user is at the PC (input in the last
+6. **Idle life and temper** (`red/idle.py`): a scheduler that, while the user is at the PC (input in the last
    10 min) and nothing important is on (no full-screen, no call, no media for music), emits `idle_action`
    events (`look_around`, `yawn`, `stretch`, `doze`, `wander`, `hum`) and, by trait, a grumble line (temper)
    or a self-chosen song (music). Rates and guards in 0.1. Every unasked line goes through the same rules as
    the greeter. Tests with a fake clock.
-6. **`play_local`** tool (Music folder only, default player, allowlist rules) and the music idle action using
+7. **`play_local`** tool (Music folder only, default player, allowlist rules) and the music idle action using
    `play_online` / Spotify / `play_local`.
-7. Menu actions' back end (for lane 3): `remind(text, when)`, `add_task(text)`, `list_tasks()`, `talk()` as
+8. Menu actions' back end (for lane 3): `remind(text, when)`, `add_task(text)`, `list_tasks()`, `talk()` as
    plain functions around the existing tools.
 
 **Lane 3, `night1/shell` (worktree `D:\RED\worktrees\n1-shell`): avatar, menu, app, installer.**
+0. **The bubble and the microphone first** (0.1 items 11–12, quick and visible): the user's words appear as
+   soon as they're heard, grey and italic with "you:", in their own small bubble or line; Red's words
+   appear **with** the voice: each sentence is revealed when its audio starts (lane 2's `said` event; until
+   it lands, follow the `MouthMeter`: reveal only while audio plays, at speaking pace), never ahead of it.
+   "Microphone off/on" in the menu and a small muted badge (a crossed mic) on the companion, using lane 1's
+   `Listener.mute`; the menu item works even before lane 1's hotkey lands. Offscreen renders checked.
 1. **Top corners, upside down:** `topR_*` and `topL_*` frame sets in `scripts/avatar_render` (hanging from the
    top corner, a hand gripping the side edge, posed not mirrored), cut at the top and side edges; window
    placement `top-left` / `top-right`; drop near a top corner snaps there; menu entries. Render all three
