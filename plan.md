@@ -336,7 +336,11 @@ allowlist.toml. **Left for the user:** try each once; the WhatsApp link behaviou
 - **Check:** unit tests with fakes for every plugin (no real app opens in a test); each one tried by
   the user.
 
-#### B4. To-dos and "what did I do today?"
+#### B4. To-dos and "what did I do today?" ✅ (2026-11-13)
+**Done:** the `todo` plugin: `todo` (add, list, done, clear; one tool to save router tokens) and
+`day_recap` (command log, today's git commits, finished to-dos). The calendar part is not in the recap yet
+(Google is optional). Real model routes all 6 sentences; "mark the slides done" falls back to the user's own
+words. **Left for the user:** the recap of a real day, read aloud.
 Only when asked, never spoken unasked (see the goal).
 1. A local to-do list (`RED_HOME\memory\todo.json`): "add finish the slides", "what's left?", "mark the
    slides done", "clear done ones".

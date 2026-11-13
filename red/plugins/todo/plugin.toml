@@ -1,0 +1,5 @@
+name = "todo"
+version = "1.0"
+description = "A local to-do list and a recap of your day. Only when you ask: Red never reads either out on its own."
+author = "Red"
+needs = ["repos.toml for the git part of the recap (optional)"]
