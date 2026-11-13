@@ -49,6 +49,11 @@ from .speech import SpeechStream, speaking_to
 from .tools import default_registry
 
 log = logging.getLogger("red")
+STARTED = time.perf_counter()      # for the "Startup:" lines in red.log (plan.md task 2.3)
+
+
+def since_start() -> float:
+    return time.perf_counter() - STARTED
 
 # How long to wait for you to start talking after the beep.
 START_TIMEOUT_SECONDS = 8.0
@@ -310,6 +315,7 @@ class VoiceApp:
                 listener.start()
                 self.listener = listener
                 self._wire_interrupt(listener)
+                log.info("Startup: listening for \"Hey Red\", %.1f s after Red started", since_start())
                 return listener
             except Exception as e:  # noqa: BLE001 - unknown name, missing model, no microphone
                 log.warning("Wake word %r unavailable: %s", s.wakeword, e)
@@ -787,6 +793,8 @@ def keep_model_warm(llm, stop: threading.Event, every: float = KEEP_WARM_SECONDS
                 if not primed:
                     primed = True
                     prime()
+                    log.info("Startup: the model is loaded and warm, %.1f s after Red started",
+                             since_start())
             except Exception as e:  # noqa: BLE001 - a slow first command is the only cost
                 log.warning("Couldn't load the model ahead of time: %s", e)
             if stop.wait(every):
@@ -807,8 +815,12 @@ def _voice_mode(settings: Settings, router: Router, registry) -> int:
 
     print("Loading speech models...", file=sys.stderr)
     try:
+        t0 = time.perf_counter()
         voice.transcriber.load()
+        t1 = time.perf_counter()
         voice.speaker.load()
+        log.info("Startup: speech models loaded (Whisper %.1f s, voice %.1f s), %.1f s after Red "
+                 "started", t1 - t0, time.perf_counter() - t1, since_start())
     except Exception as e:  # noqa: BLE001 - missing files, broken download
         print(f"error: couldn't load the voice models: {e}. Run 'python -m red setup'.",
               file=sys.stderr)
