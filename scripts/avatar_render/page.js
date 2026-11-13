@@ -1,23 +1,33 @@
-// Runs inside headless Edge: loads a VRM, poses it and returns PNG frames.
-// Bone angles in frames.js are degrees in the VRM 1.0 convention (the model faces the camera, its left
-// hand is at +X). For VRM 0.0 models the X and Z angles are flipped here, as three-vrm's own examples do.
+// Runs inside headless Edge: loads a VRM, poses it and returns PNG frames plus where the head, hands and
+// elbows landed on the picture.
+//
+// Two ways to pose a bone (see frames.js):
+// - `bones`: Euler degrees [x, y, z] in the VRM 1.0 convention (the model faces the camera, its left hand
+//   is at +X). For VRM 0.0 models X and Z are flipped here, as three-vrm's own examples do.
+// - `aim`: a direction in the picture's space (x to the viewer's right, y up, z toward the viewer). The
+//   bone is turned so it points from its joint toward its child along that direction. Aims run after
+//   `bones`, parents first, so an arm can be laid on the screen edge without working out angles.
+// Faces are VRoid's own face morphs (Fcl_*), which can be mixed freely, plus three-vrm expressions.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 
-const W = 800;
-const H = 1400;
 const FOV = 20;
+const SETS = {
+  // Picked up: the whole body, with room for raised arms and kicking legs.
+  body: { width: 800, height: 1400 },
+  // Peeking over the screen edge: head, shoulders and forearms, closer up.
+  peek: { width: 1000, height: 1000 },
+};
 
 const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(1);
-renderer.setSize(W, H);
 renderer.setClearColor(0x000000, 0);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(FOV, W / H, 0.1, 50);
+const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 50);
 const light = new THREE.DirectionalLight(0xffffff, Math.PI);
 light.position.set(0.6, 1.2, 2.0).normalize();
 scene.add(light);
@@ -29,8 +39,23 @@ scene.add(lookTarget);
 let vrm = null;
 let flip = 1;
 let headY = 1.4;
+let morphMeshes = [];
+const views = {};
+
+const CHILD = {
+  leftShoulder: 'leftUpperArm', rightShoulder: 'rightUpperArm',
+  leftUpperArm: 'leftLowerArm', rightUpperArm: 'rightLowerArm',
+  leftLowerArm: 'leftHand', rightLowerArm: 'rightHand',
+  leftHand: 'leftMiddleProximal', rightHand: 'rightMiddleProximal',
+  leftUpperLeg: 'leftLowerLeg', rightUpperLeg: 'rightLowerLeg',
+  leftLowerLeg: 'leftFoot', rightLowerLeg: 'rightFoot',
+  neck: 'head', spine: 'chest', chest: 'neck',
+};
+const AIM_ORDER = Object.keys(CHILD);
+const MARKS = ['head', 'neck', 'hips', 'leftHand', 'rightHand', 'leftLowerArm', 'rightLowerArm'];
 
 function deg(v) { return (v || 0) * Math.PI / 180; }
+function node(name) { return vrm.humanoid.getNormalizedBoneNode(name); }
 
 window.loadModel = async (url) => {
   const loader = new GLTFLoader();
@@ -40,21 +65,25 @@ window.loadModel = async (url) => {
   VRMUtils.removeUnnecessaryVertices(gltf.scene);
   VRMUtils.combineSkeletons(gltf.scene);
   VRMUtils.rotateVRM0(vrm);
-  vrm.scene.traverse((o) => { o.frustumCulled = false; });
+  vrm.scene.traverse((o) => {
+    o.frustumCulled = false;
+    if (o.isMesh && o.morphTargetDictionary && Object.keys(o.morphTargetDictionary).some((k) => k.startsWith('Fcl_'))) {
+      morphMeshes.push(o);
+    }
+  });
   scene.add(vrm.scene);
   flip = vrm.meta && vrm.meta.metaVersion === '0' ? -1 : 1;
 
   vrm.update(0);
-  const head = vrm.humanoid.getNormalizedBoneNode('head');
+  vrm.scene.updateMatrixWorld(true);
   const p = new THREE.Vector3();
-  head.getWorldPosition(p);
+  node('head').getWorldPosition(p);
   headY = p.y;
   const top = headY + 0.2;               // the top of the hair, roughly
-  const visible = top * 1.35;            // room for raised arms and the drag pose
-  const centerY = top * 0.6;
-  const dist = (visible / 2) / Math.tan(deg(FOV / 2));
-  camera.position.set(0, centerY, dist);
-  camera.lookAt(0, centerY, 0);
+
+  const bodyVisible = top * 1.35;        // room for raised arms when dangling
+  views.body = { centerY: top * 0.6, visible: bodyVisible };
+  views.peek = { centerY: headY - 0.12, visible: 1.0 };
   vrm.lookAt.target = lookTarget;
   vrm.lookAt.autoUpdate = true;
 
@@ -62,26 +91,67 @@ window.loadModel = async (url) => {
     metaVersion: vrm.meta && vrm.meta.metaVersion,
     title: vrm.meta && (vrm.meta.title || vrm.meta.name),
     expressions: vrm.expressionManager.expressions.map((e) => e.expressionName),
+    morphs: morphMeshes.length ? Object.keys(morphMeshes[0].morphTargetDictionary).length : 0,
     headY,
   };
 };
 
+function useView(set) {
+  const size = SETS[set];
+  const view = views[set];
+  renderer.setSize(size.width, size.height);
+  camera.aspect = size.width / size.height;
+  camera.position.set(0, view.centerY, (view.visible / 2) / Math.tan(deg(FOV / 2)));
+  camera.lookAt(0, view.centerY, 0);
+  camera.updateProjectionMatrix();
+  return { ...size, pxPerMetre: size.height / view.visible };
+}
+
+const _a = new THREE.Vector3();
+const _b = new THREE.Vector3();
+const _q = new THREE.Quaternion();
+const _qp = new THREE.Quaternion();
+
+function aimBone(name, dir) {
+  const bone = node(name);
+  const child = node(CHILD[name]);
+  if (!bone || !child) return;
+  bone.quaternion.identity();
+  vrm.scene.updateMatrixWorld(true);
+  bone.getWorldPosition(_a);
+  child.getWorldPosition(_b);
+  const current = _b.sub(_a).normalize();
+  const wanted = new THREE.Vector3(...dir).normalize();
+  _q.setFromUnitVectors(current, wanted);                  // turn in world space
+  bone.parent.getWorldQuaternion(_qp);
+  bone.quaternion.copy(_qp.clone().invert().multiply(_q).multiply(_qp));
+}
+
+function project(name, size) {
+  const n = node(name);
+  if (!n) return null;
+  n.getWorldPosition(_a);
+  _a.project(camera);
+  return [Math.round((_a.x + 1) / 2 * size.width), Math.round((1 - _a.y) / 2 * size.height)];
+}
+
 window.renderFrame = (frame) => {
+  const size = useView(frame.set || 'body');
   vrm.humanoid.resetNormalizedPose();
   for (const [bone, angles] of Object.entries(frame.bones || {})) {
-    const node = vrm.humanoid.getNormalizedBoneNode(bone);
-    if (!node) continue;
+    const n = node(bone);
+    if (!n) continue;
     const [x, y, z] = angles;
-    node.rotation.set(deg(x) * flip, deg(y), deg(z) * flip);
+    n.rotation.set(deg(x) * flip, deg(y), deg(z) * flip);
   }
-  const hips = vrm.humanoid.getNormalizedBoneNode('hips');
-  if (frame.lift) hips.position.y += frame.lift;
+  const aims = frame.aim || {};
+  for (const bone of AIM_ORDER) if (aims[bone]) aimBone(bone, aims[bone]);
 
   const em = vrm.expressionManager;
   for (const e of em.expressions) em.setValue(e.expressionName, 0);
-  for (const [name, value] of Object.entries(frame.face || {})) em.setValue(name, value);
+  for (const [name, value] of Object.entries(frame.expr || {})) em.setValue(name, value);
 
-  // Eyes: at the viewer unless the frame says otherwise (x, y in metres from the camera's aim point).
+  // Eyes: at the viewer unless the frame says otherwise (x, y in metres from the camera).
   const look = frame.look || [0, 0];
   lookTarget.position.set(camera.position.x + look[0], camera.position.y + look[1], camera.position.z);
 
@@ -89,8 +159,19 @@ window.renderFrame = (frame) => {
   if (vrm.springBoneManager) vrm.springBoneManager.reset();
   for (let i = 0; i < 150; i++) vrm.update(1 / 60);
 
+  // Face morphs go on after the expression manager has written its own weights.
+  for (const mesh of morphMeshes) {
+    for (const [name, value] of Object.entries(frame.face || {})) {
+      const i = mesh.morphTargetDictionary[name];
+      if (i !== undefined) mesh.morphTargetInfluences[i] = value;
+    }
+  }
+
+  vrm.scene.updateMatrixWorld(true);
   renderer.render(scene, camera);
-  return renderer.domElement.toDataURL('image/png');
+  const marks = {};
+  for (const m of MARKS) marks[m] = project(m, size);
+  return { png: renderer.domElement.toDataURL('image/png'), marks, size };
 };
 
 window.rendererReady = true;

@@ -63,14 +63,22 @@ try {
 
   const wanted = only ? new Set(only.split(',')) : null;
   const frames = FRAMES.filter((f) => !wanted || wanted.has(f.name));
+  const manifestPath = path.join(outDir, 'frames.json');
+  const previous = fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath, 'utf8')).frames : [];
+  const byName = new Map(previous.map((f) => [f.name, f]));
   for (const frame of frames) {
-    const dataUrl = await page.evaluate((f) => window.renderFrame(f), frame);
-    const png = Buffer.from(dataUrl.split(',')[1], 'base64');
+    const result = await page.evaluate((f) => window.renderFrame(f), frame);
+    const png = Buffer.from(result.png.split(',')[1], 'base64');
     fs.writeFileSync(path.join(outDir, `${frame.name}.png`), png);
+    byName.set(frame.name, {
+      name: frame.name, set: frame.set, state: frame.state || null, emotion: frame.emotion || null,
+      marks: result.marks, size: [result.size.width, result.size.height], pxPerMetre: result.size.pxPerMetre,
+    });
     console.log('rendered', frame.name);
   }
-  const manifest = FRAMES.map(({ name, state, emotion }) => ({ name, state: state || null, emotion: emotion || null }));
-  fs.writeFileSync(path.join(outDir, 'frames.json'), JSON.stringify({ model: info, frames: manifest }, null, 2));
+  // Keep frames.js order; frames rendered earlier (with --only) stay in the manifest.
+  const manifest = FRAMES.map((f) => byName.get(f.name)).filter(Boolean);
+  fs.writeFileSync(manifestPath, JSON.stringify({ model: info, frames: manifest }, null, 2));
 } finally {
   await browser.close();
   server.close();
