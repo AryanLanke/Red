@@ -5,6 +5,7 @@ from __future__ import annotations
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QMainWindow, QPushButton, QTabWidget,
                                QVBoxLayout, QWidget)
 
+from red.chat import write_personality
 from red.config import Settings
 from red.listener import normalize_hotkey
 
@@ -83,6 +84,7 @@ class MainWindow(QMainWindow):
                 return False
         try:
             path = self._save(self.settings, values)
+            write_personality(self.settings.home, self.general_page.personality_text())
         except OSError as e:
             self.status.setStyleSheet("color: #b3261e;")
             self.status.setText(f"Couldn't save your settings: {e}")

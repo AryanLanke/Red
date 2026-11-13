@@ -5,9 +5,10 @@ from __future__ import annotations
 from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
-                               QPushButton, QSlider, QVBoxLayout, QWidget)
+                               QPlainTextEdit, QPushButton, QSlider, QVBoxLayout, QWidget)
 
 from red import audio as audio_mod
+from red.chat import MAX_PERSONALITY, read_personality
 from red.config import Settings
 from red.tts import PIPER_VOICES
 from red.tts_kokoro import DEFAULT_VOICE, VOICES
@@ -454,9 +455,21 @@ class GeneralSettingsPage(QWidget):
         index = self.overlay.findData(settings.overlay)
         self.overlay.setCurrentIndex(index if index >= 0 else 0)
         grid.addWidget(self.overlay, 2, 1)
+
+        grid.addWidget(QLabel("Personality"), 3, 0, Qt.AlignmentFlag.AlignTop)
+        self.personality = QPlainTextEdit(read_personality(settings.home))
+        self.personality.setPlaceholderText(
+            "Optional. Tune how Red talks, in your own words: \"Fewer jokes\", "
+            "\"Roast my code\", \"Talk like a calm coach\".")
+        self.personality.setMaximumHeight(110)
+        grid.addWidget(self.personality, 3, 1)
+        grid.addWidget(_hint(f"Added to Red's own character. Up to {MAX_PERSONALITY} characters."), 4, 1)
         grid.setColumnStretch(1, 1)
         layout.addLayout(grid)
         layout.addStretch(1)
+
+    def personality_text(self) -> str:
+        return self.personality.toPlainText().strip()[:MAX_PERSONALITY]
 
     def values(self) -> dict[str, str]:
         return {"RED_HOTKEY": self.hotkey.text().strip() or "off",

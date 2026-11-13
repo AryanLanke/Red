@@ -44,7 +44,7 @@ from .config import Settings, load_settings
 from .executor import Executor, run_later
 from .llm import LLMError, connect
 from .router import RouteError, Router
-from .chat import Chat
+from .chat import Chat, make_chat
 from .smalltalk import dismissal_reply, is_filler, is_goodbye, quick_reply, sounds_finished
 from .speech import SpeechStream, speaking_to
 from .tools import default_registry
@@ -287,7 +287,7 @@ class VoiceApp:
             return spoken(question, timeout)
 
         self.executor = Executor(registry, ask=with_fallback(ask, typed_fallback), log_path=log_path)
-        self.chat = Chat(router.llm)        # conversation with memory, for anything that isn't a command
+        self.chat = make_chat(router.llm, settings)      # conversation with memory, for anything that isn't a command
         bind_conversation(registry, self.chat)
         for tool in registry:
             bind = getattr(tool, "bind_announce", None)
@@ -1084,7 +1084,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.typed:
             reminders = attach_reminders(_print_reminder)
-            chat = Chat(router.llm)
+            chat = make_chat(router.llm, settings)
             bind_conversation(registry, chat)
             try:
                 _typed_loop(lambda c: _run(router, executor, c, chat), "Red. Type a command, or 'quit'.")

@@ -415,7 +415,7 @@ def test_pretty_wakeword():
 def test_small_talk_is_answered_without_the_model(world):
     app, speaker, overlay, asked, out = make_app(world, "Thanks, Red.")
     app.handle("wakeword")
-    assert speaker.said == ["You're welcome!"]
+    assert speaker.said == ["Anytime!"]
     # "thinking" once while Whisper transcribes, then straight to the answer:
     # no second "thinking" while the model works.
     assert overlay.names == ["listening", "thinking", "speaking", "idle"]
@@ -480,7 +480,7 @@ def test_a_command_after_chat_runs_and_then_red_goes_quiet(world, monkeypatch):
     app, speaker, overlay, record, out = follow_app(
         world, monkeypatch, "Hello.", "Open my downloads.", "Check my repos.")
     app.handle("hotkey")
-    assert speaker.said[0].endswith("What can I do for you?")
+    assert speaker.said[0].endswith("What's up?")
     assert speaker.said[1:] == ["Opening Downloads."]
     assert len(record.calls) == 2                            # "Check my repos." is never heard
     assert len(world["start"].calls) == 1
@@ -553,7 +553,7 @@ def test_asks_back(reply, asks):
 def test_a_question_in_the_reply_is_not_followed_by_another(world, monkeypatch):
     app, speaker, overlay, record, out = follow_app(world, monkeypatch, "Hello.", "No thanks.")
     app.handle("wakeword")
-    assert speaker.said[0].endswith("What can I do for you?")
+    assert speaker.said[0].endswith("What's up?")
     assert speaker.said[1:] == ["Okay."]
 
 

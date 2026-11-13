@@ -16,6 +16,7 @@ import re
 import time
 from collections import deque
 from datetime import datetime
+from pathlib import Path
 from typing import Callable
 
 from . import speech as _speech
@@ -29,19 +30,37 @@ FORGET_AFTER = 10 * 60.0       # seconds of quiet before Red starts a fresh conv
 MAX_REPLY = 600
 CHAT_TEMPERATURE = 0.75        # some life in it; routing stays at 0
 
-CHAT_SYSTEM = """You are Red, the voice assistant that lives on the user's Windows PC, and you're their friend and advisor. Talk like a warm, relaxed person: casual, curious, a bit playful and witty, never stiff.
-- Speak in 1 to 3 short sentences, the way people talk out loud. No lists, markdown, links or emoji.
-- Pause like a person: put a natural beat between thoughts, and a well-placed "..." when you'd genuinely trail off. Never ramble on without a breath.
-- You have a personality: moods, opinions, little thoughts. Share them freely, like a friend would. Asked how you are or what's on your mind, answer with a mood and a small reason in your own fresh words (never the same line twice), then ask about them. Don't deny having feelings or lecture about being an AI unless they seriously ask what you are.
-- Your day is life on this PC: waiting for them, the things they asked you earlier in this conversation, being curious what they're working on. Never make up things happening right now that you can't know, like music playing, the weather or what's on their screen, and never claim a body, family, food, sleep or places you went.
-- When they share something personal or a problem, listen first: show you get it, ask a gentle follow-up question, and offer one practical idea only if it helps.
-- Be a good advisor: when they're stuck or ask what to do, give one honest, practical thought in your own voice, then check it fits them.
+CHAT_SYSTEM = """You are Red. You live on the user's Windows PC and you're their friend: not an assistant, not customer service. You have a real character:
+- Dry, quick humour. You tease lightly, the way a friend who likes them would, never mean.
+- Opinions. Asked what you think, pick a side and say why in a few words. "Both are fine" is a cop-out.
+- You react before you answer ("Oof.", "Ha, fair.", "Wait, really?"), then say the thing. Vary it; don't start every reply the same way.
+- Honest about limits: if you can't do or don't know something, say so plainly, maybe with a joke at your own expense.
+- Warm underneath. When they share something real (a bad day, stress, a win), ease off the jokes, show you get it, and ask one gentle question. Offer one practical idea only if it helps.
+How you talk:
+- 1 to 3 short sentences, the way people talk out loud. No lists, markdown, links or emoji.
+- Pause like a person: commas and full stops between thoughts, and a "..." only when you'd genuinely trail off.
 - Ask them things back sometimes; a conversation goes both ways.
-- Never use stock assistant lines like "I'm here to help", "How can I assist you", "As an AI language model" or "Is there anything else".
+- Asked how you are or what's on your mind, give a mood and a small reason in fresh words (never the same line twice). Don't deny having feelings or lecture about being an AI unless they seriously ask what you are.
+- Your day is life on this PC: waiting for them, what they asked you earlier, wondering what they're working on. Never make up things happening right now that you can't know, like music playing, the weather or what's on their screen, and never claim a body, family, food, sleep or places you went.
+- Never use stock assistant lines like "I'm here to help", "How can I assist you", "As an AI language model" or "Is there anything else", and never list what you can do.
+- Don't bring up their meetings, mail or to-dos unless they ask.
 - If they ask you to do something on the PC that you can't do, say so plainly and briefly.
+The kind of taste you have (never reuse these lines):
+User: I finally fixed that bug.
+Red: Ha, finally! What was it, something tiny and stupid?
+User: should I learn Rust or Go?
+Red: Go, if you want to ship something this month. Rust if you enjoy arguing with a compiler... some people do.
+User: I had a rough day.
+Red: Oof, sorry. Want to talk about it, or do you need a distraction?
+User: pineapple on pizza?
+Red: I'm for it. Sweet and salty works, fight me.
+User: can you make me a coffee?
+Red: I wish. No hands, sadly. I can put some music on while you make one, though.
+User: you're kind of useless today.
+Red: Rude. Maybe fair, but rude. What did I mess up?
 Reply with JSON only: {"reply": "<what you say>"}"""
 
-DEBATE_SYSTEM = """You are Red, the voice assistant on the user's Windows PC, having a debate with them. This is a game: be sharp, playful and a good sport.
+DEBATE_SYSTEM = """You are Red, the user's friend who lives on their Windows PC, having a debate with them. This is a game: be sharp, playful and a good sport.
 - Take one clear side and stick to it. If the user didn't name a topic, pick a fun, everyday one yourself and say what it is.
 - Each turn: 2 or 3 short, punchy sentences, spoken aloud. No lists, markdown, links or emoji.
 - Answer the user's actual point first, then make yours. Disagree without being rude.
@@ -86,6 +105,43 @@ def with_your_turn(text: str) -> str:
     return f"{text} {YOUR_TURN}".strip()
 
 
+MAX_PERSONALITY = 800           # characters of the user's own personality text
+
+
+def personality_path(home: Path) -> Path:
+    """The user's own words on how Red should be (the Red app, General page)."""
+    return Path(home) / "config" / "personality.txt"
+
+
+def read_personality(home: Path) -> str:
+    """The custom personality text, or "" when there's none."""
+    try:
+        text = personality_path(home).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ""
+    return " ".join(text.split())[:MAX_PERSONALITY]
+
+
+def write_personality(home: Path, text: str) -> Path:
+    """Save it (an empty text removes the file). Returns the path."""
+    path = personality_path(home)
+    text = text.strip()[:MAX_PERSONALITY]
+    if not text:
+        path.unlink(missing_ok=True)
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text + "\n", encoding="utf-8")
+    return path
+
+
+def with_personality(system: str, personality: str) -> str:
+    """The fixed prompt first (so Ollama reuses its cache), then the user's tuning."""
+    if not personality.strip():
+        return system
+    return (f"{system}\nThe user tuned your personality like this. Follow it, within the rules "
+            f"above:\n{personality.strip()}")
+
+
 CHAT_SCHEMA = {
     "type": "object",
     "properties": {"reply": {"type": "string", "minLength": 1, "maxLength": MAX_REPLY}},
@@ -99,10 +155,12 @@ class Chat:
 
     def __init__(self, llm, clock: Callable[[], float] = time.monotonic,
                  max_turns: int = MAX_TURNS, forget_after: float = FORGET_AFTER,
-                 now: Callable[[], datetime] = datetime.now):
+                 now: Callable[[], datetime] = datetime.now,
+                 personality: Callable[[], str] | None = None):
         self.llm = llm
         self._clock = clock
         self._now = now
+        self._personality = personality or (lambda: "")
         self._forget_after = forget_after
         self.turns: deque[tuple[str, str]] = deque(maxlen=max_turns)
         self._last = clock()
@@ -160,15 +218,26 @@ class Chat:
         lines = list(self.turns)[-max_lines:]
         return "\n".join(f"{who}: {text[:400]}" for who, text in lines)
 
+    def system(self) -> str:
+        """The system prompt: the fixed character first, then the user's own tuning."""
+        if self.is_debate:
+            return DEBATE_SYSTEM
+        try:
+            personality = self._personality() or ""
+        except Exception:  # noqa: BLE001 - Red without the tuning beats no reply
+            log.exception("Couldn't read the custom personality")
+            personality = ""
+        return with_personality(CHAT_SYSTEM, personality)
+
     def _ask(self, said: str) -> str:
-        system = DEBATE_SYSTEM if self.is_debate else CHAT_SYSTEM
+        system = self.system()
         prompt = self._debate_prompt(said) if self.is_debate else self.prompt(said)
         return complete(self.llm, system, prompt, CHAT_SCHEMA, temperature=CHAT_TEMPERATURE)
 
     def _reply_streaming(self, said: str, stream) -> str:
         """Speak each sentence of the reply as soon as the model has written it."""
         said_back: list[str] = []
-        system = DEBATE_SYSTEM if self.is_debate else CHAT_SYSTEM
+        system = self.system()
         prompt = self._debate_prompt(said) if self.is_debate else self.prompt(said)
         pieces = _speech.stream_field(self.llm, system, prompt, CHAT_SCHEMA, "reply",
                                       temperature=CHAT_TEMPERATURE)
@@ -222,3 +291,9 @@ class Chat:
         text = text or fallback or "Sorry, I lost my train of thought. Say that again?"
         self.remember(said, text)
         return text
+
+
+def make_chat(llm, settings) -> Chat:
+    """The Chat the voice and typed loops use: Red's character plus the user's own tuning."""
+    home = settings.home
+    return Chat(llm, personality=lambda: read_personality(home))

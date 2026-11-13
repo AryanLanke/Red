@@ -28,23 +28,33 @@ def greeting(now: datetime) -> str:
     return "Good night"
 
 
+def hello(now: datetime) -> str:
+    """A friend's hello for "hi" or "hey", by the time of day."""
+    if 5 <= now.hour < 12:
+        return "Morning! What's up?"
+    if 12 <= now.hour < 17:
+        return "Hey! What's up?"
+    if 17 <= now.hour < 21:
+        return "Evening! What's up?"
+    return "Hey, still up? What's going on?"
+
+
 _RED = r"(?: red)?"   # "thanks red", "hi red"
 
 _RULES: list[tuple[str, Reply]] = [
-    (rf"(?:hi|hello|hey|hey there|hiya|yo){_RED}",
-     lambda now: f"{greeting(now)}! What can I do for you?"),
+    (rf"(?:hi|hello|hey|hey there|hiya|yo){_RED}", hello),
     (rf"good ?night{_RED}",
-     lambda now: "Good night! Sleep well."),
+     lambda now: "Night! Sleep well."),
     (r"who are you|what is your name|what's your name|whats your name|what are you",
-     lambda now: "I'm Red, your assistant on this PC."),
+     lambda now: "I'm Red. I live on your PC: part friend, part helper."),
     (rf"(?:thank you|thanks|thanks a lot|thank you so much|thank you very much){_RED}",
-     lambda now: "You're welcome!"),
+     lambda now: "Anytime!"),
     (rf"(?:are you there|you there|can you hear me){_RED}",
-     lambda now: "Yes, I'm here."),
+     lambda now: "Yep, right here."),
     (r"what can you do|what can you help me with|what do you do",
-     lambda now: ("I can open apps, folders and websites, find files, play music, "
-                  "set timers and reminders, check the weather, look things up, "
-                  "and shut down or restart your PC. Just ask.")),
+     lambda now: ("Quite a bit: apps, folders and websites, finding files, music, "
+                  "timers and reminders, the weather, looking things up, "
+                  "and shutting down or restarting the PC. Or we just talk.")),
 ]
 
 _COMPILED = [(re.compile(pattern), reply) for pattern, reply in _RULES]
@@ -69,7 +79,7 @@ def quick_reply(text: str, now: datetime | None = None) -> str | None:
         return None
     good_time = _GOOD_TIME.fullmatch(said)
     if good_time:
-        return f"Good {good_time.group(1)}! What can I do for you?"
+        return f"Good {good_time.group(1)}! What's up?"
     for pattern, reply in _COMPILED:
         if pattern.fullmatch(said):
             return reply(now or datetime.now())

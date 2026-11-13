@@ -23,22 +23,30 @@ NIGHT = datetime(2026, 11, 9, 22, 37)
 # --- small talk ---------------------------------------------------------------
 
 @pytest.mark.parametrize("said, expected", [
-    ("Hello.", "Good morning! What can I do for you?"),
-    ("Hey Red!", "Good morning! What can I do for you?"),
-    ("Good evening", "Good evening! What can I do for you?"),   # mirrors your word
-    ("Thanks, Red.", "You're welcome!"),
-    ("What’s your name?", "I'm Red, your assistant on this PC."),
-    ("Are you there?", "Yes, I'm here."),
-    ("Good night", "Good night! Sleep well."),
+    ("Hello.", "Morning! What's up?"),
+    ("Hey Red!", "Morning! What's up?"),
+    ("Good evening", "Good evening! What's up?"),   # mirrors your word
+    ("Thanks, Red.", "Anytime!"),
+    ("What’s your name?", "I'm Red. I live on your PC: part friend, part helper."),
+    ("Are you there?", "Yep, right here."),
+    ("Good night", "Night! Sleep well."),
 ])
 def test_small_talk_gets_an_instant_reply(said, expected):
     assert quick_reply(said, MORNING) == expected
 
 
 def test_greeting_follows_the_time_of_day():
-    assert quick_reply("hi", EVENING) == "Good evening! What can I do for you?"
-    assert quick_reply("hi", NIGHT) == "Good night! What can I do for you?"
-    assert quick_reply("good evening", NIGHT) == "Good evening! What can I do for you?"
+    assert quick_reply("hi", EVENING) == "Evening! What's up?"
+    assert quick_reply("hi", NIGHT) == "Hey, still up? What's going on?"
+    assert quick_reply("good evening", NIGHT) == "Good evening! What's up?"
+
+
+def test_small_talk_never_sounds_like_a_help_desk():
+    from red.smalltalk import _RULES
+    for _, reply in _RULES:
+        for when in (MORNING, EVENING, NIGHT):
+            line = reply(when)
+            assert "assist" not in line.lower() and "What can I do for you" not in line
 
 
 @pytest.mark.parametrize("said", [
