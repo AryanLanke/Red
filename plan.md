@@ -224,7 +224,17 @@ on a tool name is skipped with the reason shown. An off plugin isn't imported at
   `tests/test_plugins.py`.
 - **Check:** a test plugin loads; a broken one is skipped; on/off works.
 
-#### B2. Write code
+#### B2. Write code ✅ (2026-11-13, steps 1–4; step 5 waits)
+**Done:** the `code` plugin (`red/plugins/code/`): `write_code` streams into the chat window and says one
+line; `explain_code` and `fix_code` read the clipboard or a named file (never changed). Save → Documents\Red
+Code, then "Open in VS Code" (Code.exe with the saved path, no shell). Python is checked with
+`compile()` only; Red never runs code. "Write me a poem" is answered in words, not code. Real model
+(qwen3.5-4b), 10 requests: first code on screen **0.6–1.0 s**, done in **1.7–11.2 s**; **7 of 10
+correct**, 3 with real bugs (progress.md has the table).
+**Left:** (a) the user's own 10 requests. (b) Step 5, the coder-model spike: it needs a ~5 GB pull into
+the Ollama the hidden Red uses, and swapping models makes the hidden Red reload. Do it when session 1 is
+done and the user agrees to the download. Candidates to check: current Qwen coder tags that fit 8 GB, and
+their licences.
 **Why:** "write me a Python script that renames my photos by date" should just work.
 1. A `write_code` tool: Red writes the code (streamed) into the chat window. It **never reads code
    aloud**; it says one line ("Here you go, it's in the chat window") and what the code does.

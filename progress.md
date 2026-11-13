@@ -481,6 +481,28 @@ Every command writes a `Timing` line to `red.log`: listen, transcribe, route, ac
 - Safety doesn't change: the model picks a plugin tool and fills its schema-checked arguments, and the Executor confirms destructive ones. The Plugins page reads manifests only, so opening the settings app never runs plugin code.
 - Tests never see the user's plugins (`tests/conftest.py` points `user_plugins_dir` and `state_path` at the test's tmp folder).
 
+#### Writing code (2026-11-13, plan.md B2, fifth plan)
+
+- The `code` plugin (`red/plugins/code/`, built in): `write_code`, `fix_code`, `explain_code`. The model answers `{"language", "summary", "code"}`; `JsonFieldReader("code")` streams the code into a chat-window bubble (`ChatUI.stream()`, redrawn every 0.12 s). The spoken reply is one line plus the summary, never code. Without a window the code is saved as a new file in `Documents\Red Code` (`red-code-2.py` rather than replacing).
+- Never run: Python is only `compile()`d, to say honestly "it has a syntax error". Fix and explain read the clipboard (`user32` read-only) or a named file in Red Code, Documents, Desktop or Downloads (200 KB at most). A fix goes into the window; the file isn't touched.
+- Routing (real model): "write me a python script…", "make a powershell script…" → `write_code`; "explain this code", "what does this code do" → `explain_code`; "fix this", "fix the code I copied, it crashes" → `fix_code`; mail stays `compose_mail`, "open VS Code" stays `open_app`. "Write me a poem" still routes to `write_code`, so the tool answers poems, stories, jokes and messages in words (`CREATIVE_SYSTEM`) unless the request names code.
+- **10 requests, qwen3.5-4b** (first code = first code text in the window):
+
+| Request | Lang | Lines | First code | Done | Verdict |
+|---|---|---|---|---|---|
+| rename photos by date taken | python | 54 | 1.0 s | 11.2 s | ✗ EXIF tag read wrong; renames into the current folder (asks first, at least) |
+| is a number prime | python | 20 | 0.6 s | 3.1 s | ✓ |
+| 10 biggest files in Downloads | powershell | 4 | 0.6 s | 1.7 s | ✗ stray `` `n `` escapes break the pipeline |
+| count words in a file | python | 26 | 0.6 s | 4.5 s | ✓ |
+| duplicate files by hash | python | 46 | 0.7 s | 7.6 s | ✓ |
+| HTML button that shows the time | html | 29 | 0.7 s | 5.4 s | ✓ |
+| CSV to JSON | python | 27 | 0.7 s | 5.4 s | ✓ (file names hard-coded) |
+| to-do list class | python | 26 | 0.8 s | 4.7 s | ✓ |
+| JS debounce | javascript | 7 | 0.8 s | 1.8 s | ✓ |
+| back up a folder to a dated zip | python | 42 | 0.6 s | 7.8 s | ✗ works out the dated name, then writes backup.zip |
+
+  7 of 10 right; every Python file parses. The misses are the longer, Windows-specific scripts, which is where a coder model should help (step 5, not done: it needs a ~5 GB download into the shared Ollama).
+
 ### 7.3 Overlay (Track C)
 
 - PySide6. Frameless, always on top, translucent, and doesn't take keyboard focus. Sits in the bottom-right corner of the primary screen.
