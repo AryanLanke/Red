@@ -1,8 +1,7 @@
 # Red: what to do next
 
-Updated 2026-11-09 (morning). The first plan (7 tasks) and the second plan (9 tasks) are done: see `git log`
-and progress.md 5, 7.1, 7.2 and 7.4 for what each one did and the numbers. This third plan comes from the
-user's voice test at 04:26–04:46 on 2026-11-09 (log: RED_HOME\logs\commands.jsonl and red.log).
+Updated 2026-11-13. The first three plans are done: see `git log` and progress.md. The fourth plan
+below comes from the user's feedback on 2026-11-13.
 
 Read this first, then AGENTS.md. Do the tasks in order. Each task lists the files and how to check it.
 After finishing a task: run the tests, commit (several small commits), push to main, restart the hidden Red
@@ -41,140 +40,110 @@ Waiting 5 s or more before anything happens is a failure: the user could have do
 - cloud AI models
 - big models that run partly on the CPU (gpt-oss-20b, Qwen3.5-35B-A3B), which are too slow
 
-## Done in the second plan (2026-11-09)
+## Done in the second and third plans
 
-Browser fix (Chrome by default, `RED_BROWSER`), follow-up questions and a Whisper vocabulary, every "play"
-on YouTube, Qwen3.5 4B, the fast path for common commands, speaking while the model writes and cutting in
-with "Hey Red", Gmail and Calendar (optional sign-in), voice match (off by default), several commands in one
-sentence. **Not yet tried by the user:** the Google sign-in, voice match, and cutting in.
+Second plan (2026-11-09): browser fix, follow-ups and a Whisper vocabulary, YouTube play, Qwen3.5 4B,
+the fast path, speaking while the model writes, Gmail and Calendar, voice match (off by default), several
+commands in one sentence. Third plan (2026-11-09 to 11-12): Kokoro TTS, wake fixes and `red wake-test`,
+"open YouTube", the right song, `notify_when_done`, debates, the Red app wizard (`red/app/`), web search
+with Red's own SearXNG. Details: `git log` and progress.md 7.
 
-## What the user found in the voice test (2026-11-09, 04:26–04:46)
+## Tasks, in order (fourth plan, 2026-11-13)
 
-| Said | What happened | Cause found in the logs |
-|---|---|---|
-| "Hey Red" (many times) | Almost never woke | `match_score` gives 0 to anything over 4 words, and Whisper wrote "Hey Red Red Red Red Red Red Red" and "Hey Red, hey Red, hey Red" (both 0.00). "Hey Red, <command>" in one breath scores 0.45, below the 0.5 threshold. |
-| "Open YouTube" | Opened, then YouTube was blank | Unknown: the log shows the right window ("YouTube - Google Chrome") fronted. Must be reproduced. |
-| "Play any song of my favorite" | A random video | `play_online` searched the words "any song of my favorite". |
-| "Play Crazy by Le Sserafim" | Misheard ("Alexa Raffy", "Lisa Raffin"), so it played "If Alexa was RUDE" and Shorts | Whisper doesn't know the artist; the first result is used without a check. |
-| "Play my favorites from my YouTube playlist" | Other music | Red has no access to the user's playlists. |
-| "When VS Code says finished, remind me" | A reminder at 12:00 AM that failed, after two chat replies about waking up | `set_reminder` got `"time": "00:00"`, invented by the model. Nothing can watch a window. |
-| "Let's have a debate" | Said a few words, then went quiet | Routed to `answer` (one reply, no turn-taking). |
+From the user's feedback on 2026-11-13: "Hey Red" wakes about 1–2 times in 100; Red should be on whenever
+the PC is; the laugh clips sound pasted on and Red feels cold next to Hey Copilot; then a male voice, a
+one-click installer and a desktop companion. **Ship every commit to `main` on its own** (many small
+commits, each pushed right away).
 
-## Tasks, in order
+### 0. ✅ Clean-up (2026-11-13)
+Deleted the stale handoff docs (AUTONOMOUS_TASKS, QODER, DEEPSEEK_INSTRUCTIONS, HANDOFF) and
+`red/voice_demo.py`; cut progress.md's parallel-sessions history (now `git show 94c6cae:progress.md`);
+removed the three merged worktrees and every merged `track-*` branch, local and on GitHub; cleared old
+pytest folders, scratch files, `kokoro-spike` and the pip cache from `RED_HOME\cache`. Kept
+`cache\voice-samples` (Kokoro voice comparisons, for task 4) and `cache\train_hey_red` (for task 1.7).
 
-### 0. ✅ Kokoro-82M TTS Integration (Done 2026-11-10)
-- Natural voice engine using Kokoro ONNX with Piper fallback. Pinned models, 27 voices, vocab file, doctor health check, 24 unit tests. Committed in `8500e14`.
+### 1. "Hey Red" wakes 95 times in 100
+**Why:** in `red.log`, 1,936 wake checks and only 22 scored above 0. Whisper writes the user's "Hey Red"
+as "Headed", "Heading", "Hit it", "Here Red" or "Hey"; `match_score` rejects all of them. "Hey Red,
+don't know" scores 0.45 (under 0.5). Many tries never reach Whisper (silent guards: 0.25 s pause before,
+1.6 s cap, VAD start 0.5). The mic is quiet (23% of peaks under 0.05). Wake Whisper runs on the mic
+thread (1.05 s average, 5.4 s max). `voice-setup` was never run. (The "Hey Copilot" lines at 04:44–04:48
+on 2026-11-13 were the user trying Copilot: not misses.)
+1. **A real corpus first.** `red wake-test --record`: the user says "Hey Red" 30 times, "Hey Red, open
+   YouTube" 10 times, then talks normally for 2 minutes; labelled WAVs in `RED_HOME\cache\wake-corpus\`
+   (never in git: it's their voice). `red wake-test --replay` runs the whole detector over it and prints
+   hits and false wakes. Target: **≥ 95% hits, no false wakes on the talk.** Every step below is judged
+   on it.
+2. Log every guard's rejection in `HeyRedDetector._step` (no pause before, too long, too short, VAD).
+3. `match_score`: "Hey Red" at the start of the clip plus more words scores 1.0, and those words become
+   the command (no second recording). Keep the guard against "a red light".
+4. Personal spellings through `voice-setup` (`red/voice_setup.py`), run with the user now and part of the
+   first-run wizard: "Headed" or "Hit it" wake for this user only.
+5. Looser guards, each measured: pause before ~0.1 s, always check the first 1.3 s of a long burst, VAD
+   start ~0.35, loudness normalised before Whisper.
+6. Wake checks on their own worker thread, off the mic thread; `beam_size=1` if the corpus allows.
+7. Only if 3–6 miss 95%: retrain the openWakeWord model (`scripts/train_hey_red/`) with Kokoro's
+   Indian-English voices and the user's clips, as a fast first stage that triggers a Whisper check.
+- **Files:** `red/wakeword.py`, `red/wake_test.py`, `red/listener.py`, `red/voice_setup.py`,
+  `red/__main__.py`, `tests/test_wakeword.py`.
+- **Check:** unit tests with the logged transcripts; replay numbers before and after each step in
+  progress.md; then the user's 100 tries by voice.
 
+### 2. On whenever the PC is on, and ready fast
+**Why:** the Startup shortcuts exist (`Red.lnk`, `Red Hotkey.lnk`; the hotkey is Ctrl+Alt+R), but a cold
+start takes ~70 s, ~48 s of it Ollama's GPU discovery (the AMD iGPU's Vulkan check times out), close to
+`start_ollama`'s 60 s limit.
+1. Skip the iGPU discovery for Red's child Ollama (find the env var for the pinned version); wait up to
+   120 s.
+2. Load Whisper, Kokoro and the wake listener while Ollama starts; "Hey Red" and the hotkey work as soon
+   as Whisper is up; a command before the model is ready gets "One sec, still waking up".
+3. `Startup:` timing lines in `red.log`. Target: wake word live ≤ 15 s after logon, warm ≤ 30 s.
+4. Watchdog in `red hotkey`: restart a crashed Red (at most 3 times an hour).
+- **Files:** `red/llm.py`, `red/__main__.py`, `red/background.py`, `red/startup.py`.
+- **Check:** a reboot with the timing lines; `taskkill` Red and see it come back.
 
-### 1. ✅ (mostly) Make "Hey Red" wake reliably
-**Done (2026-11-09):** repeats collapsed, "Hey Red, <command>" wakes, `python -m red wake-test`, peak loudness
-in the log. Details and Piper results in progress.md 7.2. **Left:** (a) the user must try it by voice and, if
-it still fails, send the `wake-test` output; (b) the words after "Hey Red" in one breath are not yet the
-command (the detector would have to pass its audio to `record_command`).
-**Why:** this is the first thing the user does, and it failed in the whole test.
-- In `match_score` (`red/wakeword.py`), collapse repeats before counting words: "hey red red red" and
-  "hey red, hey red" become "hey red".
-- One breath: "Hey Red, open YouTube" must wake, and the words after "Hey Red" become the command, with no
-  second recording. Keep the guards against "a red light" (the phrase must start the clip and follow a
-  pause).
-- Add `python -m red wake-test`: for 30 s it prints each wake check, the words heard and the score, so the
-  user (and you) can see what the microphone gives.
-- Look at the real clips: log the loudness of each check, and see whether the microphone is too quiet or the
-  VAD cuts the start ("Hey" lost).
-- **Files:** `red/wakeword.py`, `red/listener.py`, `red/__main__.py`, `tests/test_wakeword.py`.
-- **Check:** unit tests with the lines from `red.log` of 2026-11-09 as cases (text and expected score); Piper
-  clips of "Hey Red" and "Hey Red, open YouTube" through `HeyRedDetector`; then the user tries it by voice.
+### 3. No laugh clips; Red with taste on today's voice
+1. Remove the laugh clips: revert `4f63934` (`red/laugh.py`, `red/assets/laugh/`, the speech and
+   `__main__` changes, tests) and the laugh line in `CHAT_SYSTEM`.
+2. Rewrite `CHAT_SYSTEM` (`red/chat.py`): a concrete character (dry humour, opinions, reacts before
+   answering), with 4–6 short example exchanges that show taste. A light touch in `ANSWER_SYSTEM` too.
+3. Pauses from punctuation instead of a flat 0.12 s: comma ~0.15 s, sentence ~0.3 s, "..." or a dash
+   ~0.5 s; long sentences cut at commas so the intonation resets.
+- **Check:** unit tests; 5 sample replies rendered to WAV for the user; first-word time unchanged.
 
-### 2. "Open YouTube" shows a blank page
-- **Reproduce first**, with the hidden Red stopped: `python -m red run "open YouTube"` with VS Code in front,
-  read the screen 3 s later with `red/screen.py` `read_screen`, and check it has YouTube's words. Try
-  Chrome already open and closed, and the window minimised or behind other windows.
-- Suspects, to test and not assume: fronting (`Win32Desktop.front` in `red/windows.py`) before the page has
-  painted; Chrome throttling a window it thinks is hidden. Fix what the test shows, and write the finding in
-  progress.md 7.1.
-- **Files:** `red/windows.py`, `red/browser.py`.
+### 4. A voice that really laughs and pauses (GPU), and a male voice
+1. Spike first (`scripts/tts_bench.py`): local expressive TTS with laugh, sigh and pause tags (Chatterbox,
+   Orpheus GGUF, Dia, Sesame CSM; check current versions and licences). On the user's GPU with the 4B
+   model loaded: first audio ≤ ~1 s, VRAM, does a laugh sound real, licence, Smart App Control (ONNX or
+   llama.cpp; no unsigned torch DLLs). Results table in progress.md; pick at most one.
+2. The winner becomes an engine behind `make_speaker` (`red/tts_kokoro.py`), streamed like Kokoro;
+   `RED_TTS=auto` uses it on a fitting GPU, else Kokoro, else Piper. Tags only for that engine (stripped
+   for the others). Models pinned with SHA-256.
+3. Male voice: a male/female choice with a Play sample button in the wizard and the Voice page
+   (`red/app/pages.py`). Kokoro has `am_michael`, `am_puck`, `bm_george` and more; the expressive engine
+   needs one too. The user picks by ear.
 
-### 3. Play the right song
-- **Names.** A personal list, `RED_HOME\config\vocabulary.txt` (one name per line, for example
-  "LE SSERAFIM"), added to Whisper's hotwords (`command_vocabulary` in `red/stt.py`). Then correct the query
-  with YouTube's public search suggestions before searching (only the search words leave the PC).
-- **A real song.** Skip Shorts and anything under 60 s; prefer a result whose title has the query's words
-  (`first_video` and `fetch_results` in `red/tools/youtube.py`). If nothing fits, open the results page and
-  say so, instead of playing the first thing.
-- **"My favorites", "my liked songs", "my playlist":** open the user's own list in Chrome, where they are
-  signed in to YouTube (Liked videos is playlist `LL`, YouTube Music's likes `LM`; check which URL starts
-  playing). A named playlist ("my workout playlist") needs YouTube access: add the `youtube.readonly` scope
-  to the optional Google sign-in (`red/google_auth.py`) and find the playlist by name.
-- **Files:** `red/stt.py`, `red/tools/youtube.py`, `red/google_auth.py`, `red/router.py`.
-- **Check:** unit tests with saved result pages (never the live site) for "Crazy by Le Sserafim", for the
-  misheard "Lisa Raffin", and for "play my liked songs"; real-model routing for the three.
+### 5. The glow (waiting for the user's design)
+The edge glow (`red/overlay.py` `GlowWindow`) stays as it is until the user shares the design. Then build
+it, render every state offscreen, look, and update `tests/test_voice_feel.py`.
 
-### 4. "Tell me when VS Code finishes"
-- New harmless tool `notify_when_done` (`red/tools/watch.py`): the app's name and, optionally, words to wait
-  for. Every 15 s it reads that window's title and text (`red/screen.py`, OCR of that window only) and says
-  aloud (`VoiceApp.announce`) when it sees "finished", "done" or "completed", or when the text has stopped
-  changing for 2 minutes. At most 3 hours; "stop watching" cancels. Say plainly what it can and can't see.
-- `set_reminder` must never use a time the user didn't say. With no time in their words (`set_command`, as
-  `cancel_reminder` does), ask "When?".
-- Add router examples for the 04:27 sentences.
-- **Files:** `red/tools/watch.py`, `red/tools/reminders.py`, `red/router.py`, `red/tools/__init__.py`.
-- **Check:** unit tests with a fake screen that changes over time; real-model routing for the four sentences
-  in the log.
+### 6. One-click installer
+`installer/build.ps1` bundles the python.org embeddable Python, the pinned wheels and `red`; Inno Setup
+makes `Red-Setup.exe`: per-user install to `%LOCALAPPDATA%\Red` (no admin), `RED_HOME`, Start menu,
+startup entries, uninstaller, then the first-run wizard (`red/app/`: hardware and model, downloads with
+checksums, mic and level meter, voice-setup, male/female voice, web search, optional Google sign-in).
+`install.ps1` does the same in one line. GitHub Releases with SHA-256 hashes; the README notes the
+"unknown publisher" warning.
+- **Check:** a clean Windows Sandbox or VM with Smart App Control on: download to a working "Hey Red"
+  with no command line; the uninstaller leaves nothing.
 
-### 5. Debates and back-and-forth talk
-- "Let's have a debate", "you choose the topic", "quiz me": route to chat, not `answer`. Give `Chat` a
-  debate mode: Red picks a side and the topic if the user didn't, says 2 or 3 sentences, ends with "Your
-  turn.", and keeps listening for longer than usual (15 s). It answers the user's point, until "stop",
-  "you win", or silence. Quiz and storytelling can reuse the same mode if it is cheap.
-- **Files:** `red/chat.py`, `red/router.py`, `red/__main__.py` (follow-up length), `tests/test_voice_app.py`.
-- **Check:** `tests/test_voice_app.py` with fakes: a debate takes at least three turns and ends on "stop";
-  real-model routing for the 23:53 sentence.
+### 7. Desktop companion (after the glow)
+An original 2D mascot in a transparent, click-through PySide6 window in a corner: sleeps when idle,
+perks up at "Hey Red", thinks, talks with its mouth moving to the TTS loudness. Optional, draggable, set
+in the Red app. Show the user 2–3 sketches rendered offscreen before building.
 
-### 6. The Red app: set everything up in one window
-**Why:** the user asked for an app, because setting up from the command line is too hard.
-- First-run wizard: hardware check and model choice (`red/hardware.py`), downloads with progress and
-  checksums, microphone pick with a level meter, `voice-setup` with live "Hey Red" checks, an optional
-  voice-match test, and the optional Google sign-in.
-- Then the settings pages from "Later" below.
-- PySide6 (already used). Frosted, milky glass with no edge line and no rounded edges. It saves
-  `RED_HOME\config\.env` through `Settings` and restarts the hidden Red when you press Save. Start menu
-  shortcut and `python -m red app`.
-- **Files:** new `red/app/` package, `red/__main__.py`, `red/config.py`, `red/startup.py`.
-- **Check:** render every page offscreen (`QT_QPA_PLATFORM=offscreen`), look at the screenshots, and unit-test
-  that saving changes only the keys on the page. Ask the user before changing their `.env`.
-
-### 7. Web search answers that ship with Red (started 2026-11-09, ahead of 2–6, at the user's request)
-**Why:** an assistant is only as good as its answers. With Wikipedia alone Red got 2 of 6 test questions
-right; with the web, 5 of 6 (progress.md, commit cd11878). Users must not have to install anything themselves.
-**Done:** `look_up` asks a local SearXNG (`red/tools/sources.py`, `RED_SEARCH_URL`, loopback only) with the
-user's own words, reads the top three pages, keeps one page per site, skips videos and social posts, and
-answers first. README "Privacy and safety" says what is sent.
-- **Step 1 (now):** say "I'm searching." while it searches. Offline: skip the web at once and answer from
-  the model's own knowledge, with no wait.
-- **Step 2:** `python -m red setup` downloads a pinned SearXNG (commit and SHA-256, like every other
-  download), makes its own venv, writes settings (loopback, JSON on, a random secret per PC) and applies the
-  Windows fix (`pwd` is Linux-only). Red starts it hidden as a `ManagedServer` child that dies with Red,
-  on a free port. If it fails to start, Red carries on with Wikipedia only and `red doctor` says why.
-- **Step 3:** the first-run question in the Red app (task 6): "Search the web for better answers? Your
-  questions' words go to search engines." Default yes.
-- **Before release:** test on clean Windows 10 and 11 PCs with Smart App Control on (SearXNG needs
-  `lxml`, `curl_cffi`, `msgspec`). Ship SearXNG's AGPL license and a link to its source and our patch;
-  Red stays MIT (check with someone who knows licensing). Offer the `pwd` fix upstream to SearXNG.
-- **Done (2026-11-09):** Red installs and runs its own SearXNG (`red/searxng.py`, `RED_WEB_SEARCH`);
-  sources are used in search-ranking order, Wikipedia included where it ranks; only Google and Brave
-  (DuckDuckGo hit CAPTCHAs, Bing was off-topic, all engines together took 2 s); Wikipedia results are read
-  through its API (its pages took 1.1–2.7 s); pages get 1.5 s.
-- **Speed:** whole answer 3.5–4.8 s with the web (was 5.4–8.1 s), of which search and reading 2.1–3.2 s;
-  2–4 s without. "I'm searching." covers the wait.
-- **Done (2026-11-09, later):** "I'm searching." at once (Windows' `InternetGetConnectedState`, 14 ms, no
-  request; no network means an answer from memory with no request at all); page reading stops once the
-  best-ranked page and one more are in; one warm-up search when SearXNG starts. First spoken sentence of the
-  answer: 2.1–4.9 s, average 3.1 s (was 2.8–4.6 s, average 3.8 s).
-- **Done:** plain fact questions ("who made Siri", "what is X", "tell me about X") skip the model's
-  routing (it took 0.9–1.0 s) through `red/fastpath.py`; personal, Red, now, screen, maths and follow-up
-  questions, and anything mid-conversation, still go to the model. Checked against every logged sentence:
-  all 6 it catches were look-ups for the model too. "Compare X with Y" fetches Y alongside the search.
-  Question to first spoken sentence, routing included: average 2.9 s (2.0–4.5 s), was 4.5 s (3.3–5.1 s).
+**Needed from the user:** the wake corpus (~5 min) and the 100 tries (task 1), one reboot (task 2),
+listening to samples and picking the male voice (tasks 3–4), the glow design (task 5).
 
 ## Speed plan: the first word in about a second (2026-11-11)
 
