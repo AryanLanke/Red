@@ -1,0 +1,5 @@
+name = "code"
+version = "1.0"
+description = "Write code into the chat window, and explain or fix code from the clipboard or a file. Red never runs the code it writes."
+author = "Red"
+needs = ["the chat window"]

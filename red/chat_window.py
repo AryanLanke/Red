@@ -78,6 +78,26 @@ def code_filename(language: str, n: int = 1) -> str:
     return f"red-code-{n}.{ext}" if n > 1 else f"red-code.{ext}"
 
 
+def vscode_exe() -> Path | None:
+    """VS Code's Code.exe, found from code.cmd on PATH (the file VS Code's installer adds)."""
+    import shutil
+    cmd = shutil.which("code.cmd") or shutil.which("code")
+    if not cmd:
+        return None
+    exe = Path(cmd).resolve().parent.parent / "Code.exe"
+    return exe if exe.is_file() else None
+
+
+def open_in_vscode(path: Path) -> bool:
+    """Open a file the user saved in VS Code: Code.exe with the path as one argument, no shell."""
+    import subprocess
+    exe = vscode_exe()
+    if exe is None or not Path(path).is_file():
+        return False
+    subprocess.Popen([str(exe), str(Path(path).resolve())], close_fds=True)
+    return True
+
+
 def red_code_folder() -> Path:
     """Documents\\Red Code (Documents wherever Windows keeps it)."""
     try:
@@ -278,10 +298,12 @@ def make_window_class():
         action = QtCore.Signal(str, dict, str)   # a button: tool, args, what it stands for
 
         def __init__(self, *, save_path: Callable[[str], str | None] | None = None,
-                     clipboard=None, parent=None):
+                     clipboard=None, open_file: Callable[[Path], bool] | None = open_in_vscode,
+                     parent=None):
             super().__init__(parent)
             self._save_path = save_path
             self._clipboard = clipboard
+            self._open_file = open_file if open_file is not open_in_vscode or vscode_exe() else None
             self.saved: list[Path] = []
             self.setWindowTitle("Red")
             self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
@@ -334,6 +356,7 @@ def make_window_class():
             self.input.submit.connect(self._send_typed)
             outer.addWidget(self.input)
             self.bubbles: list[Bubble] = []
+            self.streams: dict[str, Bubble] = {}
 
         # painting: milky glass, a faint wash of the glow's colours, no edge line
 
@@ -399,8 +422,10 @@ def make_window_class():
             area = screen.availableGeometry()
             self.move(area.right() - self.width() - 24, area.bottom() - self.height() - 24)
 
-        def add(self, line: Line) -> None:
-            if line.who == "details" and self.bubbles and self.bubbles[-1].who == "red":
+        def add(self, line: Line, into=None) -> None:
+            if into is not None:
+                bubble = into
+            elif line.who == "details" and self.bubbles and self.bubbles[-1].who == "red":
                 bubble = self.bubbles[-1]
             else:
                 bubble = Bubble("you" if line.who == "you" else "red")
@@ -419,8 +444,9 @@ def make_window_class():
                     label.setTextFormat(Qt.TextFormat.PlainText)
                     label.setWordWrap(True)
                     label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-                    colour = MUTED if line.who == "details" else INK
-                    size = 12 if line.who == "details" else 13
+                    small = line.who == "details" and into is None
+                    colour = MUTED if small else INK
+                    size = 12 if small else 13
                     label.setStyleSheet(f"color: {colour}; font-size: {size}px;")
                     if line.who == "you":
                         label.setAlignment(Qt.AlignmentFlag.AlignRight)
@@ -439,6 +465,24 @@ def make_window_class():
                 old.setParent(None)
                 old.deleteLater()
             QtCore.QTimer.singleShot(0, self._to_bottom)
+
+        def start_stream(self, key: str, who: str = "red") -> None:
+            """A bubble whose text is replaced as it streams in (code being written)."""
+            bubble = Bubble(who)
+            self.lines.insertWidget(self.lines.count() - 1, bubble)
+            self.bubbles.append(bubble)
+            self.streams[key] = bubble
+
+        def set_stream(self, key: str, text: str) -> None:
+            bubble = self.streams.get(key)
+            if bubble is None:
+                return
+            while bubble.box.count():
+                widget = bubble.box.takeAt(0).widget()
+                if widget is not None:
+                    widget.setParent(None)
+                    widget.deleteLater()
+            self.add(Line("details", text), into=bubble)
 
         def _to_bottom(self) -> None:
             bar = self.scroll.verticalScrollBar()
@@ -485,6 +529,14 @@ def make_window_class():
                 return None
             self.saved.append(path)
             self.set_status(f"Saved {path.name}.")
+            block.saved_path = path
+            if self._open_file is not None and getattr(block, "open_button", None) is None:
+                button = QtWidgets.QPushButton("Open in VS Code")
+                button.setStyleSheet(block.copy_button.styleSheet())
+                button.clicked.connect(lambda: self._open_file(block.saved_path)
+                                       or self.set_status("VS Code isn't installed."))
+                block.layout().itemAt(0).layout().addWidget(button)
+                block.open_button = button
             return path
 
     return ChatWindow
@@ -523,6 +575,14 @@ class ChatUI:
             toggle = QtCore.Signal()
             add = QtCore.Signal(object)
             status = QtCore.Signal(str)
+            stream_start = QtCore.Signal(str)
+            stream_set = QtCore.Signal(str, str)
+
+            def do_stream_start(self, key):
+                self._window().start_stream(key)
+
+            def do_stream_set(self, key, text):
+                self._window().set_stream(key, text)
 
             def _window(self):
                 if ui.window is None:
@@ -560,6 +620,16 @@ class ChatUI:
         self._bridge.toggle.connect(self._bridge.do_toggle)
         self._bridge.add.connect(self._bridge.do_add)
         self._bridge.status.connect(self._bridge.do_status)
+        self._bridge.stream_start.connect(self._bridge.do_stream_start)
+        self._bridge.stream_set.connect(self._bridge.do_stream_set)
+        self._streams = 0
+
+    def stream(self) -> "Stream":
+        """A bubble to fill as text arrives: `s.set(text_so_far)`, then `s.done(final_text)`."""
+        self._streams += 1
+        key = f"s{self._streams}"
+        self._bridge.stream_start.emit(key)
+        return Stream(self._bridge, key)
 
     def show(self) -> None:
         self._bridge.show.emit()
@@ -596,6 +666,31 @@ class ChatUI:
     def _action(self, tool: str, args: dict, said: str) -> None:
         if self._on_action is not None:
             self._work(lambda: self._on_action(tool, args, said))
+
+
+class Stream:
+    """One streaming bubble. set() is throttled (the window redraws a few times a second)."""
+
+    EVERY = 0.12            # seconds between redraws
+
+    def __init__(self, bridge, key: str, clock: Callable[[], float] | None = None):
+        import time
+        self._bridge, self.key = bridge, key
+        self._clock = clock or time.monotonic
+        self._last = -1e9
+        self.text = ""
+
+    def set(self, text: str) -> None:
+        self.text = text
+        now = self._clock()
+        if now - self._last >= self.EVERY:
+            self._last = now
+            self._bridge.stream_set.emit(self.key, text)
+
+    def done(self, text: str | None = None) -> None:
+        if text is not None:
+            self.text = text
+        self._bridge.stream_set.emit(self.key, self.text)
 
 
 # --- the hotkey -------------------------------------------------------------------------
@@ -636,6 +731,9 @@ def _attach_chat_window(app):
         bind = getattr(tool, "bind_chat_window", None)
         if callable(bind):
             bind(ui.show)
+        bind = getattr(tool, "bind_chat", None)           # tools that write into the window
+        if callable(bind):
+            bind(ui)
     hotkey = getattr(app.settings, "chat_hotkey", DEFAULT_CHAT_HOTKEY)
     if hotkey:
         try:
