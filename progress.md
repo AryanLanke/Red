@@ -503,6 +503,15 @@ Every command writes a `Timing` line to `red.log`: listen, transcribe, route, ac
 
   7 of 10 right; every Python file parses. The misses are the longer, Windows-specific scripts, which is where a coder model should help (step 5, not done: it needs a ~5 GB download into the shared Ollama).
 
+#### Coding tools, secrets and the router's context (2026-11-13, plan.md B3.1, fifth plan)
+
+- `red/secrets.py`: DPAPI (`CryptProtectData` in crypt32 through ctypes, no UI, extra entropy) into `RED_HOME\config\secrets\<name>.bin`; a tampered file fails to decrypt; `secrets/` is in `.gitignore`. `red/desk.py`: clipboard write, key presses from a fixed combo (`ctrl+alt+i`), fronting an app's window, `launch(args)` (a list, never a shell) and `open_uri` for fixed schemes.
+- The `coding` plugin: `open_in_coding_tool`, `tell_coding_agent` (destructive: the Executor reads the task back once), `what_did_it_change` (read-only `git status`, `diff --shortstat`, `log`). Tools found on this PC and wired in: VS Code (`Code.exe` from `code.cmd`), Qoder (its launcher's `state.ini` names the real `Qoder.exe`; the launcher itself is only an updater), Antigravity IDE (`--goto` like VS Code; its `antigravity-ide.cmd` just runs `cli.js` with Electron), the Antigravity app and Freebuff (no folder argument known, so they only open). More tools and chat shortcuts go in a `[coding.<name>]` table in `allowlist.toml`.
+- Only repos.toml project names and files that exist inside them reach a command line (a test checks that `..`, absolute paths and unknown projects launch nothing). The task goes to the clipboard and into the agent's chat as text; Enter is pressed only if the tool's chat shortcut is known and its window is still in front. VS Code's `ctrl+alt+i` is set; Qoder, Antigravity and Freebuff have none yet, so Red says "paste it and hit Enter".
+- **A real bug found by the new tool count:** the router's prompt was 4,383 tokens against `num_ctx=4096`, and Ollama cuts the start of an over-long prompt (the router's instructions). It went unnoticed because the cut is small. With the 6 plugin tools (5,204 tokens), "check my repos" and "is red pushed?" went to `list_reminders` or chat. `fit_context` (`red/router.py`) raises `num_ctx` in steps of 2,048 to fit the prompt plus headroom (8,192 for now). Chars per token measured at 3.6. Same sentences after: `check_repos`. First call after the change took 13.5 s (model reload); later calls 0.7–1.4 s, as before.
+- Routing, real model (48 sentences across memory, chat, code and coding): all right after two description fixes. "open Freebuff/Antigravity/Qoder" went to `open_app` until the description said "always this, not open_app, for Qoder, Freebuff and Antigravity".
+- Tool descriptions are the router's budget: each plugin adds about 130 tokens. Keep new ones short.
+
 ### 7.3 Overlay (Track C)
 
 - PySide6. Frameless, always on top, translucent, and doesn't take keyboard focus. Sits in the bottom-right corner of the primary screen.

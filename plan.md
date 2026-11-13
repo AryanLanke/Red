@@ -254,7 +254,18 @@ what works with no account, and adds a sign-in only where it's needed. Sign-in t
 PC, encrypted with Windows DPAPI (`CryptProtectData` through ctypes, a signed system API), in
 `RED_HOME\config\`, never in git. An app's data goes only to that app and to the local model.
 
-1. **Coding tools: VS Code, Qoder, Freebuff, Antigravity and other coding agents** (first; it goes with B2)
+**B3 progress (2026-11-13):** `red/secrets.py` (DPAPI) ✅, `red/desk.py` (clipboard, keys, fronting) ✅,
+and item 1 below (the `coding` plugin) ✅ built and tested with fakes; Spotify, WhatsApp, Discord and mail
+are next. **Found on the way:** the router prompt (4,383 tokens) was already over `num_ctx=4096`, and the
+plugins made it 5,204, which sent "check my repos" to `list_reminders`. `fit_context` (red/router.py) now
+raises the context to fit (8192 today). Session 1: this changes the model load size, so the first start
+after pulling reloads the model once (13 s measured); routing times stayed 0.7–1.4 s.
+**Left for the user (item 1):** try "open Red in Qoder", "tell Qoder to fix …" (it reads the task back, then
+opens Qoder and puts the task on the clipboard; it presses nothing in Qoder, which has no known chat
+shortcut, so you paste), "what did it change?". Tell me each tool's chat shortcut to make it paste and
+send by itself (`[coding.qoder] chat_key = "ctrl+l"` in allowlist.toml).
+
+1. **Coding tools: VS Code, Qoder, Freebuff, Antigravity and other coding agents** (first; it goes with B2) ✅
    The user codes with several tools: VS Code, Qoder (an agentic IDE), Freebuff (Codebuff's free
    desktop coding agent), Google Antigravity (an agentic IDE) and others. Red sits between the user and them, like a friend at the desk.
    - **Know the tools.** A `[coding]` table in `allowlist.toml` names each tool and how to start it.
