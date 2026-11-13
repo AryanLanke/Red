@@ -75,14 +75,21 @@ def run(settings, *, seconds: float = SECONDS, out: Callable[[str], None] = prin
     return 0
 
 
-def main(settings) -> int:
-    """Pauses the hidden Red while testing."""
+def main(settings, mode: str = "live") -> int:
+    """Pauses the hidden Red while using the microphone. mode: live, record or replay."""
     from . import background
 
+    if mode == "replay":                 # no microphone: the hidden Red can keep running
+        from .wake_corpus import replay
+        return 0 if replay(settings) is not None else 1
     was_running = background.stop(settings.home)
     if was_running:
         print("Paused the Red running in the background while we listen.")
     try:
+        if mode == "record":
+            from .wake_corpus import record
+            record(settings)
+            return 0
         return run(settings)
     finally:
         if was_running:
