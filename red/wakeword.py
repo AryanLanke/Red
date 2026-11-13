@@ -161,7 +161,8 @@ def load_profile(model_dir: Path) -> dict:
 
 
 def make_wake_transcriber(model_dir: Path):
-    """Whisper tiny.en set up exactly as the detector uses it (voice-setup uses it too)."""
+    """Whisper (WAKE_WHISPER_MODEL, base.en) set up exactly as the detector uses it
+    (voice-setup uses it too)."""
     from red.stt import Transcriber
 
     def factory(path: str, device: str, compute_type: str):
