@@ -52,6 +52,9 @@ logs/
 # --- What Red remembers about you (RED_HOME\memory): never commit ---
 memory/
 personality.txt
+# Sign-in tokens and app passwords (DPAPI-encrypted, RED_HOME\config\secrets)
+secrets/
+*.secret
 
 # --- Editors and OS ---
 .vscode/
