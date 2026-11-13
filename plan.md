@@ -83,6 +83,28 @@ Red's edge: **personality + memory + PC control + a face**, all local.
 
 **Ship every commit to `main` on its own** (many small commits, each pushed right away).
 
+### Two sessions at once (from 2026-11-13)
+
+Two coding sessions run at the same time. Stay in your lane:
+
+| | Session 1: wake word | Session 2: companion |
+|---|---|---|
+| Works in | `D:\RED\red`, on `main` | the worktree `D:\RED\worktrees\companion` (branch `companion`), pushing each commit to `main` |
+| Tasks | finish anything left from the fourth plan, then **C1** now (not waiting for the installer) | **Phase A** (A0–A4), then **Phase B** (B1–B6), in order |
+| Owns these files | `red/wakeword.py`, `wake_test.py`, `wake_corpus.py`, `voice_setup.py`, `listener.py`, `audio.py`, `stt.py`, `voice_match.py`, `background.py`, `startup.py`, `llm.py` and their tests | everything new it creates (`red/memory.py`, `greeter.py`, `chat_window.py`, `plugins.py`, `red/plugins/`, `red/secrets.py`…), plus `red/chat.py`, `smalltalk.py`, `speech.py`, `red/app/`, `red/tools/` and their tests |
+| The hidden Red | the **only** one that stops and starts it | never stops or starts it, and never runs a live voice Red |
+| Test temp folder | `D:\RED\cache\pytest-tmp` | `D:\RED\cache\pytest-tmp-companion` |
+
+- **Shared files** (`red/__main__.py`, `red/config.py`, `.env.example`, `tests/conftest.py`, plan.md,
+  progress.md, AGENTS.md, README.md): small additive edits only. Get the latest `main` right before
+  editing one; commit and push right after.
+- Each session ticks off only its own tasks in plan.md and writes only its own notes in progress.md.
+- Before every push: session 1 runs `git pull --rebase`; session 2 runs `git fetch origin` then
+  `git rebase origin/main`. Then test and push. **Never force-push.** On a conflict in a file the
+  other session owns, keep their version and redo your change on top.
+- Session 2's commits reach the hidden Red only when session 1 pulls and restarts it.
+- C2, C3 and Phase D wait until both sessions are done.
+
 ### Phase A: the companion core
 
 #### A0. Say what Red is now
