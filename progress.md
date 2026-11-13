@@ -412,6 +412,27 @@ Every command writes a `Timing` line to `red.log`: listen, transcribe, route, ac
 - **Not done:** the words said right after "Hey Red" in the same breath are not kept as the command; Red still beeps and listens again. That needs the detector to hand its audio to the recorder (`Listener` and `record_command`).
 - **Still to do by the user:** try it by voice. I could only test with Piper voices, not your microphone or your accent.
 
+#### "Hey Red" on the user's own voice (2026-11-13, plan.md C1, fifth plan)
+
+- **Corpus** (`red wake-test --record`, `red/wake_corpus.py`): 30 takes of "Hey Red", 10 of "Hey Red, open YouTube" and 2 minutes of normal talk, in `RED_HOME\cache\wake-corpus` (never in git). `--replay` runs the real detector over it; each run appends to `logs\wake-replay.jsonl`.
+- **What the misses were:** Whisper wrote the user's "Hey Red" as "Headed" (most often), "Headered", "Head in", "Hitter", "Here at…"; the user pauses between "Hey" and "Red", and a 0.3 s gap split it into two clips that each failed; some takes peaked at 0.01 and the VAD (needs 0.5) never started a clip.
+- **Each step, measured** ("Hey Red" / with a command / false wakes in the talk):
+
+| Step | Hey Red | + command | False |
+|---|---|---|---|
+| Before | 16/30 | 5/10 | 0 |
+| Louder clips before Whisper (peak 0.3) alone | 18/30 | 5/10 | 0 |
+| VAD start 0.35 alone | 16/30 | 6/10 | 0 |
+| Clip ends after 0.5 s of quiet, not 0.3 s, alone | 20/30 | 5/10 | 0 |
+| All three (committed) | 20/30 | 6/10 | 0 |
+| + `--learn` ("headed", "here at" from the takes) | 23/30 | 9/10 | 0 |
+| + a one- or two-word clip within 2 letters of a learned phrase, same first letter | **25/30 (83%)** | **9/10** | **0** |
+
+- **Checked against red.log:** re-scoring all ~2,000 logged checks with the learned phrases wakes only the user's own tries. A looser close-match rule had also woken "The rest of us are scared to open" ("the rest" ≈ "here at"), hence the same-first-letter and whole-clip rules.
+- **Beam 1 instead of 5** for the wake check: 0.49 s instead of 0.66 s per check, but 23/30 instead of 25/30. Kept beam 5.
+- **Left:** two takes too quiet to make out (peak 0.03 and 0.01), one where "Hey" never registered, one heard as "Hello" (too common to accept). The numbers are on the same takes `--learn` learned from, so the user's live 100 tries are the real test.
+- A one-breath wake now fires about 0.2 s later (the 0.5 s pause).
+
 #### A personality, not a professional (2026-11-13, plan.md A1, fifth plan)
 
 - `CHAT_SYSTEM` (`red/chat.py`) is a character: dry humour, opinions, reacts before answering, teases lightly, honest about limits, warm when it matters, with six example exchanges. It never offers what it can't do, and never brings up meetings, mail or to-dos unasked. `ANSWER_SYSTEM` answers "like a smart friend". Small talk lost its help-desk lines ("What's up?", "Anytime!").

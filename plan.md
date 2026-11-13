@@ -312,6 +312,10 @@ The user chose to finish the wake word together with the installer, because voic
 first-run wizard.
 
 #### C1. "Hey Red" wakes 95 times in 100 (rest of the old task 1)
+**Progress (2026-11-13, session 1):** the user recorded the corpus. On `--replay`: "Hey Red" **16/30 →
+25/30 (83%)**, with a command 5/10 → 9/10, 0 false wakes (steps 4 and 5 done; numbers per step in
+progress.md 7.2). Step 6: beam 1 was faster but lost 2 hits, kept beam 5. **Next:** the user's 100
+live tries; if still under 95%, step 7.
 **Why:** in `red.log`, 1,936 wake checks and only 22 scored above 0. Whisper writes the user's "Hey Red"
 as "Headed", "Heading", "Hit it", "Here Red" or "Hey". The mic is quiet (23% of peaks under 0.05).
 `voice-setup` was never run. Steps 1–3 are done (see "Done so far"); the corpus tool waits for the
