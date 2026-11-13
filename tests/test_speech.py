@@ -205,6 +205,19 @@ def test_pieces_are_spoken_with_their_own_pauses():
     assert slept == [sp.LONG_PAUSE, sp.SENTENCE_PAUSE]
 
 
+def test_kokoros_own_breath_counts_toward_the_pause():
+    from red.tts_kokoro import PAUSE_SECONDS
+    voice = Voice()
+    voice.using_fallback = False                     # like KokoroSpeaker with Kokoro loaded
+    assert sp.breath_of(voice) == PAUSE_SECONDS and sp.breath_of(Voice()) == 0.0
+    slept = []
+    stream = sp.SpeechStream(voice, sleep=slept.append)
+    stream.say("One.")
+    stream.say("Two.")
+    stream.finish(timeout=5)
+    assert slept == [pytest.approx(sp.SENTENCE_PAUSE - PAUSE_SECONDS)]
+
+
 def test_speaking_to_is_per_thread_and_restored():
     stream = sp.SpeechStream(Voice())
     assert sp.current() is None

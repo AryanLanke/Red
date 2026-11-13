@@ -412,6 +412,15 @@ Every command writes a `Timing` line to `red.log`: listen, transcribe, route, ac
 - **Not done:** the words said right after "Hey Red" in the same breath are not kept as the command; Red still beeps and listens again. That needs the detector to hand its audio to the recorder (`Listener` and `record_command`).
 - **Still to do by the user:** try it by voice. I could only test with Piper voices, not your microphone or your accent.
 
+#### A personality, not a professional (2026-11-13, plan.md A1, fifth plan)
+
+- `CHAT_SYSTEM` (`red/chat.py`) is a character: dry humour, opinions, reacts before answering, teases lightly, honest about limits, warm when it matters, with six example exchanges. It never offers what it can't do, and never brings up meetings, mail or to-dos unasked. `ANSWER_SYSTEM` answers "like a smart friend". Small talk lost its help-desk lines ("What's up?", "Anytime!").
+- The user's own tuning: `RED_HOME\config\personality.txt` (the Red app, General page, up to 800 characters). `make_chat()` puts it after the fixed prompt, so Ollama's prompt cache still matches up to that point. A file, not a `.env` line, because it's free text.
+- Pauses (`red/speech.py`): a comma 0.15 s, a sentence 0.3 s, "..." or a dash 0.5 s, counting Kokoro's own 0.12 s breath. A trail-off is its own piece, and a sentence over 90 characters is cut at commas (no pieces under 20 characters).
+- Real model (qwen3.5-4b), 5 chat lines, first sentence written: **old prompt median 0.69 s (0.53–0.93), new 0.59 s (0.56–0.77)**. The longer prompt costs nothing measurable.
+- The first draft copied an example line word for word and then offered to order a pizza. The examples are now marked "attitude only", and "never offer what you can't do" is a rule. A 4B model still sometimes sits on the fence when asked for an opinion ("tabs or spaces?").
+- Samples for the user: `RED_HOME\cache\samples-companion\a1-personality-*.wav`.
+
 ### 7.3 Overlay (Track C)
 
 - PySide6. Frameless, always on top, translucent, and doesn't take keyboard focus. Sits in the bottom-right corner of the primary screen.

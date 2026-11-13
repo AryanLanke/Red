@@ -210,6 +210,14 @@ def pause_after(text: str) -> float:
     return SENTENCE_PAUSE
 
 
+def breath_of(speaker) -> float:
+    """Silence the speaker already puts after each piece (Kokoro adds a short breath)."""
+    if getattr(speaker, "using_fallback", True):     # Piper, a fake, or Kokoro fallen back to Piper
+        return 0.0
+    from .tts_kokoro import PAUSE_SECONDS
+    return PAUSE_SECONDS
+
+
 def _cut(text: str, pattern: re.Pattern) -> list[str]:
     pieces, start = [], 0
     for m in pattern.finditer(text):
@@ -313,8 +321,9 @@ class SpeechStream:
                         break
                     if playing:
                         player.wait()
-                        if not self.cancelled:
-                            self._sleep(pause)
+                        rest = pause - breath_of(self.speaker)
+                        if rest > 0 and not self.cancelled:
+                            self._sleep(rest)
                     if self.cancelled or getattr(audio, "size", 0) == 0:
                         continue
                     self._mark_first()

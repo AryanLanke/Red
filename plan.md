@@ -113,7 +113,11 @@ companion for Windows), the top of README.md, and progress.md 2 (Goals and scope
 "The only account Red talks to is the user's own Google account" rule to match the accounts rule in
 this file's Rules (plugins the user signs into). Nothing else changes.
 
-#### A1. A personality, not a professional (old task 3 steps 2–3)
+#### A1. A personality, not a professional (old task 3 steps 2–3) ✅ (2026-11-13)
+**Done:** the character prompt, the Personality box (General page, `config\personality.txt`) and
+punctuation pauses. First sentence of a chat reply, real model: median 0.59 s new against 0.69 s old.
+**Left for the user:** listen to `D:\RED\cache\samples-companion\a1-personality-1.wav` … `-5.wav` (the
+words are in `a1-personality.txt`) and say what's too much or too little.
 1. Rewrite `CHAT_SYSTEM` (`red/chat.py`): a concrete character (dry humour, opinions, reacts before
    answering, teases lightly, admits what it can't do). Add 4–6 short example exchanges that show
    taste. Give `ANSWER_SYSTEM` and tool replies a light touch too ("Done." is fine; "I have
