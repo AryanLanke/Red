@@ -186,6 +186,12 @@ def speaking_to(stream: "SpeechStream | None"):
 
 _DONE = object()
 
+
+def _said(text: str) -> None:
+    """events `said(text)`: this piece's audio has just started (plan.md 0.2)."""
+    from . import events
+    events.emit("said", text=text)
+
 # A human beat after each piece, from its punctuation, so Red doesn't sound robotic.
 COMMA_PAUSE = 0.15
 SENTENCE_PAUSE = 0.3
@@ -310,6 +316,7 @@ class SpeechStream:
             if synthesize is None or player is None:
                 try:
                     self._mark_first()
+                    _said(item)
                     self.speaker.say(item, block=True)
                 except Exception:  # noqa: BLE001 - no speakers: the text is still shown
                     log.exception("Couldn't speak %r", item[:60])
@@ -328,6 +335,7 @@ class SpeechStream:
                         continue
                     self._mark_first()
                     player.play(audio, rate)
+                    _said(piece)                     # the bubble shows it now, with the voice
                     playing = True
                     pause = pause_after(piece)
                 except Exception:  # noqa: BLE001 - no speakers: the text is still shown

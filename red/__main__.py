@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from . import events
 from .allowlist import AllowlistError, load_allowlist
 from .confirm import Ask, typed_ask, with_fallback
 from .config import Settings, load_settings
@@ -539,6 +540,7 @@ class VoiceApp:
             self._say(last)
             return last, tool, True
         self.out(f"You said: {text}")
+        events.emit("heard", text=text)            # the bubble shows the user's words (plan.md 0.1 item 11)
         if is_filler(text):
             # "you know", "hmm": nothing to do. Said first, you're probably
             # still thinking, so listen once more; in a follow-up, go quiet.
@@ -707,11 +709,13 @@ class VoiceApp:
             self.overlay.set_state(state, text)
         except Exception:  # noqa: BLE001 - the overlay is only a display
             log.exception("Overlay update failed")
+        events.emit("state", name=state, text=text)
 
     def _speak(self, text: str, interruptible: bool = False) -> None:
         if interruptible:
             self._allow_interrupt(True)
         try:
+            events.emit("said", text=text)          # a whole reply: shown as it starts
             self.voice.speaker.say(text, block=True)
         except Exception:  # noqa: BLE001 - no speakers: the text is still shown
             log.exception("Couldn't speak")
