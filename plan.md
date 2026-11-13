@@ -27,8 +27,8 @@ talk to in between your work. Doing things is how it helps.
 - **Any Windows PC:** from a laptop with no GPU to one with an 8 GB+ GPU (RTX 3050, 4050 and so on).
 - **English only.**
 - **Local and free:** the AI model, speech-to-text, voice, wake word, memory and screen reading all
-  run on the PC with no account needed. The one exception is the optional Google sign-in for mail and
-  calendar.
+  run on the PC with no account needed. The only exceptions are optional sign-ins the user chooses:
+  Google for mail and calendar, and app plugins such as Spotify or other mail (B3).
 
 Speed, measured from when you stop talking (the `Timing` lines in `red.log`):
 
@@ -87,7 +87,9 @@ Red's edge: **personality + memory + PC control + a face**, all local.
 
 #### A0. Say what Red is now
 Update the one-line descriptions: AGENTS.md ("a local, offline voice and action assistant" → a local
-companion for Windows), the top of README.md, and progress.md 2 (Goals and scope). Nothing else changes.
+companion for Windows), the top of README.md, and progress.md 2 (Goals and scope). Also update AGENTS.md's
+"The only account Red talks to is the user's own Google account" rule to match the accounts rule in
+this file's Rules (plugins the user signs into). Nothing else changes.
 
 #### A1. A personality, not a professional (old task 3 steps 2–3)
 1. Rewrite `CHAT_SYSTEM` (`red/chat.py`): a concrete character (dry humour, opinions, reacts before
@@ -107,6 +109,10 @@ companion for Windows), the top of README.md, and progress.md 2 (Goals and scope
 knows your name, your people, your projects and what you like.
 1. `red/memory.py`: a short **profile** (`RED_HOME\memory\profile.md`: name, people, projects, likes)
    and a list of **facts** (`RED_HOME\memory\facts.jsonl`: text, when, from which chat). Never in git.
+   **Red knows who you are and uses your name** (the user's choice, 2026-11-13). The name comes from
+   the profile. Until it's there, Red asks once in the first chat ("What should I call you?"); "call
+   me …" changes it. Use the name like a friend would: in greetings and now and then, not in every
+   sentence.
 2. Tools: `remember` ("remember my sister is Priya"), `what_you_know` ("what do you know about me?"),
    `forget` ("forget that"; destructive, so it asks once).
 3. After a chat, a background worker asks the local model for new facts about the user, **only when
@@ -123,8 +129,8 @@ knows your name, your people, your projects and what you like.
 
 #### A3. Hello, not briefings
 1. Red greets you on the first sign-in or unlock of the day, and when you're back after 30+ minutes
-   away (`GetLastInputInfo` for idle time): "Morning!", "Hey, you're back." Use the name from memory
-   when it's known. Vary the line and don't repeat yesterday's.
+   away (`GetLastInputInfo` for idle time), **with your name**: "Morning, <name>!", "Hey <name>, you're
+   back." Vary the line and don't repeat yesterday's.
 2. **Never** put meetings, mail, to-dos or news in a greeting.
 3. A **Chattiness** setting: *Quiet* (only answers), *Friendly* (greetings; the default), *Chatty*
    (greetings plus an occasional one-liner, at most once an hour, such as "It's 2 am, you're still at
@@ -176,7 +182,52 @@ be seen, and a missed "Hey Red" stops being a dead end.
 - **Files:** `red/plugins/code/` (new), `red/chat_window.py`.
 - **Check:** 10 requests from the user; results table in progress.md.
 
-#### B3. To-dos and "what did I do today?"
+#### B3. App plugins: VS Code, Spotify, WhatsApp, Discord, mail
+The user asked for these on 2026-11-13. Each is its own plugin and can be turned off. Each starts with
+what works with no account, and adds a sign-in only where it's needed. Sign-in tokens are stored on the
+PC, encrypted with Windows DPAPI (`CryptProtectData` through ctypes, a signed system API), in
+`RED_HOME\config\`, never in git. An app's data goes only to that app and to the local model.
+
+1. **VS Code** (first; it goes with B2)
+   - Open a project by name (`repos.toml`), a file, or a file at a line (`code --goto`); a new window;
+     compare two files (`code --diff`). Only paths that exist, or names from `repos.toml`, reach the
+     `code` command; never model text.
+   - Code from `write_code` opens straight in VS Code as a new file.
+   - Later, Red's own small VS Code extension (TypeScript), talking to Red on loopback with a token:
+     insert at the cursor, "explain what I selected", "what's this error?" (the Problems list), which
+     file is open. Spike it before building.
+2. **Spotify**
+   - No account: open Spotify, play/pause/next/back (media keys, already there), "search Spotify for X"
+     (a `spotify:search:` link), "what's playing?" (the Windows media session through PowerShell).
+   - With sign-in (optional): "play Believer on Spotify", playlists, like this song. The Spotify Web
+     API with PKCE (no secret). Check Spotify's current developer rules first: playback control needs
+     Premium, and new developer apps have limits.
+3. **WhatsApp** (WhatsApp Desktop)
+   - "Message Rahul on WhatsApp: running late" opens the chat with the text filled in
+     (`whatsapp://send?phone=…&text=…`), with numbers from `contacts.toml` (a new optional phone field;
+     old files keep working). Red reads the message back, then presses Enter only on a clear yes and only
+     with WhatsApp's window in front. Check that the link works on this PC first.
+   - Open WhatsApp or a chat. **No reading messages:** WhatsApp has no API for personal accounts, and
+     Red doesn't scrape apps.
+4. **Discord**
+   - Open Discord, open a server or channel (`discord://` links saved by name), mute/unmute and deafen
+     (Red presses the keybinds the user sets in Discord).
+   - **No reading or sending messages as the user.** Automating a user account breaks Discord's terms
+     and can get the account banned. A bot in the user's own server can come later if wanted.
+5. **Mail**
+   - Gmail (already there): add "anything important in my inbox?" (the top few by sender and subject,
+     in one breath) and drafts in your style (a few of your own sent mails as examples; the draft opens
+     in the chat window; sending is still read back once).
+   - Other mail (Outlook.com, Yahoo, college mail): IMAP and SMTP with an app password, using Python's
+     own `imaplib` and `smtplib`, so check, read, reply and send work like Gmail.
+6. **Others, after these** (the user picks the order): Telegram Desktop (`tg://` links), launching
+   installed Steam games by name (`steam://` links), Notion, browser tabs, OneDrive.
+- **Files:** `red/plugins/vscode/`, `spotify/`, `whatsapp/`, `discord/`, `mail_imap/` (new);
+  `red/tools/gmail.py`; `red/secrets.py` (new, DPAPI); `contacts.example.toml`.
+- **Check:** unit tests with fakes for every plugin (no real app opens in a test); each one tried by
+  the user.
+
+#### B4. To-dos and "what did I do today?"
 Only when asked, never spoken unasked (see the goal).
 1. A local to-do list (`RED_HOME\memory\todo.json`): "add finish the slides", "what's left?", "mark the
    slides done", "clear done ones".
@@ -185,7 +236,7 @@ Only when asked, never spoken unasked (see the goal).
 - **Files:** `red/plugins/todo/` (new).
 - **Check:** unit tests; the recap of a real day read to the user.
 
-#### B4. More first plugins
+#### B5. More small plugins
 Small, each its own plugin; build in this order and let the user reorder:
 1. **Notes:** "note that…", "what did I note about X?" (markdown files in a folder you choose; works
    with an Obsidian vault).
@@ -198,12 +249,6 @@ Small, each its own plugin; build in this order and let the user reorder:
 7. **Focus timer:** "25 minutes of focus" with a soft chime at the end.
 8. **Fun:** 20 questions, would-you-rather, a quick quiz. A companion should be fun.
 - **Check:** each plugin has unit tests and appears on the Plugins page.
-
-#### B5. Better mail
-1. "Anything important in my inbox?": the top few by sender and subject, in one breath.
-2. Drafts in your style: Red reads a few of your own sent mails (on the PC) as examples. A draft
-   opens in the chat window to edit; sending is still read back once.
-- **Files:** `red/tools/gmail.py`, `red/tools/mail.py`.
 
 #### B6. Jobs with several steps (work mode)
 "Find last week's report, summarise it and mail it to Rahul." Red shows the plan in the chat window,
@@ -275,14 +320,14 @@ moving to the TTS loudness. Click it to open the chat window; drag it anywhere; 
 Show the user 2–3 sketches rendered offscreen before building.
 
 **Needed from the user:** a reboot test (old task 2), listening to personality samples (A1), a day of
-greetings (A3), 10 code requests (B2), the wake corpus and 100 tries (C1), picking the male voice (C2),
+greetings (A3), 10 code requests (B2), trying each app plugin and signing in to Spotify if wanted
+(B3), the wake corpus and 100 tries (C1), picking the male voice (C2),
 the glow design (D1), picking the character sketch (D2).
 
 ### For the user to decide
 - **Chattiness default:** Friendly (greetings only) is the plan's default. Chatty instead?
-- **Name in greetings:** say your name, or just "Hey"?
-- **Spotify, Discord, Outlook, WhatsApp:** each needs an account or key. The Rules allow only the
-  user's Google account. Media keys and opening apps need no account.
+- **Decided 2026-11-13:** Red uses the user's name (A2, A3). Spotify, Discord, WhatsApp, mail and VS
+  Code plugins are wanted, with sign-ins where needed (B3).
 - **Mascot shape:** the Rules forbid rounded edges and an outline on the glow. Does that apply to the
   character too?
 
@@ -334,7 +379,7 @@ Done when "open Edge" takes 1–3 s, a question or chat's first word 1–2 s, an
 - **Speech-to-text:** Whisper model (`base.en` / `small.en`) and device.
 - **Browser:** `RED_BROWSER` and the search engine.
 - **Web search:** on or off, with the privacy note, and whether SearXNG is running.
-- **Accounts:** Google sign-in and sign-out.
+- **Accounts:** sign in and out of Google, Spotify and other mail.
 - **General:** start with Windows (`red/startup.py`).
 
 Also later: Ollama that reuses the cached prompt for Qwen3.5 (check each new Ollama release,
@@ -366,8 +411,12 @@ Don't:
 - Don't let Red claim things that aren't true (seeing images, music playing, a body, a page that didn't
   open).
 - Don't send voice, screen, memory or the AI's work to any cloud service. Red is local-only. Public
-  look-ups (Wikipedia, weather, news, YouTube search) are fine, and so is the user's own Google mail and
-  calendar after they sign in.
+  look-ups (Wikipedia, weather, news, YouTube search) are fine.
+- Accounts: Red talks only to services the user signs into through Red (Google, and plugins such as
+  Spotify or other mail), and sends each one only what that service needs. Tokens are encrypted with
+  DPAPI and never go into git.
+- Don't automate a user account where the service forbids it (Discord), and don't scrape apps
+  (WhatsApp).
 - Don't put the user's memory files, voice clips or wake corpus in git.
 - Don't build for Mac, Linux or other languages.
 - Don't install packages with unsigned native DLLs. Smart App Control blocks them (it blocked `winrt-*`).
