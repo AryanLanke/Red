@@ -64,6 +64,12 @@ def phrase_key(text: str) -> str:
     return " ".join(_words(text)[:2])
 
 
+def _separated_after_two_words(text: str) -> bool:
+    """Is there a comma, full stop, '!' or '?' right after the transcript's second word?"""
+    m = re.match(r"\s*[^\w']*[\w'-]+[\s,.!?-]+[\w']+(\s*[,.!?])", text)
+    return bool(m)
+
+
 def collapse_repeats(words: list[str]) -> list[str]:
     """'hey red red red red' and 'hey red hey red hey red' (Whisper repeats the phrase) -> 'hey red'."""
     out: list[str] = []
@@ -88,6 +94,11 @@ def match_score(text: str, personal: frozenset[str] = frozenset(), head: bool = 
     (from python -m red voice-setup); those count as a strong match.
     """
     words = collapse_repeats(_words(text))
+    # "Hey Red, open YouTube": Whisper puts a comma (or a full stop) after a wake phrase that has a
+    # command after it, and none in a misheard "a red light" ("Hey Red Light"). So the words after
+    # a separated "Hey Red" don't count against it.
+    if not head and len(words) > 2 and _separated_after_two_words(text):
+        head = True
     if head:
         words = words[:2]                # the rest of the sentence was cut off; only its start counts
     if not words or len(words) > 4:

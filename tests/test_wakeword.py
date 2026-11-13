@@ -12,8 +12,10 @@ from voice_fakes import noise, tone
     ("hey red.", 1.0),
     ("Hay Red", 1.0),
     ("Heyred", 0.9),
-    ("Hey Red, stop.", 0.45),          # below the default threshold of 0.5
-    ("Hey Red Light", 0.45),
+    ("Hey Red, stop.", 1.0),           # a comma after "Hey Red": a command follows
+    ("Hey Red. Open YouTube.", 1.0),
+    ("Hey Red Light", 0.45),           # no comma: maybe a misheard "a red light", below 0.5
+    ("Hey red one two", 0.45),
     ("Hi Red", 0.7),
     ("Ey Red", 0.7),
     ("Heyy Red", 0.7),
@@ -126,7 +128,24 @@ def test_the_other_things_heard_in_that_test_stay_asleep(heard):
 def test_head_mode_looks_only_at_the_first_two_words():
     assert match_score("Hey Red, open YouTube and search", head=True) == 1.0
     assert match_score("I said hey red", head=True) == 0.0
-    assert match_score("Hey Red, open YouTube and search") < 0.5
+    assert match_score("Hey Red open YouTube and search") < 0.5
+
+
+# Short "Hey Red, <words>" clips from red.log that scored 0.45 or 0.32 and so never woke Red.
+@pytest.mark.parametrize("heard, expected", [
+    ("Hey Red, don't know", 1.0),
+    ("Hey Red, don't walk", 1.0),
+    ("Hi Red, what's up?", 0.7),
+    ("Hey Red, what's the weather like today?", 1.0),
+])
+def test_hey_red_with_a_command_in_one_breath_wakes(heard, expected):
+    assert match_score(heard) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("heard", ["I read, the red book", "They said red, then left", "Hey, Fred, come here",
+                                   "A red light, then green", "Hey there, red car"])
+def test_a_comma_alone_does_not_make_a_wake_phrase(heard):
+    assert match_score(heard) < 0.5
 
 
 def test_too_short_bursts_are_skipped():
