@@ -157,6 +157,54 @@ def test_a_speaker_without_synthesize_says_each_sentence():
     assert said == ["One.", "Two."] and texts == ["One.", "One. Two."]
 
 
+@pytest.mark.parametrize("text, pause", [
+    ("Done.", sp.SENTENCE_PAUSE),
+    ("Really?", sp.SENTENCE_PAUSE),
+    ("Well,", sp.COMMA_PAUSE),
+    ("some people do...", sp.LONG_PAUSE),
+    ("I mean…", sp.LONG_PAUSE),
+    ("and then -", sp.LONG_PAUSE),
+    ('He said "wait..."', sp.LONG_PAUSE),
+])
+def test_the_pause_follows_the_punctuation(text, pause):
+    assert sp.pause_after(text) == pause
+
+
+def test_short_sentences_stay_whole():
+    assert sp.speech_pieces("Okay, sure, why not.") == ["Okay, sure, why not."]
+
+
+def test_a_trail_off_is_its_own_piece():
+    assert sp.speech_pieces("Rust if you enjoy arguing with a compiler... some people really do.") == [
+        "Rust if you enjoy arguing with a compiler...", "some people really do."]
+
+
+def test_a_long_sentence_is_cut_at_its_commas():
+    long = ("If you want to ship something this month, pick Go, because the tooling is simple "
+            "and the builds are fast, and you can always learn Rust later.")
+    pieces = sp.speech_pieces(long)
+    assert len(pieces) == 3 and " ".join(pieces) == long
+    assert pieces[0].endswith("month,") and pieces[1].endswith("fast,")
+
+
+def test_no_scraps_from_cutting():
+    pieces = sp.speech_pieces("Well, " + "this sentence is long enough to be cut at its commas " * 2 + "ok.")
+    assert all(len(p) >= 20 for p in pieces)
+
+
+def test_pieces_are_spoken_with_their_own_pauses():
+    voice = Voice()
+    slept = []
+    stream = sp.SpeechStream(voice, sleep=slept.append)
+    stream.say("Rust if you enjoy arguing with a compiler... some people really do.")
+    stream.say("Two.")
+    stream.finish(timeout=5)
+    made = [line for line in voice.log if line.startswith("make")]
+    assert made == ["make Rust if you enjoy arguing with a compiler...",
+                    "make some people really do.", "make Two."]
+    assert slept == [sp.LONG_PAUSE, sp.SENTENCE_PAUSE]
+
+
 def test_speaking_to_is_per_thread_and_restored():
     stream = sp.SpeechStream(Voice())
     assert sp.current() is None

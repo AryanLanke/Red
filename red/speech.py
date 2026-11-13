@@ -186,7 +186,53 @@ def speaking_to(stream: "SpeechStream | None"):
 
 _DONE = object()
 
-_INTER_SENTENCE_PAUSE = 0.12   # a human beat between sentences, so Red doesn't sound robotic
+# A human beat after each piece, from its punctuation, so Red doesn't sound robotic.
+COMMA_PAUSE = 0.15
+SENTENCE_PAUSE = 0.3
+LONG_PAUSE = 0.5               # "..." or a dash: a trailing-off beat
+LONG_SENTENCE = 90             # characters; longer sentences are cut at commas
+_MIN_PIECE = 20                # never cut off a scrap shorter than this
+
+_TRAIL = re.compile(r"(?:\.\.\.|…|\s[-–—]|[-–—])$")
+# Where a sentence may be cut: after "..." or a spaced dash always, after a comma
+# or semicolon only in a long sentence.
+_TRAIL_CUT = re.compile(r"(?:\.\.\.|…)(?=\s)|\s[-–—](?=\s)")
+_COMMA_CUT = re.compile(r"[,;](?=\s)")
+
+
+def pause_after(text: str) -> float:
+    """How long to wait after saying `text`, from how it ends."""
+    text = text.rstrip(" \"')]”’")
+    if _TRAIL.search(text):
+        return LONG_PAUSE
+    if text.endswith((",", ";", ":")):
+        return COMMA_PAUSE
+    return SENTENCE_PAUSE
+
+
+def _cut(text: str, pattern: re.Pattern) -> list[str]:
+    pieces, start = [], 0
+    for m in pattern.finditer(text):
+        head = text[start:m.end()].strip()
+        rest = text[m.end():].strip()
+        if len(head) >= _MIN_PIECE and len(rest) >= _MIN_PIECE:
+            pieces.append(head)
+            start = m.end()
+    pieces.append(text[start:].strip())
+    return [p for p in pieces if p]
+
+
+def speech_pieces(sentence: str, long_sentence: int = LONG_SENTENCE) -> list[str]:
+    """One sentence as the pieces to say, each followed by its own pause.
+
+    "Rust if you like compilers... some people do." trails off at the "...";
+    a long sentence is cut at its commas so the voice's intonation resets.
+    """
+    sentence = " ".join(sentence.split())
+    pieces = []
+    for part in _cut(sentence, _TRAIL_CUT):
+        pieces.extend(_cut(part, _COMMA_CUT) if len(part) > long_sentence else [part])
+    return pieces
 
 
 class SpeechStream:
@@ -198,10 +244,12 @@ class SpeechStream:
     """
 
     def __init__(self, speaker, on_text: Callable[[str], None] | None = None,
-                 clock: Callable[[], float] = time.perf_counter):
+                 clock: Callable[[], float] = time.perf_counter,
+                 sleep: Callable[[float], None] = time.sleep):
         self.speaker = speaker
         self.on_text = on_text            # the text so far, for the overlay
         self._clock = clock
+        self._sleep = sleep
         self._queue: queue.Queue = queue.Queue()
         self._thread: threading.Thread | None = None
         self.cancelled = False
@@ -246,29 +294,37 @@ class SpeechStream:
         synthesize = getattr(self.speaker, "synthesize", None)
         player = getattr(self.speaker, "player", None)
         playing = False
+        pause = 0.0                                  # after the piece that's playing now
         while True:
             item = self._queue.get()
             if item is _DONE or self.cancelled:
                 break
-            try:
-                if synthesize is None or player is None:
+            if synthesize is None or player is None:
+                try:
                     self._mark_first()
                     self.speaker.say(item, block=True)
-                    continue
-                audio, rate = synthesize(item)       # while the last sentence still plays
-                if self.cancelled:
-                    break
-                if playing:
-                    player.wait()
-                    if not self.cancelled:
-                        time.sleep(_INTER_SENTENCE_PAUSE)
-                if self.cancelled or getattr(audio, "size", 0) == 0:
-                    continue
-                self._mark_first()
-                player.play(audio, rate)
-                playing = True
-            except Exception:  # noqa: BLE001 - no speakers: the text is still shown
-                log.exception("Couldn't speak %r", item[:60])
+                except Exception:  # noqa: BLE001 - no speakers: the text is still shown
+                    log.exception("Couldn't speak %r", item[:60])
+                continue
+            for piece in speech_pieces(item):
+                try:
+                    audio, rate = synthesize(piece)  # while the last piece still plays
+                    if self.cancelled:
+                        break
+                    if playing:
+                        player.wait()
+                        if not self.cancelled:
+                            self._sleep(pause)
+                    if self.cancelled or getattr(audio, "size", 0) == 0:
+                        continue
+                    self._mark_first()
+                    player.play(audio, rate)
+                    playing = True
+                    pause = pause_after(piece)
+                except Exception:  # noqa: BLE001 - no speakers: the text is still shown
+                    log.exception("Couldn't speak %r", piece[:60])
+            if self.cancelled:
+                break
         if playing and not self.cancelled:
             try:
                 player.wait()
