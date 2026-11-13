@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from red.audio import SAMPLE_RATE, to_int16
-from red.wakeword import HeyRedDetector, match_score
+from red.wakeword import HeyRedDetector, match_score, strip_wake_phrase
 from voice_fakes import noise, tone
 
 
@@ -235,6 +235,47 @@ def test_speech_too_faint_to_start_a_clip_logs_why(caplog):
     run(det, noise(1.0), tone(0.7), noise(1.0))
     assert whisper.clips == []
     assert len(skips(caplog)) == 1 and "too faint" in skips(caplog)[0] and "VAD 0.40" in skips(caplog)[0]
+
+
+# "Hey Red, open YouTube" in one breath: the command is kept (plan.md task 1.3).
+
+@pytest.mark.parametrize("heard, command", [
+    ("Hey Red, open YouTube.", "open YouTube."),
+    ("Hey, Red. What's the weather?", "What's the weather?"),
+    ("Hey Red open Edge", "open Edge"),
+    ("Heyred, pause the music", "pause the music"),
+    ("Hey Red, hey Red, open Downloads", "open Downloads"),
+    ("Hi Red, what's up?", "what's up?"),
+    ("Hey Red.", ""),
+    ("Open YouTube", "Open YouTube"),               # no wake phrase: unchanged
+    ("They said red", "They said red"),
+])
+def test_strip_wake_phrase(heard, command):
+    assert strip_wake_phrase(heard) == command
+
+
+def test_strip_wake_phrase_knows_your_own_spelling():
+    assert strip_wake_phrase("Headed, open YouTube", frozenset({"headed"})) == "Headed, open YouTube"
+    assert strip_wake_phrase("Hit it, open YouTube", frozenset({"hit it"})) == "open YouTube"
+
+
+def test_one_breath_wake_keeps_the_burst_as_the_command():
+    det, _, _ = make("Hey Red, open")
+    scores = run(det, noise(1.0), tone(3.0), noise(1.0))
+    assert max(scores) == 1.0
+    assert det.command_audio is not None and det.command_audio.size / SAMPLE_RATE > 1.6
+
+
+def test_hey_red_alone_keeps_no_command():
+    det, _, _ = make("Hey Red.")
+    assert max(run(det, noise(1.0), tone(0.7), noise(1.0))) == 1.0
+    assert det.command_audio is None
+
+
+def test_a_short_hey_red_with_words_keeps_them():
+    det, _, _ = make("Hey Red, stop.")
+    assert max(run(det, noise(1.0), tone(1.0), noise(1.0))) == 1.0
+    assert det.command_audio is not None
 
 
 def test_a_checked_phrase_logs_no_skip(caplog):

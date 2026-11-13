@@ -85,7 +85,8 @@ def test_too_little_speech_saves_nothing(tmp_path):
 def test_personal_phrases_match():
     personal = frozenset({"hey rat"})
     assert match_score("Hey rat.", personal) == 0.9
-    assert match_score("Hey rat, open it", personal) == 0.6
+    assert match_score("Hey rat, open it", personal) == 0.9   # a comma: a command follows
+    assert match_score("Hey rat open it", personal) == 0.6
     assert match_score("Hey rat.") == 0.0                # without the profile: no match
     assert match_score("I saw a rat", personal) == 0.0
 

@@ -234,6 +234,53 @@ def test_cancel_never_asks(world):
     assert "Nothing was scheduled" in speaker.said[-1]
 
 
+class WakeListener(FakeListener):
+    """A listener whose last "Hey Red" came with words after it, in one breath."""
+
+    def __init__(self, audio):
+        super().__init__(None, None, "hey_red")
+        self.wake_audio = audio
+        self.wake_personal = frozenset()
+
+    def take_wake_audio(self):
+        audio, self.wake_audio = self.wake_audio, None
+        return audio
+
+
+def test_hey_red_and_a_command_in_one_breath_runs_the_command(world):
+    app, speaker, _, _, out = make_app(world, "Hey Red, open my downloads.")
+    chimes, records = [], []
+    app.voice.chime = lambda: chimes.append(1)
+    app.voice.record = lambda **kw: records.append(kw) or Audio(32000)
+    app.listener = WakeListener(Audio(24000))
+    app.handle("wakeword")
+    assert records[0]["prefix"].size == 24000           # recording carried on from the wake word
+    assert chimes == []                                 # no beep in the middle of your sentence
+    assert "You said: open my downloads." in out
+    assert speaker.said == ["Opening Downloads."]
+
+
+def test_one_breath_that_was_only_hey_red_asks_for_the_command(world):
+    app, speaker, _, _, out = make_app(world, "Hey Red.", "Open my downloads.")
+    chimes, records = [], []
+    app.voice.chime = lambda: chimes.append(1)
+    app.voice.record = lambda **kw: records.append(kw) or Audio(16000)
+    app.listener = WakeListener(Audio(24000))
+    app.handle("wakeword")
+    assert "prefix" in records[0] and "prefix" not in records[1]
+    assert chimes == [1]                                # then the usual beep and recording
+    assert speaker.said == ["Opening Downloads."]
+
+
+def test_the_hotkey_ignores_a_leftover_wake_command(world):
+    app, speaker, _, _, _ = make_app(world, "Open my downloads.")
+    records = []
+    app.voice.record = lambda **kw: records.append(kw) or Audio(16000)
+    app.listener = WakeListener(Audio(24000))
+    app.handle("hotkey")
+    assert "prefix" not in records[0]
+
+
 def test_silence_and_empty_transcript(world):
     app, speaker, overlay, _, _ = make_app(world, audio_size=0)
     app.handle("hotkey")

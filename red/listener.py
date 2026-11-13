@@ -186,6 +186,8 @@ class Listener:
         # Called (from the wake word or hotkey thread) for "Hey Red" while Red talks.
         self.on_interrupt: Callable[[], None] | None = None
         self._interrupt_open = False
+        # Speech heard with the wake word ("Hey Red, open..."), for the trigger handler to take.
+        self.wake_audio = None
 
     # --- public API ---------------------------------------------------------
 
@@ -244,6 +246,16 @@ class Listener:
             self._pauses = max(0, self._pauses - 1)
             self._cond.notify_all()
 
+    @property
+    def wake_personal(self) -> frozenset:
+        """How Whisper hears this user's "Hey Red" (voice-setup), to strip it from a command."""
+        return frozenset(getattr(self._detector, "personal", ()) or ())
+
+    def take_wake_audio(self):
+        """The speech heard with the last wake word, once (None if it was "Hey Red" alone)."""
+        audio, self.wake_audio = self.wake_audio, None
+        return audio
+
     def allow_interrupt(self, on: bool) -> None:
         """While Red talks: listen for "Hey Red" again, so you can cut in."""
         with self._cond:
@@ -278,6 +290,8 @@ class Listener:
                     log.exception("Interrupt handler failed")
             return
         self._busy.set()
+        if source != "wakeword":
+            self.wake_audio = None
         self._triggers.put(source)
 
     def _work(self) -> None:
@@ -316,6 +330,9 @@ class Listener:
                     while self._should_listen():
                         frame = mic.read()
                         if detector.score(to_int16(frame)) >= self.threshold:
+                            if not self._busy.is_set():
+                                # "Hey Red, open YouTube" in one breath: the command's start.
+                                self.wake_audio = getattr(detector, "command_audio", None)
                             self._fire("wakeword")
                 failures = 0
                 self.last_error = None

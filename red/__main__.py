@@ -421,9 +421,12 @@ class VoiceApp:
         """One conversation: a command, then follow-ups until you say you're done."""
         tool = None
         last = ""
+        take = getattr(self.listener, "take_wake_audio", None)
+        prefix = take() if source == "wakeword" and take is not None else None
         try:
             for turn in range(MAX_FOLLOW_UPS + 1):
-                last, tool, again = self._exchange(tool, follow_up=bool(turn))
+                last, tool, again = self._exchange(tool, follow_up=bool(turn),
+                                                   prefix=None if turn else prefix)
                 # A debate keeps listening even with follow-ups off: that's the whole point.
                 if not again or not (self.settings.follow_up_seconds > 0 or self.chat.is_debate):
                     break
@@ -435,8 +438,8 @@ class VoiceApp:
         finally:
             self._state("idle", last)
 
-    def _record(self, follow_up: bool):
-        """Record one command.
+    def _record(self, follow_up: bool, prefix=None):
+        """Record one command. `prefix`: speech heard with the wake word, to carry on from.
 
         Returns (audio, its transcript if a pause check already made one, how long that check took).
         """
@@ -459,17 +462,24 @@ class VoiceApp:
             kwargs["start_timeout"] = timeout
         if self.settings.quick_end_silence_seconds > 0:
             kwargs["is_complete"] = is_complete
+        if prefix is not None:
+            kwargs["prefix"] = prefix
         audio = self.voice.record(**kwargs)
         if heard and heard["size"] == getattr(audio, "size", None):
             return audio, heard["text"], heard["seconds"]
         return audio, None, 0.0
 
-    def _exchange(self, tool, *, follow_up: bool):
-        """Listen once and answer. Returns (last reply, tool, whether to keep listening)."""
+    def _exchange(self, tool, *, follow_up: bool, prefix=None):
+        """Listen once and answer. Returns (last reply, tool, whether to keep listening).
+
+        `prefix`: "Hey Red, open..." said in one breath. You're already talking, so no chime:
+        the recording carries on from it, and "Hey Red" is taken off the transcript.
+        """
         self._state("listening", "Listening...")
-        self.voice.chime()
+        if prefix is None:
+            self.voice.chime()
         timer = Timing(self.settings)
-        audio, early, check_seconds = self._record(follow_up)
+        audio, early, check_seconds = self._record(follow_up, prefix)
         timer.recorded(quick=early is not None, check_seconds=check_seconds)
         if getattr(audio, "size", 0) == 0:
             if follow_up:
@@ -482,6 +492,12 @@ class VoiceApp:
         self._state("thinking", "")
         text = early if early is not None else (self.voice.transcriber.transcribe(audio) or "").strip()
         timer.mark("transcribe")
+        if prefix is not None:
+            from .wakeword import strip_wake_phrase
+            text = strip_wake_phrase(text, getattr(self.listener, "wake_personal", frozenset()))
+            if not text:
+                # Only "Hey Red" after all: ask for the command the usual way.
+                return self._exchange(tool, follow_up=follow_up)
         if not text:
             last = "Sorry, I didn't catch that. Could you say it again?"
             self._say(last)

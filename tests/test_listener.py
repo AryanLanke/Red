@@ -225,6 +225,28 @@ def test_wakeword_triggers_and_mic_is_closed_while_handling(listener_factory):
     assert rec.calls == ["wakeword"]
 
 
+def test_the_command_heard_with_the_wake_word_is_handed_over_once(listener_factory):
+    rec = Recorder()
+    det = FakeDetector(fire_at={20})
+    det.command_audio = np.ones(100, np.float32)
+    lst, _, _ = listener_factory(rec, wakeword="hey_red", detector=det)
+    lst.start()
+    assert rec.entered.wait(3)
+    taken = lst.take_wake_audio()
+    assert taken is not None and taken.size == 100
+    assert lst.take_wake_audio() is None
+
+
+def test_the_hotkey_never_gets_a_stale_wake_command(listener_factory):
+    rec = Recorder()
+    lst, _, _ = listener_factory(rec)
+    lst.wake_audio = np.ones(10, np.float32)       # left from an earlier wake
+    lst.start()
+    lst._hotkeys.press()
+    assert rec.entered.wait(3)
+    assert lst.take_wake_audio() is None
+
+
 def test_pause_closes_mic_and_resume_reopens(listener_factory):
     lst, mic, det = listener_factory(Recorder(), wakeword="hey_red")
     lst.start()

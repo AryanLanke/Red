@@ -128,6 +128,25 @@ def match_score(text: str, personal: frozenset[str] = frozenset(), head: bool = 
     return round(hey * red * extra, 3)
 
 
+def strip_wake_phrase(text: str, personal: frozenset[str] = frozenset()) -> str:
+    """'Hey Red, open YouTube.' -> 'open YouTube.'; text that doesn't start with the wake phrase
+    is returned unchanged. Used when the command was said in the same breath as "Hey Red"."""
+    words = collapse_repeats(_words(text))
+    if not words or match_score(text, personal, head=True) <= 0:
+        return text.strip()
+    drop = 1 if words[0] in _MERGED else 2
+    # Skip that many words of the original text (keeping the command's own punctuation and case),
+    # plus any repeats Whisper wrote ("Hey Red, hey Red, open...").
+    rest = text
+    while True:
+        m = re.match(r"\s*[^\w']*" + r"[\w'-]+[^\w']*" * drop, rest)
+        if not m:
+            return text.strip()
+        rest = rest[m.end():]
+        if match_score(rest, personal, head=True) <= 0:
+            return rest.strip()
+
+
 class StreamingVAD:
     """Silero VAD run on a live stream, 512 samples at a time, keeping its state."""
 
@@ -238,6 +257,7 @@ class HeyRedDetector:
         self._start_quiet = self._quiet_before
         self._too_long = False
         self._soft_peak = self._soft_peak_audio = 0.0
+        self.command_audio: np.ndarray | None = None
 
     def _chunks_for(self, seconds: float) -> int:
         return int(round(seconds * SAMPLE_RATE / VAD_CHUNK))
@@ -257,6 +277,11 @@ class HeyRedDetector:
                  "start of a longer phrase" if head else "short phrase", float(np.abs(clip).max()))
         if score > 0 and self.owner is not None and not self.owner(clip):
             return 0.0                       # the right words, but not your voice
+        # "Hey Red, open YouTube" in one breath: keep the whole burst so far, so the command
+        # in it isn't lost (the Listener hands it to the recording, which carries on from it).
+        self.command_audio = None
+        if score > 0 and (head or len(collapse_repeats(_words(text))) > 2):
+            self.command_audio = np.concatenate(self._clip)
         return score
 
     def _skip(self, reason: str) -> None:
