@@ -1,0 +1,11 @@
+{
+  "name": "red-avatar-render",
+  "private": true,
+  "description": "Renders a VRM avatar into 2D sprite frames for Red's companion window (build-time tool, never shipped).",
+  "type": "module",
+  "dependencies": {
+    "@pixiv/three-vrm": "3.5.5",
+    "puppeteer-core": "25.12.0",
+    "three": "0.184.0"
+  }
+}
