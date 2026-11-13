@@ -68,6 +68,8 @@ class Sprites:
     px_per_metre: float
     sizes: dict                  # set -> (width, height)
     frames: dict = field(default_factory=dict)
+    name: str = ""
+    voice: str | None = None     # the Kokoro voice for its pickup clips; None: Red's voice
 
     def has(self, name: str) -> bool:
         return name in self.frames
@@ -81,7 +83,10 @@ def load_sprites(folder: Path) -> Sprites:
     """Read frames.json from a finished sprite folder. Raises FileNotFoundError if it isn't there."""
     folder = Path(folder)
     meta = json.loads((folder / "frames.json").read_text(encoding="utf-8"))
-    sprites = Sprites(folder, float(meta["pxPerMetre"]), {})
+    known = COMPANIONS.get(folder.name, {})
+    sprites = Sprites(folder, float(meta["pxPerMetre"]), {},
+                      name=meta.get("name") or known.get("name") or folder.name.title(),
+                      voice=meta.get("voice") or known.get("voice"))
     for set_name, block in meta["sets"].items():
         sprites.sizes[set_name] = tuple(block["size"])
         for f in block["frames"]:
@@ -91,6 +96,42 @@ def load_sprites(folder: Path) -> Sprites:
     if not sprites.has("peek_idle"):
         raise FileNotFoundError(f"{folder} has no peek_idle frame")
     return sprites
+
+
+def available_companions(models_dir: Path) -> dict[str, str]:
+    """id -> name for every companion whose pictures are installed (scripts/avatar_render/add.py)."""
+    found = {}
+    root = Path(models_dir) / "companion"
+    for meta_path in sorted(root.glob("*/frames.json")) if root.is_dir() else []:
+        cid = meta_path.parent.name
+        try:
+            name = json.loads(meta_path.read_text(encoding="utf-8")).get("name")
+        except (OSError, ValueError):
+            continue
+        found[cid] = name or COMPANIONS.get(cid, {}).get("name") or cid.title()
+    return found
+
+
+# Where the companion sits on the bottom of the screen, and the frame set for it.
+SIDES = {"edge": "peek", "left": "cornerL", "right": "cornerR"}
+
+
+def frame_for_side(name: str, side: str, available: Callable[[str], bool] = lambda n: True) -> str:
+    """A peek_* frame turned into the same frame for a corner, if the model has it."""
+    prefix = SIDES.get(side, "peek")
+    if prefix == "peek" or not name.startswith("peek_"):
+        return name
+    corner = prefix + name[len("peek"):]
+    return corner if available(corner) else name
+
+
+def side_for(x: float, left: float, right: float, snap: float) -> str:
+    """Dropped within `snap` pixels of a side of the screen: that corner. Otherwise the bottom edge."""
+    if x >= right - snap:
+        return "right"
+    if x <= left + snap:
+        return "left"
+    return "edge"
 
 
 # --------------------------------------------------------------------------

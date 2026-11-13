@@ -25,9 +25,9 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from . import (COMPANIONS, SIZES, SLEEP_AFTER_SECONDS, Look, MouthMeter, Sprites, clip_paths,
-               companion_folder, emotion_from_text, kokoro_synthesizer, load_sprites, make_clips,
-               mark_for, meter_speaker, pick_frame, play_clip)
+from . import (SIDES, SIZES, SLEEP_AFTER_SECONDS, Look, MouthMeter, Sprites, available_companions,
+               clip_paths, companion_folder, emotion_from_text, frame_for_side, kokoro_synthesizer,
+               load_sprites, make_clips, mark_for, meter_speaker, pick_frame, play_clip, side_for)
 from ..overlay import STATES, Overlay, _check_state, _clean
 
 log = logging.getLogger(__name__)
@@ -45,6 +45,7 @@ GREETING_SECONDS = 1.6
 EMOTION_HOLD = 4.0         # an emotion lingers this long after Red stops talking
 FAST, NORMAL, SLOW = 33, 100, 500      # timer intervals (ms): animating, awake, asleep
 SIDE_PAD = 24
+CORNER_SNAP = 180          # dropped this close to a side of the screen: it goes into that corner
 
 
 def fullscreen_app_in_front() -> bool:
@@ -127,6 +128,7 @@ def _window_class():
             self.pickup_clips: list[Path] = []
             self.drop_clips: list[Path] = []
             self.x_center: float | None = None
+            self.side = "right"                          # edge, left or right (a bottom corner)
             self.load(sprites)
             self._restore()
 
@@ -154,14 +156,25 @@ def _window_class():
                 pm.setDevicePixelRatio(dpr)
                 self.pixmaps[name] = pm
             peek = self.pixmaps["peek_idle"]
-            self.peek_w = peek.width() / dpr
-            self.peek_h = peek.height() / dpr
-            body = next((p for n, p in self.pixmaps.items() if n.startswith("body_")), peek)
-            self.body_w = body.width() / dpr
-            self.body_h = body.height() / dpr
+            self.set_size = {}                           # frame set -> (width, height) on screen
+            for set_name in ("peek", "cornerR", "cornerL", "body"):
+                pm = next((p for n, p in self.pixmaps.items() if n.startswith(set_name + "_")), None)
+                if pm is not None:
+                    self.set_size[set_name] = (pm.width() / dpr, pm.height() / dpr)
+            self.body_w, self.body_h = self.set_size.get("body", self.set_size["peek"])
 
         def has(self, name: str) -> bool:
             return name in self.pixmaps
+
+        @property
+        def prefix(self) -> str:
+            """The frame set for where it sits; a corner the model has no frames for is the edge."""
+            prefix = SIDES.get(self.side, "peek")
+            return prefix if prefix in self.set_size else "peek"
+
+        @property
+        def perch_size(self) -> tuple[float, float]:
+            return self.set_size[self.prefix]
 
         def mark_point(self, name: str, key: str = "head") -> QPointF:
             """A mark of the current frame, in the frame's display pixels."""
@@ -172,17 +185,40 @@ def _window_class():
         # --- where it sits ---------------------------------------------------
 
         def perch(self) -> None:
-            """Sit on the bottom edge at x_center (the middle of the character)."""
+            """Sit in a bottom corner (side left/right, flush with the screen's side) or on the bottom
+            edge at x_center (the middle of the character)."""
             area = QGuiApplication.primaryScreen().availableGeometry() if self.x_center is None \
                 else self._area_for(self.x_center)
-            if self.x_center is None:
-                self.x_center = area.right() - self.peek_w / 2 - SIDE_PAD
-            half = self.peek_w / 2
-            self.x_center = min(max(self.x_center, area.left() + half), area.right() - half)
-            width = max(self.peek_w, BUBBLE_WIDTH) + 2 * SIDE_PAD
-            height = BUBBLE_SPACE + self.peek_h
-            self.setGeometry(round(self.x_center - width / 2), round(area.bottom() + 1 - height),
-                             round(width), round(height))
+            w, h = self.perch_size
+            width = max(w, BUBBLE_WIDTH) + (SIDE_PAD if self.prefix != "peek" else 2 * SIDE_PAD)
+            height = BUBBLE_SPACE + h
+            top = round(area.bottom() + 1 - height)
+            if self.prefix == "cornerR":
+                left = area.right() + 1 - width
+                self.x_center = area.right() + 1 - w / 2
+            elif self.prefix == "cornerL":
+                left = area.left()
+                self.x_center = area.left() + w / 2
+            else:
+                if self.x_center is None:
+                    self.x_center = area.right() - w / 2 - SIDE_PAD
+                self.x_center = min(max(self.x_center, area.left() + w / 2), area.right() - w / 2)
+                left = self.x_center - width / 2
+            self.setGeometry(round(left), top, round(width), round(height))
+
+        def sprite_left(self, w: float) -> float:
+            """Where the picture starts inside the window: flush with the screen side in a corner."""
+            if self.prefix == "cornerR":
+                return self.width() - w
+            if self.prefix == "cornerL":
+                return 0.0
+            return (self.width() - w) / 2
+
+        def place(self, side: str) -> None:
+            self.side = side if side in SIDES else "edge"
+            self.perch()
+            self._save()
+            self.until["notice"] = self.clock() + NOTICE_SECONDS
 
         def _area_for(self, x: float):
             for screen in QGuiApplication.screens():
@@ -194,7 +230,8 @@ def _window_class():
         def _restore(self) -> None:
             try:
                 saved = json.loads(Path(self.state_file).read_text(encoding="utf-8")) if self.state_file else {}
-                self.x_center = float(saved["x"]) if "x" in saved else None
+                self.x_center = float(saved["x"]) if saved.get("x") is not None else None
+                self.side = saved.get("side", "right") if saved.get("side") in SIDES else "right"
             except (OSError, ValueError, KeyError, TypeError):
                 self.x_center = None
             self.perch()
@@ -204,8 +241,8 @@ def _window_class():
                 return
             try:
                 Path(self.state_file).parent.mkdir(parents=True, exist_ok=True)
-                Path(self.state_file).write_text(json.dumps({"x": self.x_center, "companion": self.companion}),
-                                                 encoding="utf-8")
+                Path(self.state_file).write_text(json.dumps({"x": self.x_center, "side": self.side,
+                                                             "companion": self.companion}), encoding="utf-8")
             except OSError:
                 log.debug("Couldn't save the companion's spot", exc_info=True)
 
@@ -216,6 +253,8 @@ def _window_class():
             previous = self.look.state
             if state != "idle":
                 self.last_activity = now
+                if not self.isVisible() and not self.hidden_for_fullscreen:
+                    self.show()                          # "Hide until Red talks"
             if previous == "sleeping" and state != "idle":
                 self.until["notice"] = now + NOTICE_SECONDS
             if state == "listening" and previous in ("idle", "sleeping"):
@@ -270,14 +309,14 @@ def _window_class():
             look.mouth = self.meter.level() if look.state == "speaking" else 0.0
             look.emotion = "happy" if "hover" in self.until else self.turn_emotion
 
+            if look.falling:
+                self._fall(now)                          # may land, so before the frame is picked
             shown = Look(**vars(look))
             if "greeting" in self.until:
                 shown.state, shown.since = "greeting", self.until["greeting"] - GREETING_SECONDS
             elif "notice" in self.until and look.state in ("listening", "idle", "sleeping"):
                 shown.state = "notice"
-            if look.falling:
-                self._fall(now)
-            self.frame_name = pick_frame(shown, now, self.has)
+            self.frame_name = frame_for_side(pick_frame(shown, now, self.has), self.side, self.has)
             self.shown = shown
 
             busy = (look.dragging or look.falling or look.state in ("speaking", "greeting") or self.until
@@ -327,6 +366,8 @@ def _window_class():
                 self.look.falling = True
                 self.fall_v = 0.0
                 self.fall_y = self.geometry().top()
+                area = self._area_for(pos.x())
+                self.side = side_for(pos.x(), area.left(), area.right(), CORNER_SNAP)
                 self._sound(self.drop_clips)
                 self._speed(FAST)
                 return
@@ -373,7 +414,7 @@ def _window_class():
             # the whole body to peeking happens with the head in the same place.
             grab_to_head = self.mark_point("body_drop").y() - self.grab_offset.y()
             head_y = self.fall_y + self.hold.y() + grab_to_head
-            peek_head_y = area.bottom() + 1 - self.peek_h + self.mark_point("peek_idle").y()
+            peek_head_y = area.bottom() + 1 - self.perch_size[1] + self.mark_point(f"{self.prefix}_idle").y()
             if head_y >= peek_head_y:
                 self.look.falling = False
                 self.x_center = self.drag_pos.x()
@@ -418,10 +459,17 @@ def _window_class():
             menu = QMenu()
             if self.on_click:
                 menu.addAction("Open chat", self.on_click)
+            menu.addSeparator()
+            for side, label in (("left", "Sit in the left corner"), ("edge", "Sit on the bottom edge"),
+                                ("right", "Sit in the right corner")):
+                if side != self.side:
+                    menu.addAction(label, functools.partial(self.place, side))
             if self.models_dir is not None:
-                for cid, info in COMPANIONS.items():
-                    if cid != self.companion and (companion_folder(self.models_dir, cid) / "frames.json").exists():
-                        menu.addAction(f"Switch to {info['name']}", functools.partial(self.switch, cid))
+                menu.addSeparator()
+                for cid, name in available_companions(self.models_dir).items():
+                    if cid != self.companion:
+                        menu.addAction(f"Switch to {name}", functools.partial(self.switch, cid))
+            menu.addSeparator()
             menu.addAction("Hide until Red talks", self.hide)
             menu.exec(event.globalPos())
 
@@ -439,8 +487,9 @@ def _window_class():
             self.until["notice"] = self.clock() + NOTICE_SECONDS
 
         def _clips_for(self, companion: str, default_voice: str | None) -> tuple[list[Path], list[Path], str]:
-            voice = COMPANIONS.get(companion, {}).get("voice") or default_voice or "af_heart"
-            folder = companion_folder(self.models_dir, companion) if self.models_dir else self.sprites.folder
+            voice = self.sprites.voice or default_voice or getattr(self, "default_voice", None) or "af_heart"
+            self.default_voice = default_voice or getattr(self, "default_voice", None)
+            folder = self.sprites.folder
             return clip_paths(folder, voice, "pickup"), clip_paths(folder, voice, "drop"), voice
 
         def set_clips(self, clips) -> None:
@@ -460,7 +509,7 @@ def _window_class():
                 self._paint_dangling(p, pm, w, h, now)
                 p.end()
                 return
-            left = (self.width() - w) / 2
+            left = self.sprite_left(w)
             top = self.height() - h
             asleep = self.look.state == "sleeping"
             breath = (0.014 if asleep else 0.007) * math.sin(now * 2 * math.pi / (5.0 if asleep else 3.6))
@@ -611,13 +660,12 @@ class CompanionOverlay(Overlay):
         import threading
 
         def make() -> None:
-            for cid, info in COMPANIONS.items():
-                folder = companion_folder(self.window.models_dir, cid)
-                if (folder / "frames.json").exists():
-                    try:
-                        make_clips(folder, info["voice"] or voice or "af_heart", synthesize)
-                    except Exception:  # noqa: BLE001 - sounds are a nicety
-                        log.exception("Couldn't make the pickup clips for %s", cid)
+            for cid in available_companions(self.window.models_dir):
+                try:
+                    sprites = load_sprites(companion_folder(self.window.models_dir, cid))
+                    make_clips(sprites.folder, sprites.voice or voice or "af_heart", synthesize)
+                except Exception:  # noqa: BLE001 - sounds are a nicety
+                    log.exception("Couldn't make the pickup clips for %s", cid)
         threading.Thread(target=make, name="red-companion-clips", daemon=True).start()
 
     def close(self) -> None:
@@ -641,7 +689,9 @@ def companion_overlay(settings) -> CompanionOverlay:
             companion = json.loads(state_file.read_text(encoding="utf-8")).get("companion")
         except (OSError, ValueError, AttributeError):
             companion = None
-    companion = companion if companion in COMPANIONS else "red"
+    installed = available_companions(models_dir)
+    if companion not in installed:
+        companion = "red" if "red" in installed else next(iter(installed), "red")
     sprites = load_sprites(companion_folder(models_dir, companion))
     return CompanionOverlay(sprites, size=settings.companion_size, models_dir=models_dir,
                             companion=companion, state_file=state_file, voice=settings.voice)

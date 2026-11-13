@@ -8,6 +8,7 @@ from the environment first, then from RED_HOME\\config\\.env.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -37,8 +38,9 @@ DEFAULT_BROWSER = "chrome"
 # screen edges, the small corner card, Windows notifications, or nothing.
 OVERLAY_CHOICES = ("companion", "glow", "card", "notify", "off")
 DEFAULT_OVERLAY = "companion"
-# The companions with a look today (red/avatar COMPANIONS) and their sizes.
-COMPANION_CHOICES = ("red", "remy", "asha")
+# A companion is any folder in RED_HOME\models\companion (scripts/avatar_render/add.py); its id is
+# the folder name. Red, Remy and Asha come first.
+COMPANION_ID = r"[a-z][a-z0-9_-]{0,31}"
 COMPANION_SIZES = ("small", "medium", "large")
 # Natural pauses mid-sentence run up to about a second, so wait longer than
 # that before deciding you've finished.
@@ -213,8 +215,8 @@ def load_settings(home: Path | None = None) -> Settings:
     if overlay not in OVERLAY_CHOICES:
         raise ValueError(f"RED_OVERLAY must be one of {OVERLAY_CHOICES}, got {overlay!r}")
     companion = (_env("RED_COMPANION") or "").lower() or None
-    if companion is not None and companion not in COMPANION_CHOICES:
-        raise ValueError(f"RED_COMPANION must be one of {COMPANION_CHOICES}, got {companion!r}")
+    if companion is not None and not re.fullmatch(COMPANION_ID, companion):
+        raise ValueError(f"RED_COMPANION must be a companion id like red, remy or asha, got {companion!r}")
     companion_size = (_env("RED_COMPANION_SIZE") or "medium").lower()
     if companion_size not in COMPANION_SIZES:
         raise ValueError(f"RED_COMPANION_SIZE must be one of {COMPANION_SIZES}, got {companion_size!r}")

@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import wave
 
 import numpy as np
@@ -21,15 +22,17 @@ PEEK = ["peek_idle", "peek_idle_blink", "peek_talk_1", "peek_talk_2", "peek_talk
         "peek_angry", "peek_angry_talk", "peek_surprised", "peek_shy", "peek_wave_1", "peek_wave_2",
         "peek_wave_3", "peek_sleep"]
 BODY = ["body_drag_1", "body_drag_2", "body_drag_3", "body_drag_fun", "body_drop"]
+CORNERS = [n.replace("peek_", "cornerR_") for n in PEEK] + [n.replace("peek_", "cornerL_") for n in PEEK]
 
 
 def make_sprites(folder, names=None):
     """A tiny sprite folder like finish.py writes: solid pictures, marks, frames.json."""
     from PIL import Image
     folder.mkdir(parents=True, exist_ok=True)
-    names = names or PEEK + BODY
+    names = names or PEEK + BODY + CORNERS
     sets = {}
-    for set_name, size, head in (("peek", (100, 80), [50, 30]), ("body", (80, 200), [40, 50])):
+    for set_name, size, head in (("peek", (100, 80), [50, 30]), ("cornerR", (70, 90), [30, 30]),
+                                 ("cornerL", (70, 90), [40, 30]), ("body", (80, 200), [40, 50])):
         frames = []
         for name in names:
             if not name.startswith(set_name):
@@ -46,9 +49,35 @@ def make_sprites(folder, names=None):
 def test_load_sprites(tmp_path):
     sprites = load_sprites(make_sprites(tmp_path / "red"))
     assert sprites.px_per_metre == 300
-    assert sprites.sizes == {"peek": (100, 80), "body": (80, 200)}
+    assert sprites.sizes == {"peek": (100, 80), "cornerR": (70, 90), "cornerL": (70, 90), "body": (80, 200)}
+    assert (sprites.name, sprites.voice) == ("Red", None)       # Red speaks with RED_VOICE
     assert sprites.frames["body_drop"].set == "body"
     assert sprites.frames["peek_idle"].marks["head"] == [50, 30]
+
+
+def test_any_installed_model_is_a_companion(tmp_path):
+    models = tmp_path / "models"
+    make_sprites(models / "companion" / "red")
+    bruno = make_sprites(models / "companion" / "bruno")
+    meta = json.loads((bruno / "frames.json").read_text())
+    meta.update(name="Bruno", voice="am_fenrir")
+    (bruno / "frames.json").write_text(json.dumps(meta))
+    (models / "companion" / "empty").mkdir()
+    assert avatar.available_companions(models) == {"bruno": "Bruno", "red": "Red"}
+    assert load_sprites(bruno).voice == "am_fenrir"
+    assert avatar.available_companions(tmp_path / "nothing") == {}
+
+
+def test_corners():
+    have = {"peek_idle", "cornerR_idle", "cornerL_idle", "peek_talk_1"}.__contains__
+    assert avatar.frame_for_side("peek_idle", "right", have) == "cornerR_idle"
+    assert avatar.frame_for_side("peek_idle", "left", have) == "cornerL_idle"
+    assert avatar.frame_for_side("peek_idle", "edge", have) == "peek_idle"
+    assert avatar.frame_for_side("peek_talk_1", "right", have) == "peek_talk_1"   # no corner frame: the edge one
+    assert avatar.frame_for_side("body_drag_1", "right", have) == "body_drag_1"
+    assert avatar.side_for(1900, 0, 1919, 180) == "right"
+    assert avatar.side_for(100, 0, 1919, 180) == "left"
+    assert avatar.side_for(900, 0, 1919, 180) == "edge"
 
 
 def test_load_sprites_needs_peek_idle(tmp_path):
@@ -239,12 +268,19 @@ def test_companion_settings(monkeypatch, tmp_path):
     monkeypatch.setenv("RED_COMPANION_SIZE", "large")
     s = load_settings(tmp_path)
     assert (s.companion, s.companion_size) == ("remy", "large")
-    monkeypatch.setenv("RED_COMPANION", "jarvis")
+    monkeypatch.setenv("RED_COMPANION", "bruno")              # any installed model
+    assert load_settings(tmp_path).companion == "bruno"
+    monkeypatch.setenv("RED_COMPANION", "not a name!")
     with pytest.raises(ValueError):
         load_settings(tmp_path)
 
 
 # --- the window ------------------------------------------------------------------------------------
+
+def as_peek(name):
+    """A frame name with the corner taken out: cornerR_happy -> peek_happy."""
+    return re.sub(r"^corner[LR]_", "peek_", name)
+
 
 @pytest.fixture
 def app():
@@ -277,12 +313,30 @@ def test_window_never_takes_focus(window):
     assert w.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
 
-def test_sits_on_the_bottom_edge(window):
+def test_starts_in_the_bottom_right_corner(window):
     from PySide6.QtGui import QGuiApplication
     w = window.window
     area = QGuiApplication.primaryScreen().availableGeometry()
+    assert w.side == "right"
     assert w.geometry().bottom() == area.bottom()
+    assert w.geometry().right() == area.right()            # flush with the side of the screen
+    w.tick()
+    assert w.frame_name.startswith("cornerR_")
+
+
+def test_corners_and_the_edge(window, tmp_path):
+    from PySide6.QtGui import QGuiApplication
+    w = window.window
+    area = QGuiApplication.primaryScreen().availableGeometry()
+    w.place("left")
+    assert w.geometry().left() == area.left() and w.geometry().bottom() == area.bottom()
+    w.tick()
+    assert w.frame_name.startswith("cornerL_")
+    w.place("edge")
+    w.tick()
+    assert w.frame_name.startswith("peek_")
     assert area.left() <= w.x_center <= area.right()
+    assert json.loads((tmp_path / "spot.json").read_text())["side"] == "edge"
 
 
 def test_speaking_types_into_a_bubble(app, window):
@@ -307,7 +361,7 @@ def test_greeting_waves(window):
     for _ in range(12):
         window.clock.t += 0.1
         w.tick()
-        frames.add(w.frame_name)
+        frames.add(as_peek(w.frame_name))
     assert {"peek_wave_1", "peek_wave_2", "peek_wave_3"} <= frames
 
 
@@ -326,15 +380,15 @@ def test_falls_asleep_and_wakes(window):
     w = window.window
     window.clock.t += avatar.SLEEP_AFTER_SECONDS + 1
     w.tick()
-    assert w.frame_name == "peek_sleep"
+    assert as_peek(w.frame_name) == "peek_sleep"
     w._apply("listening", "")
-    assert w.frame_name == "peek_notice"
+    assert as_peek(w.frame_name) == "peek_notice"
 
 
 def test_hover_cheers_up(window):
     w = window.window
     w.enterEvent(None)
-    assert w.frame_name == "peek_happy"
+    assert as_peek(w.frame_name) == "peek_happy"
 
 
 def test_click_opens_chat(window):
@@ -370,9 +424,29 @@ def test_pick_up_carry_and_drop(window, tmp_path):
         if not w.look.falling:
             break
     assert not w.look.falling
+    assert w.side == "edge"                                # let go mid-screen: the bottom edge
     assert w.x_center == pytest.approx(start.x() - 160, abs=2)
     assert w.geometry().bottom() == area.bottom()
     assert json.loads((tmp_path / "spot.json").read_text())["x"] == pytest.approx(w.x_center)
+
+
+def test_dropped_near_a_side_goes_into_the_corner(window):
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QGuiApplication
+    w = window.window
+    area = QGuiApplication.primaryScreen().availableGeometry()
+    start = QPointF(area.center().x(), area.bottom() - 20)
+    w.press(start)
+    w.move(QPointF(area.left() + 40, area.top() + 300))
+    w.release(QPointF(area.left() + 40, area.top() + 300))
+    for _ in range(300):
+        window.clock.t += 1 / 30
+        w.tick()
+        if not w.look.falling:
+            break
+    assert w.side == "left"
+    assert w.geometry().left() == area.left()
+    assert w.frame_name == "cornerL_notice"
 
 
 def test_no_pickup_sound_over_reds_voice(window):
