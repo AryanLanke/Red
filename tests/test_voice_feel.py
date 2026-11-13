@@ -197,7 +197,19 @@ def test_ollama_warm_request(monkeypatch):
     monkeypatch.setattr(llm, "_post_json", lambda url, body, **kw: sent.append((url, body)) or {})
     llm.OllamaClient("http://127.0.0.1:11434", "qwen2.5:7b", keep_alive="5m").warm()
     assert sent == [("http://127.0.0.1:11434/api/generate",
-                     {"model": "qwen2.5:7b", "keep_alive": "5m"})]
+                     {"model": "qwen2.5:7b", "keep_alive": "5m", "options": {"num_ctx": 4096}})]
+
+
+def test_ollama_warm_keeps_the_routers_context(monkeypatch):
+    """The keep-warm ping must load the model at the size real calls use, or the next one reloads it."""
+    from red import llm
+    sent = []
+    monkeypatch.setattr(llm, "_post_json", lambda url, body, **kw: sent.append((url, body)) or {})
+    client = llm.OllamaClient("http://127.0.0.1:11434", "qwen3.5:4b", keep_alive="5m")
+    client.options["num_ctx"] = 8192                  # what Router's fit_context sets
+    client.warm()
+    chat = client._body("s", "u", {}, 0.0, None, None, stream=False)
+    assert sent[0][1]["options"]["num_ctx"] == chat["options"]["num_ctx"] == 8192
 
 
 # --- glow geometry and timing (no Qt) ----------------------------------------

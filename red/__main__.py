@@ -572,8 +572,13 @@ class VoiceApp:
             return quick, tool, asks_back(quick)
         self._state("thinking", f"“{text}”")
         try:
-            steps = self.router.route_many(text, context=self.chat.history(CONTEXT_LINES))
-            timer.mark("route")
+            if talk_only(text, tool, self.settings):
+                # Plain talk: straight to the chat, no router call first (red/gate.py).
+                steps = [(text, Router.talk_route())]
+                timer.mark("gate")
+            else:
+                steps = self.router.route_many(text, context=self.chat.history(CONTEXT_LINES))
+                timer.mark("route")
         except (RouteError, LLMError) as e:
             log.warning("Couldn't route %r: %s", text, e)
             last = "Sorry, I didn't understand that. Could you say it another way?"
@@ -776,6 +781,18 @@ class Timing:
 
     def log(self, text: str, tool: str) -> None:
         log.info(self.summary(text, tool))
+
+
+def talk_only(text: str, last_tool: str | None, settings: Settings) -> bool:
+    """True when `text` is plain talk that can skip the router (red/gate.py).
+
+    Not right after a tool: "Blink Crazy by Lisa" after "which song?" or a spelled
+    name after "call me ..." are answers to it, and only the router knows that.
+    """
+    if not getattr(settings, "chat_first", False) or last_tool not in (None, "none"):
+        return False
+    from .gate import needs_router
+    return not needs_router(text)
 
 
 def asks_back(reply: str) -> bool:

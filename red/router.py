@@ -172,6 +172,12 @@ class Router:
             for name, args in options
         ]}
 
+    @staticmethod
+    def talk_route() -> Route:
+        """The route for plain talk that skipped the model (red/gate.py): Chat answers it."""
+        return Route(tool=NONE_TOOL, args={"reply": "Sorry, I lost my train of thought. Say that again?"},
+                     destructive=False)
+
     def route(self, command: str, context: str = "") -> Route:
         """Route one command. `context` is the last few lines of the conversation
         (Chat.history()), so "what's that series about?" knows which series."""

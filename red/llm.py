@@ -300,9 +300,16 @@ class OllamaClient:
         Ollama loads a model when it gets a request with no prompt, and
         generates nothing. Loading takes several seconds the first time, so
         doing it ahead keeps the first command fast.
+
+        It loads the model with the same options as every real call (the context
+        size above all). Without them Ollama loaded it at 4,096 tokens, and the next
+        command, at the router's 8,192, reloaded it and read the whole prompt again:
+        that was the 4 to 32 s "route" on 2026-11-13 after the plugins made the
+        prompt longer.
         """
         _post_json(f"{self.base_url}/api/generate",
-                   {"model": self.model, "keep_alive": self.keep_alive}, timeout=300)
+                   {"model": self.model, "keep_alive": self.keep_alive,
+                    "options": {"num_ctx": 4096, **self.options}}, timeout=300)
 
     def has_model(self) -> bool:
         try:

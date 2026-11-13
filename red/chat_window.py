@@ -155,7 +155,12 @@ def typed_turn(app, text: str) -> str:
             chat.remember(text, quick)
             return quick
         try:
-            steps = router.route_many(text, context=chat.history(getattr(main, "CONTEXT_LINES", 6)))
+            talk_only = getattr(main, "talk_only", None)
+            if talk_only is not None and talk_only(text, None, getattr(app, "settings", None)):
+                from .router import Router
+                steps = [(text, Router.talk_route())]           # plain talk: straight to Chat
+            else:
+                steps = router.route_many(text, context=chat.history(getattr(main, "CONTEXT_LINES", 6)))
         except Exception as e:  # noqa: BLE001 - RouteError, LLMError
             log.warning("Couldn't route typed %r: %s", text, e)
             return "Sorry, I didn't get that. Could you put it another way?"
