@@ -15,6 +15,194 @@ Contents: 1 What Red is · 2 What's wrong now (from your logs) · 3 Where we are
 installer · 11 How it all fits together · 12 Compared with others · 13 Where to publish for free · 14 The
 seven-day project · 15 Decisions for the user · 16 Reference · 17 Rules.
 
+**Tonight first: section 0 (Night 1).** It turns the user's requests of 2026-11-13 into three lanes for three
+unattended sessions, and it wins over section 14's day order where they differ.
+
+---
+
+## 0. Night 1 (2026-11-13 → 14): the overnight build
+
+### 0.1 What the user asked for (2026-11-13, after trying the companion)
+1. **Red still has a woman's voice.** Red is the man (AvatarSample_C). Each companion needs **several voices to
+   pick from** (in the app and the installer), and Red needs several male ones.
+2. **Real reaction sounds, not Kokoro saying "whoa".** Clicking or picking them up sounded like "we who have".
+   Wanted: real short vocal sounds (gasps, "kya!", giggles, "hmm", yawns), **Japanese anime style** because the
+   characters look Japanese, male and female, a choice of sound pack per companion.
+3. **Top corners, upside down.** Left and right bottom corners work; the **top-left and top-right corners
+   hanging upside down** don't exist. Keep every placement: bottom edge, bottom corners, top edge, top corners.
+4. **Their own personality, editable** in the app and the installer. Red: dry, sometimes **gets annoyed
+   quickly when ignored or idle**, loves music: on his own he sometimes **plays a song** (default browser,
+   Spotify, or local music).
+5. **Alive when left alone:** look here and there, act sleepy and fall asleep, move around (walk along the
+   edge, change corners), small idle actions. All companions, not only Red.
+6. **Right-click menu like Desktop Mate:** talk, set a reminder, add a task, the to-do list, play music, move,
+   switch companion, size, sleep/quiet, settings, hide, quit.
+7. **A one-click installer** that also lets you edit the companions' personalities.
+8. Work all night unattended, many small commits pushed to `main` (they count on the user's GitHub graph),
+   test everything yourselves, leave a report.
+
+**How we read the unclear parts** (the user can redirect in the morning):
+- "I see all that Red is hearing" → show what Red heard: a small "you said …" line in the bubble while Red
+  thinks.
+- "do the shortcut" → a hotkey that summons the companion (show it, it waves) and hides it again; plus the
+  menu's quick actions.
+- "gets angry immediately when idle" → a *temper* trait: after long silence or being ignored, a grumbled
+  one-liner ("Still alive over there?"), annoyed face; never insulting, at most once an hour, off when the user
+  says they're upset, never during full-screen apps, calls or games.
+- "plays a song on his own" → at most once every 2 hours while you're at the PC and nothing else plays,
+  only at the `companion` chattiness level, never during calls, full-screen or meetings; he says what he's
+  playing first and stops on "stop". Sources: `play_online` (default browser), Spotify (the existing plugin),
+  or **local music** (a new `play_local`: files under the user's Music folder only, opened with the default
+  player, never a path from model text).
+
+### 0.2 Shared formats (fixed tonight, so the lanes don't wait for each other)
+**Companion pack** (lane 2 owns the loader `red/companions.py`; lane 3's app edits it; lane 1 reads `voice`,
+`voices`, `sounds`). Shipped defaults in the repo `companions/<id>/`; the user's edits in
+`RED_HOME\companions\<id>\` win, field by field.
+```toml
+# companions/red/companion.toml
+id = "red"
+name = "Red"
+wake = ["hey red"]
+voice = { engine = "kokoro", id = "am_michael", speed = 1.0 }        # lane 1 picks the default by ear-proxy tests
+voices = ["am_michael", "am_onyx", "am_puck", "am_fenrir", "bm_george"]   # choices in the app
+sounds = "jp-male-1"                     # reaction sound pack id (below); choices come from installed packs
+avatar = "red"                           # RED_HOME\models\companion\red (sprites)
+humour = "normal"                        # off | light | normal | cheeky
+chattiness = "companion"                 # quiet | friendly | chatty | companion
+temper = "medium"                        # low | medium | high: how fast idleness or bugs annoy them
+likes = ["music", "games", "code"]
+idle = { look_around = true, sleep = true, wander = true, grumble = true, music = true }
+```
+`persona.md` next to it: who they are, how they talk, 6 example exchanges (plan §5.1 rules: no invented life,
+no written laughter). Red = C (the man), Remy = A (music lover), Asha = B (warm, teasing, curious),
+Bruno and Winston text-only until they have looks.
+
+**Sound pack** (lane 1 owns `red/sounds.py`): `RED_HOME\sounds\<pack-id>\pack.toml` + short WAVs named by
+kind: `pickup_1.wav`, `drop_1.wav`, `hover_1.wav`, `surprised_1.wav`, `laugh_1.wav`, `giggle_1.wav`,
+`sigh_1.wav`, `yawn_1.wav`, `hmm_1.wav`, `annoyed_1.wav`, `happy_1.wav`, `sleepy_1.wav`.
+```toml
+name = "Japanese anime, male 1"
+gender = "male"            # male | female
+style = "anime-ja"
+license = "..."            # exact licence and credit line; nothing ships without one
+source = "..."             # where it came from (URL, tool and version, or "recorded")
+```
+API: `red.sounds.packs() -> dict[id, Pack]`, `red.sounds.pick(pack_id, kind) -> Path | None` (random variant),
+`red.sounds.play(path)` (async, never over Red's own voice). The avatar calls `pick` + `play`.
+
+**Events** (lane 2 owns `red/events.py`, ships it in the first hour): a tiny in-process bus,
+`events.on(name, fn)` / `events.emit(name, **payload)`, thread-safe, never raises into the emitter. Names:
+`state(name)`, `heard(text)`, `said(text)`, `emotion(name, strength)`, `companion(id)`, `idle_action(name)`.
+Lane 3 subscribes from the avatar; until it exists, the avatar keeps using `set_state()`.
+
+### 0.3 The three lanes
+Each lane works in its own worktree and branch, commits after every small step, and ships to `main` after
+every finished task (0.4). File ownership is section 16's table plus: lane 1 owns `red/sounds.py`,
+`red/tts*.py`, `scripts/make_sounds*`; lane 2 owns `red/companions.py`, `companions/`, `red/events.py`,
+`red/idle.py` (initiative), `red/tools/`; lane 3 owns `red/avatar/`, `scripts/avatar_render/`, `red/app/`,
+`installer/`, `red/tray.py`. Shared files (`config.py`, `.env.example`, `__main__.py`, `AGENTS.md`,
+`progress.md`, `plan.md`): small edits only, rebase often.
+
+**Lane 1, `night1/voice` (worktree `D:\RED\worktrees\n1-voice`): voices and real sounds.**
+1. **Male voices for Red.** Render the same 3 Red lines with every male Kokoro voice (`am_*`, `bm_*`) to
+   WAVs; measure duration, loudness, pitch (a male voice's median f0 should be < 165 Hz); pick the 5 best as
+   `voices` and the default for Red. Each companion gets its own `voice` from its pack (Remy `af_bella`,
+   Asha `af_kore` unless a better female voice wins the same test). Wire `make_speaker` to the active
+   companion's voice (read `companions/<id>/companion.toml` directly until lane 2's loader lands; then use it).
+   **Done when** Red speaks with a male voice by default and switching companion switches the voice.
+2. **Real reaction sounds, Japanese anime style.** Find sources whose licence allows use, changes and
+   redistribution, in this order: (a) **VOICEVOX** (free, local; per-character terms, most allow commercial
+   use with a credit like "VOICEVOX:ずんだもん"; read each character's terms page and record it), used at build
+   time to make short reactions (わっ!, きゃっ, えへへ, ふふっ, うーん, ふぁ〜 yawn, もう!, はぁ…) for 2 male and 2 female
+   voices; (b) Kokoro's Japanese voices (`jf_*`, `jm_*`, Apache-2.0) if their phonemizer works on this PC
+   without unsigned native DLLs (Smart App Control); (c) CC0 vocal packs (OpenGameArt, Freesound filtered to
+   CC0). **Never** rip anime, games or paid packs. Build at least 4 packs (`jp-male-1`, `jp-male-2`,
+   `jp-female-1`, `jp-female-2`), each with every kind in 0.2, trimmed, normalised to the same loudness,
+   < 1.5 s each, `pack.toml` with licence and credit, and add each source to `THIRD_PARTY.md`. A script
+   `scripts/make_sounds.py` rebuilds them. `red/sounds.py` with the API in 0.2 and tests.
+   **Done when** picking up, dropping, hovering and waking the companion play pack sounds (lane 3 wires the
+   avatar; if lane 3 hasn't by the end, wire the three calls yourself in `red/avatar/window.py` `_sound`).
+3. **Expressive clips in the voice** (plan §6, short): laugh, "mm-hmm", sigh per companion voice from the
+   packs or Kokoro, used by lane 2's tags.
+4. **Voice preview** helper for the app: `red.sounds.preview_voice(voice_id, text)` → WAV path (lane 3's page
+   plays it).
+5. If time is left: plan §14 day 2 lane 1, multi-name wake stage 1 (Whisper-checked names from the packs).
+6. **Lane 1 alone restarts the hidden Red** (`python -m red stop`, then `python -m red background` from
+   `D:\RED\red` after `git -C D:\RED\red pull --ff-only`) once after each batch shipped to `main`, and
+   checks `red.log` for "listening for".
+
+**Lane 2, `night1/companions` (worktree `D:\RED\worktrees\n1-companions`): personalities and life.**
+1. `red/events.py` (0.2), first, shipped within the hour.
+2. `red/companions.py` + `companions/{red,remy,asha,bruno,winston}/companion.toml` + `persona.md`; user
+   overrides in `RED_HOME\companions\`; schema test; active companion from `RED_COMPANION` or the avatar's
+   saved choice (`RED_HOME\cache\companion.json`, key `companion`). The chat prompt uses the active persona;
+   switching companion (menu or "switch to Remy") changes persona, voice (lane 1) and look.
+3. **Personas written with care**, evaluated with `scripts/chat_eval.py` on the real local model (find Red's
+   Ollama port with netstat; never start a second Ollama): 20 lines per companion, 0 invented-life lines,
+   0 written laughter, each sounds different. Numbers in progress.md.
+4. **Emotion tags**: the reply carries a feeling (`[happy]`, `[annoyed]`, …, stripped before speech) or a
+   cheap classifier when the model omits it; emitted as `emotion` events for the avatar (replacing the word
+   guess in `red/avatar emotion_from_text`, which stays as the fallback).
+5. **Idle life and temper** (`red/idle.py`): a scheduler that, while the user is at the PC (input in the last
+   10 min) and nothing important is on (no full-screen, no call, no media for music), emits `idle_action`
+   events (`look_around`, `yawn`, `stretch`, `doze`, `wander`, `hum`) and, by trait, a grumble line (temper)
+   or a self-chosen song (music). Rates and guards in 0.1. Every unasked line goes through the same rules as
+   the greeter. Tests with a fake clock.
+6. **`play_local`** tool (Music folder only, default player, allowlist rules) and the music idle action using
+   `play_online` / Spotify / `play_local`.
+7. Menu actions' back end (for lane 3): `remind(text, when)`, `add_task(text)`, `list_tasks()`, `talk()` as
+   plain functions around the existing tools.
+
+**Lane 3, `night1/shell` (worktree `D:\RED\worktrees\n1-shell`): avatar, menu, app, installer.**
+1. **Top corners, upside down:** `topR_*` and `topL_*` frame sets in `scripts/avatar_render` (hanging from the
+   top corner, a hand gripping the side edge, posed not mirrored), cut at the top and side edges; window
+   placement `top-left` / `top-right`; drop near a top corner snaps there; menu entries. Render all three
+   companions, look at the sheets (and the faces close up) before shipping.
+2. **Idle life frames and motion:** `look_left`, `look_right`, `look_up`, `yawn`, `stretch`, `sleepy` (half
+   lids), `bored` for every placement; the window plays `idle_action` events (or its own timer until lane 2's
+   events land): looks around, yawns, dozes off, wanders along the edge to a new spot with a hop-walk, and
+   now and then moves to another corner by itself. < 2% CPU idle.
+3. **Desktop Mate menu** (0.1 item 6), wired to lane 2's functions (or the existing tools/scheduler directly):
+   small frameless dialogs for the reminder and the task, in the glow look.
+4. **Show what Red heard** in the bubble, and a summon/hide hotkey (default Ctrl+Alt+H; a setting).
+5. **The app's Companions page:** pick companion; voice dropdown with ▶ preview (lane 1's helper); sound pack
+   dropdown with ▶; personality editor (persona text, humour, chattiness, temper, idle switches) writing to
+   `RED_HOME\companions\<id>\`; size and placement. Snapshot renders checked by eye.
+6. **The one-click installer** (plan §10): `installer/build.ps1` (embeddable Python 3.11 + pinned wheels,
+   hashes), Inno Setup (download the pinned installer, verify its hash, install per-user silently), per-user
+   install to `%LOCALAPPDATA%\Red`, Start menu, start with Windows option, uninstaller that asks about memory;
+   the first-run wizard pages including **companion pick, voice pick and personality edit**. Build it, run a
+   silent install into a temp folder, run `red doctor` from the installed copy, uninstall. Models download on
+   first run, not in the installer.
+7. A tray icon (`red/tray.py`) with the same menu, if time is left.
+
+### 0.4 Rules for the night (in addition to section 17)
+- **Branches:** work only in your worktree. Commit after every small working step (`type(scope): what`),
+  push the branch each time (`git push origin HEAD:night1/<lane>`). After each finished task: fetch, rebase
+  on `origin/main`, run the **full** test suite, push `HEAD:main`; retry the rebase on a race. A conflict in a
+  file you don't own: take main's version for their part, keep yours, re-test. Never force-push `main`.
+- **Commit messages through a file** (`git commit -F`), never inline quotes in PowerShell.
+- **Test everything yourself:** unit tests (Qt offscreen, `QT_QPA_FONTDIR=C:\Windows\Fonts`), offscreen
+  renders you open and look at, real-model checks with numbers, audio checked by measurement (duration,
+  loudness, pitch, silence). Tests never use the speakers, the mic, real windows or the real hotkey.
+- **Licences:** every downloaded asset gets its licence and credit recorded before it's used. If unsure,
+  don't ship it; say so in the report.
+- **Never** change `D:\RED\config\.env`, never start a second Ollama, never stop the hidden Red unless you're
+  lane 1, never delete the user's files or memory.
+- `scripts/avatar_render` runs from PowerShell only (headless Edge exits silently under Git Bash).
+- **Report:** after every task, append to `D:\RED\cache\overnight\report-<lane>.md`: what's done (commit
+  hashes), how it was tested (numbers), what's not done and why, what the user should try. When your list
+  is finished (or nothing more can be done without the user), write `D:\RED\cache\overnight\<lane>.done`
+  with one line, and stop.
+- **Usage limit:** you'll be restarted with `--continue` after a limit; on restart, read your report file
+  and `git log` first, finish or discard the half-done step, then go on.
+
+### 0.5 For the user in the morning
+Read the three reports, then: listen to Red's new voice and the sound packs (the app's Companions page),
+drag a companion into each corner including the top ones, right-click it, leave it alone 10 minutes and
+watch, edit a personality in the app, and run the installer build in `installer\out\`.
+
 ---
 
 ## 1. What Red is
