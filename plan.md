@@ -182,20 +182,38 @@ be seen, and a missed "Hey Red" stops being a dead end.
 - **Files:** `red/plugins/code/` (new), `red/chat_window.py`.
 - **Check:** 10 requests from the user; results table in progress.md.
 
-#### B3. App plugins: VS Code, Spotify, WhatsApp, Discord, mail
+#### B3. App plugins: coding tools, Spotify, WhatsApp, Discord, mail
 The user asked for these on 2026-11-13. Each is its own plugin and can be turned off. Each starts with
 what works with no account, and adds a sign-in only where it's needed. Sign-in tokens are stored on the
 PC, encrypted with Windows DPAPI (`CryptProtectData` through ctypes, a signed system API), in
 `RED_HOME\config\`, never in git. An app's data goes only to that app and to the local model.
 
-1. **VS Code** (first; it goes with B2)
-   - Open a project by name (`repos.toml`), a file, or a file at a line (`code --goto`); a new window;
-     compare two files (`code --diff`). Only paths that exist, or names from `repos.toml`, reach the
-     `code` command; never model text.
-   - Code from `write_code` opens straight in VS Code as a new file.
-   - Later, Red's own small VS Code extension (TypeScript), talking to Red on loopback with a token:
-     insert at the cursor, "explain what I selected", "what's this error?" (the Problems list), which
-     file is open. Spike it before building.
+1. **Coding tools: VS Code, Qoder, Freebuff and other coding agents** (first; it goes with B2)
+   The user codes with several tools: VS Code, Qoder (an agentic IDE), Freebuff (Codebuff's free
+   desktop coding agent) and others. Red sits between the user and them, like a friend at the desk.
+   - **Know the tools.** A `[coding]` table in `allowlist.toml` names each tool and how to start it.
+     Found on this PC (2026-11-13): VS Code (`code.cmd` on PATH), Qoder
+     (`%LOCALAPPDATA%\Qoder\Qoder Launcher\Qoder Launcher.exe`), Freebuff
+     (`%LOCALAPPDATA%\Programs\@codebufffreebuff-desktop\Freebuff.exe`). Neither Qoder nor Freebuff has a
+     command on PATH. The first-run wizard finds the installed ones on other PCs.
+   - **Open:** "open Red in Qoder", "open Freebuff", "open plan.md in VS Code at line 40". Project names
+     come from `repos.toml` and files must exist; only those reach the tool's command line, never model
+     text. Spike whether Qoder's launcher and Freebuff take a folder argument (Qoder is a VS Code fork).
+   - **Hand a task to an agent:** "Hey Red, tell Qoder to fix the failing tests in Red." Red reads the
+     task back once, opens the project in that tool, brings its window to the front, and puts the task
+     in the agent's chat box (clipboard, then paste with the tool's chat shortcut). It presses Enter only
+     on a clear yes. The task is the user's own words typed into the app as text, never run as a
+     command. A command-line agent (Claude Code, Codex and the like, when installed) starts in a new
+     terminal in the project, with the task given as one argument (no shell string). Spike each tool:
+     which ones have a reliable chat shortcut or command line.
+   - **"Tell me when it's done":** reuse `notify_when_done` (`red/tools/watch.py`) on that tool's
+     window. The user asked for it, so speaking up when it's done is fine.
+   - **"What did it change?":** a short spoken summary of what the agent changed (`git diff --stat` and
+     new commit messages in that repo, read-only git), with the details in the chat window.
+   - **VS Code extras:** a file at a line (`code --goto`), compare two files (`code --diff`), and code
+     from `write_code` opening as a new file. Later, Red's own small extension (TypeScript), talking to
+     Red on loopback with a token: insert at the cursor, "explain what I selected", "what's this error?"
+     (the Problems list). Check whether it also loads in Qoder. Spike it before building.
 2. **Spotify**
    - No account: open Spotify, play/pause/next/back (media keys, already there), "search Spotify for X"
      (a `spotify:search:` link), "what's playing?" (the Windows media session through PowerShell).
@@ -222,7 +240,7 @@ PC, encrypted with Windows DPAPI (`CryptProtectData` through ctypes, a signed sy
      own `imaplib` and `smtplib`, so check, read, reply and send work like Gmail.
 6. **Others, after these** (the user picks the order): Telegram Desktop (`tg://` links), launching
    installed Steam games by name (`steam://` links), Notion, browser tabs, OneDrive.
-- **Files:** `red/plugins/vscode/`, `spotify/`, `whatsapp/`, `discord/`, `mail_imap/` (new);
+- **Files:** `red/plugins/coding/`, `spotify/`, `whatsapp/`, `discord/`, `mail_imap/` (new);
   `red/tools/gmail.py`; `red/secrets.py` (new, DPAPI); `contacts.example.toml`.
 - **Check:** unit tests with fakes for every plugin (no real app opens in a test); each one tried by
   the user.
@@ -326,8 +344,8 @@ the glow design (D1), picking the character sketch (D2).
 
 ### For the user to decide
 - **Chattiness default:** Friendly (greetings only) is the plan's default. Chatty instead?
-- **Decided 2026-11-13:** Red uses the user's name (A2, A3). Spotify, Discord, WhatsApp, mail and VS
-  Code plugins are wanted, with sign-ins where needed (B3).
+- **Decided 2026-11-13:** Red uses the user's name (A2, A3). Plugins wanted, with sign-ins where needed
+  (B3): coding tools (VS Code, Qoder, Freebuff and other agents), Spotify, Discord, WhatsApp, mail.
 - **Mascot shape:** the Rules forbid rounded edges and an outline on the glow. Does that apply to the
   character too?
 
