@@ -1,0 +1,5 @@
+name = "coding"
+version = "1.0"
+description = "VS Code, Qoder, Antigravity, Freebuff and other coding agents: open a project or a file at a line, hand a task to an agent (read back first), and hear what it changed."
+author = "Red"
+needs = ["repos.toml for project names", "a [coding] table in allowlist.toml for extra tools or chat shortcuts (optional)"]
