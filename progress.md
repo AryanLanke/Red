@@ -462,6 +462,16 @@ Every command writes a `Timing` line to `red.log`: listen, transcribe, route, ac
 - Tests use a fake clock and fake idle time: a simulated day (9 AM start, a coffee break, lunch, a 45-minute meeting, evening) gets exactly 1 hello and 2 welcome-backs. No line mentions meetings, mail, to-dos, news or reminders (a test checks every line).
 - **Limit found:** the microphone consent store (`CapabilityAccessManager\ConsentStore\microphone`) has no usage recorded on this PC, desktop or packaged, so "another app is using the mic" (a call) always reads as no. The full-screen check works.
 
+#### The chat window (2026-11-13, plan.md A4, fifth plan)
+
+- `red/chat_window.py`: a frameless window on Qt's thread, reached from any thread through `ChatUI` (a bridge QObject moved to Qt's thread, signals in). It needs the Qt overlay (glow or card); with `RED_OVERLAY=off` or `notify` there's no window, and "open chat" says so.
+- **One conversation:** typed messages run `typed_turn` on a worker thread (name capture, small talk, `route_many`, the Executor with its confirmations, `Chat.reply` for chat) under the voice loop's `_turn` lock, so a typed and a spoken turn never overlap. The reply is shown, not spoken. Spoken turns are mirrored from the voice loop's own prints (`You said:`, `Red:`, `Red (hello):`, `  Red asks:`, and 5-space detail lines); a test pins those prints in `red/__main__.py`.
+- **Code:** fenced blocks (three backticks) become blocks with Copy (clipboard) and Save (a Save dialog in `Documents\Red Code`, which asks before replacing a file). Code keeps its lines (no wrap, sideways scroll) and is never run.
+- **Drafts:** a `Line` with an action gets a Send button (one click), and `run_action` sends it through the Executor, so a destructive tool still reads back once.
+- **Look:** milky glass (246, 246, 250 at 95%), a faint wash of the glow's colours across the top, no border, square corners (`DWMWCP_DONOTROUND`), and a blur-behind via `SetWindowCompositionAttribute` (best effort, signed user32). A test checks the outermost pixel equals the glass just inside (no rim).
+- **Hotkey:** its own `pynput.GlobalHotKeys` (`RED_CHAT_HOTKEY`, default Ctrl+Alt+Space), so session 1's `listener.py` is unchanged. Esc or ✕ hides it.
+- **Routing (real model):** "open chat", "open the chat window", "let me type to you", "show me the chat" → `open_chat`; "let's chat" and "let's talk" stay conversation; WhatsApp, Discord, Telegram, Spotify → `open_app`. The first description named WhatsApp as a "not this" example, and the model then refused to open WhatsApp at all. Don't name other apps in a tool description.
+
 ### 7.3 Overlay (Track C)
 
 - PySide6. Frameless, always on top, translucent, and doesn't take keyboard focus. Sits in the bottom-right corner of the primary screen.

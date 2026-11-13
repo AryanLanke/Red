@@ -181,7 +181,17 @@ break of 30+ minutes, nothing else. Say if that's too much or too little.
 - **Check:** unit tests with a fake clock and fake idle time; a day of normal use with no more than the
   expected greetings.
 
-#### A4. The chat window
+#### A4. The chat window ✅ (2026-11-13)
+**Done:** `red/chat_window.py`: Ctrl+Alt+Space (`RED_CHAT_HOTKEY`, its own pynput hotkey, so
+`listener.py` is untouched) or "open chat" (the `open_chat` tool). Typed and spoken turns share one
+`Chat`. Code blocks have Copy and Save (Documents\Red Code; the dialog asks before replacing). Drafts
+get a Send button that goes through the Executor's read-back. Milky glass, no edge line, square
+corners (offscreen renders checked). Real model: 11 sentences routed right ("open chat" ×4, "let's
+chat" stays conversation, WhatsApp, Discord, Telegram and Spotify stay `open_app`).
+**Left for the user:** after session 1 restarts the hidden Red, press Ctrl+Alt+Space, type something,
+then say "Hey Red, …" and check both turns are in the window. The real blur-behind can only be judged on
+screen. Nothing creates mail drafts in the window yet (B3); with the overlay off or set to notify, there's
+no window.
 **Why:** a companion you can type to as well as talk to. Code, mail drafts and lists need a place to
 be seen, and a missed "Hey Red" stops being a dead end.
 1. A window opened by a hotkey (suggestion: Ctrl+Alt+Space) or by saying "open chat". It holds the
