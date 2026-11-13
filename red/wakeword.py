@@ -200,7 +200,7 @@ class HeyRedDetector:
 
     @classmethod
     def create(cls, model_dir: Path) -> "HeyRedDetector":
-        """The real detector. model_dir is RED_HOME\models\wakeword; Whisper goes in models\whisper."""
+        """The real detector. model_dir is RED_HOME\\models\\wakeword; Whisper goes in models\\whisper."""
         whisper = make_wake_transcriber(model_dir)
         whisper.load()
         profile = load_profile(model_dir)
