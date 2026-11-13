@@ -49,6 +49,14 @@ def _always_connected(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_memory(monkeypatch, tmp_path):
+    """No test reads or writes the user's own memory (RED_HOME\\memory), and no learner thread runs."""
+    import red.memory
+    monkeypatch.setattr(red.memory, "memory_dir", lambda home: tmp_path / "memory")
+    monkeypatch.setattr(red.memory.Learner, "start", lambda self: None)
+
+
+@pytest.fixture(autouse=True)
 def _no_real_browser(monkeypatch):
     """No test finds (and so starts) a real browser; the Windows-default opener is a fake."""
     import red.browser

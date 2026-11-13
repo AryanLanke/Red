@@ -72,17 +72,37 @@ def normalize(text: str) -> str:
     return " ".join(text.split()).strip("' ")
 
 
-def quick_reply(text: str, now: datetime | None = None) -> str | None:
-    """A reply for small talk, or None when `text` is a real command."""
+def with_name(line: str, name: str | None) -> str:
+    """'Morning! What's up?' -> 'Morning, Aryan! What's up?' (the first word gets the name)."""
+    if not name:
+        return line
+    first = re.match(r"^([^!?.]+?)([!?.])", line)
+    if first is None:
+        return line
+    if "," in first.group(1):                          # "Hey, still up?" -> "Hey Aryan, still up?"
+        comma = line.index(",")
+        return f"{line[:comma]} {name}{line[comma:]}"
+    return f"{first.group(1)}, {name}{line[first.end(1):]}"
+
+
+_HELLO = re.compile(rf"(?:hi|hello|hey|hey there|hiya|yo){_RED}")
+
+
+def quick_reply(text: str, now: datetime | None = None, name: str | None = None) -> str | None:
+    """A reply for small talk, or None when `text` is a real command.
+
+    With the user's `name` (red/memory.py), a hello uses it: "Morning, Aryan! What's up?".
+    """
     said = normalize(text)
     if not said:
         return None
     good_time = _GOOD_TIME.fullmatch(said)
     if good_time:
-        return f"Good {good_time.group(1)}! What's up?"
+        return with_name(f"Good {good_time.group(1)}! What's up?", name)
     for pattern, reply in _COMPILED:
         if pattern.fullmatch(said):
-            return reply(now or datetime.now())
+            line = reply(now or datetime.now())
+            return with_name(line, name) if _HELLO.fullmatch(said) else line
     return None
 
 

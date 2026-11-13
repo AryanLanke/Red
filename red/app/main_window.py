@@ -1,4 +1,4 @@
-"""The Red app: one window, five pages, one Save button."""
+"""The Red app: one window, six pages, one Save button."""
 
 from __future__ import annotations
 
@@ -10,18 +10,19 @@ from red.config import Settings
 from red.listener import normalize_hotkey
 
 from .env_file import save_values
-from .pages import (AudioSetupPage, GeneralSettingsPage, HardwareCheckPage, ModelStatusPage,
-                    VoiceSettingsPage)
+from .pages import (AudioSetupPage, GeneralSettingsPage, HardwareCheckPage, MemoryPage,
+                    ModelStatusPage, VoiceSettingsPage)
 
 _OFF = {"", "off", "none", "0", "no", "false", "disabled"}
-TITLES = ("Hardware Check", "Model Status", "Audio Setup", "Voice Settings", "General Settings")
+TITLES = ("Hardware Check", "Model Status", "Audio Setup", "Voice Settings", "General Settings",
+          "Memory")
 
 
 class MainWindow(QMainWindow):
     """Setup and settings without editing .env by hand."""
 
     def __init__(self, settings: Settings, *, save=save_values, hardware=None, model_rows=None,
-                 devices=None, monitor_factory=None, parent=None):
+                 devices=None, monitor_factory=None, memory=None, parent=None):
         super().__init__(parent)
         self.settings = settings
         self._save = save
@@ -46,8 +47,9 @@ class MainWindow(QMainWindow):
         self.audio_page = AudioSetupPage(settings, devices=devices, monitor_factory=monitor_factory)
         self.voice_page = VoiceSettingsPage(settings)
         self.general_page = GeneralSettingsPage(settings)
+        self.memory_page = MemoryPage(settings, memory=memory)
         for page, title in zip((self.hardware_page, self.models_page, self.audio_page,
-                                self.voice_page, self.general_page), TITLES):
+                                self.voice_page, self.general_page, self.memory_page), TITLES):
             self.tabs.addTab(page, title)
         layout.addWidget(self.tabs, 1)
 
@@ -85,6 +87,7 @@ class MainWindow(QMainWindow):
         try:
             path = self._save(self.settings, values)
             write_personality(self.settings.home, self.general_page.personality_text())
+            self.memory_page.save()
         except OSError as e:
             self.status.setStyleSheet("color: #b3261e;")
             self.status.setText(f"Couldn't save your settings: {e}")

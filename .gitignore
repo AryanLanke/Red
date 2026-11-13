@@ -49,6 +49,10 @@ bin/
 logs/
 *.log
 
+# --- What Red remembers about you (RED_HOME\memory): never commit ---
+memory/
+personality.txt
+
 # --- Editors and OS ---
 .vscode/
 .idea/

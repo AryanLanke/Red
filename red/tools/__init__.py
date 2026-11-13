@@ -7,6 +7,7 @@ from .base import Tool, ToolRegistry
 from .files import FindFile, OpenFoundFile
 from .git_sync import CheckRepos
 from .mail import ComposeMail
+from .memory import memory_tools
 from .online import LookUp, News, Weather
 from .quick import (EmptyRecycleBin, LockPC, NextMedia, OpenSettings, PauseMedia, PreviousTrack,
                     ResumeMedia, SleepPC, StopMedia, TakeScreenshot, TellStatus, Volume)
@@ -33,6 +34,7 @@ def default_registry(google: bool | None = None) -> ToolRegistry:
         SetTimer(), SetReminder(), ListReminders(), CancelReminder(),
         NotifyWhenDone(watchers), CancelWatch(watchers),
         CheckRepos(),
+        *memory_tools(),
     ])
     if google if google is not None else _google.signed_in():
         # After python -m red google-login: one API, shared by mail, calendar and contacts.

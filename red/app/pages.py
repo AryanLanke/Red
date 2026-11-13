@@ -1,11 +1,12 @@
-"""The five pages of the Red app: hardware, models, audio, voice and general."""
+"""The pages of the Red app: hardware, models, audio, voice, general and memory."""
 
 from __future__ import annotations
 
 from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
-                               QPlainTextEdit, QPushButton, QSlider, QVBoxLayout, QWidget)
+                               QListWidget, QListWidgetItem, QPlainTextEdit, QPushButton, QSlider,
+                               QVBoxLayout, QWidget)
 
 from red import audio as audio_mod
 from red.chat import MAX_PERSONALITY, read_personality
@@ -474,3 +475,88 @@ class GeneralSettingsPage(QWidget):
     def values(self) -> dict[str, str]:
         return {"RED_HOTKEY": self.hotkey.text().strip() or "off",
                 "RED_OVERLAY": self.overlay.currentData()}
+
+
+class MemoryPage(QWidget):
+    """Everything Red remembers about you: see it, edit it, delete it (plan.md A2)."""
+
+    def __init__(self, settings: Settings, *, memory=None, parent=None):
+        super().__init__(parent)
+        from red.memory import Memory
+        self.memory = memory or Memory(settings.home)
+        layout = QVBoxLayout(self)
+        layout.addWidget(_title("Memory"))
+        layout.addWidget(_hint("What Red knows about you. It stays on this PC, in "
+                               f"{self.memory.dir}. Double-click a fact to edit it."))
+
+        layout.addWidget(QLabel("About you"))
+        self.profile = QPlainTextEdit()
+        self.profile.setMaximumHeight(130)
+        layout.addWidget(self.profile)
+
+        layout.addWidget(QLabel("Things Red remembers"))
+        self.facts = QListWidget()
+        self.facts.setWordWrap(True)
+        self.facts.setSpacing(3)
+        layout.addWidget(self.facts, 1)
+
+        row = QHBoxLayout()
+        self.new_fact = QLineEdit()
+        self.new_fact.setPlaceholderText("Add something, in your words: \"My sister is Priya\"")
+        row.addWidget(self.new_fact, 1)
+        self.add_button = QPushButton("Add")
+        self.add_button.clicked.connect(self.add_fact)
+        row.addWidget(self.add_button)
+        self.delete_button = QPushButton("Delete selected")
+        self.delete_button.clicked.connect(self.delete_selected)
+        row.addWidget(self.delete_button)
+        layout.addLayout(row)
+        self.status = QLabel("")
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
+        self.refresh()
+
+    def refresh(self) -> None:
+        from red.memory import PROFILE_TEMPLATE
+        self.profile.setPlainText(self.memory.profile() or PROFILE_TEMPLATE)
+        self.facts.clear()
+        for fact in self.memory.facts():
+            item = QListWidgetItem(fact.text)
+            item.setData(Qt.ItemDataRole.UserRole, fact.id)
+            item.setToolTip(f"{fact.source}, {fact.when[:16].replace('T', ' ')}"
+                            + (f"\nFrom: {fact.said}" if fact.said else ""))
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
+            self.facts.addItem(item)
+
+    def add_fact(self) -> None:
+        text = self.new_fact.text().strip()
+        if not text:
+            return
+        try:
+            fact = self.memory.add(text, source="app")
+        except OSError as e:
+            self.status.setText(f"Couldn't save it: {e}")
+            return
+        self.status.setText("" if fact else "Red already knows that, or it looks like a password "
+                                              "or a code, which Red never keeps.")
+        self.new_fact.clear()
+        self.refresh()
+
+    def delete_selected(self) -> None:
+        for item in self.facts.selectedItems():
+            self.memory.delete(item.data(Qt.ItemDataRole.UserRole))
+        self.refresh()
+
+    def save(self) -> None:
+        """Called by the window's Save: the profile and any edited facts."""
+        from red.memory import PROFILE_TEMPLATE
+        profile = self.profile.toPlainText().strip()
+        if profile and profile != PROFILE_TEMPLATE.strip():
+            self.memory.save_profile(profile)
+        known = {f.id: f.text for f in self.memory.facts()}
+        for i in range(self.facts.count()):
+            item = self.facts.item(i)
+            fact_id = item.data(Qt.ItemDataRole.UserRole)
+            if fact_id in known and item.text().strip() != known[fact_id]:
+                self.memory.update(fact_id, item.text())
+        self.refresh()

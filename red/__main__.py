@@ -114,7 +114,11 @@ def _run(router: Router, executor: Executor, command: str, chat: Chat | None = N
     if is_filler(command):
         print("  (nothing to do)")
         return
-    quick = dismissal_reply(command) or quick_reply(command)
+    named = chat.take_name(command) if chat is not None else None   # "call me Ari" (red/memory.py)
+    if named is not None:
+        print(f"  Red: {named}")
+        return
+    quick = dismissal_reply(command) or quick_reply(command, name=chat.user_name() if chat else None)
     if quick is not None:
         logging.getLogger("red.commands").info("%r -> small talk", command)
         print(f"  Red: {quick}")
@@ -176,6 +180,9 @@ def bind_conversation(registry, chat: Chat) -> None:
         bind = getattr(tool, "bind_context", None)
         if callable(bind):
             bind(chat.history)
+        bind = getattr(tool, "bind_memory", None)        # remember, what_you_know, forget
+        if callable(bind) and getattr(chat, "memory", None) is not None:
+            bind(chat.memory)
 
 
 def _typed_loop(handle: Callable[[str], None], banner: str) -> None:
@@ -529,7 +536,12 @@ class VoiceApp:
             logging.getLogger("red.commands").info("%r -> dismissed", text)
             self._say(bye)
             return bye, tool, False
-        quick = quick_reply(text)
+        named = self.chat.take_name(text)          # "call me Ari" (red/memory.py)
+        if named is not None:
+            logging.getLogger("red.commands").info("%r -> name", text)
+            self._say(named)
+            return named, tool, False
+        quick = quick_reply(text, name=self.chat.user_name())
         if quick is not None:
             logging.getLogger("red.commands").info("%r -> small talk", text)
             self.chat.remember(text, quick)
