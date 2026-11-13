@@ -21,6 +21,8 @@ const SETS = {
   // Peeking around a bottom corner: the same framing (finish.py cuts the side off).
   cornerR: { width: 1000, height: 1000 },
   cornerL: { width: 1000, height: 1000 },
+  // Hanging upside down from the top edge (the model is rolled 180 degrees).
+  top: { width: 1000, height: 1000 },
 };
 
 const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
@@ -99,6 +101,7 @@ window.loadModel = async (url) => {
   views.peek = { centerY: headY - 0.12, visible: 1.0 };
   views.cornerR = views.peek;
   views.cornerL = views.peek;
+  views.top = { centerY: -(headY - 0.12), visible: 1.0 };      // the peek view, turned over
   vrm.lookAt.target = lookTarget;
   vrm.lookAt.autoUpdate = true;
 
@@ -152,6 +155,8 @@ function project(name, size) {
 
 window.renderFrame = (frame) => {
   const size = useView(frame.set || 'body');
+  vrm.scene.rotation.z = frame.flip ? Math.PI : 0;       // upside down (rolled about the camera's axis)
+  vrm.scene.updateMatrixWorld(true);
   vrm.humanoid.resetNormalizedPose();
   for (const [bone, angles] of Object.entries(frame.bones || {})) {
     const n = node(bone);

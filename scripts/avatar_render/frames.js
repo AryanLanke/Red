@@ -185,4 +185,16 @@ function mirror(frame, set) {
 const CORNER_R = PEEK.map(corner);
 const CORNER_L = CORNER_R.map((f) => mirror(f, 'cornerL'));
 
-export const FRAMES = [...PEEK, ...CORNER_R, ...CORNER_L, ...BODY];
+// --- Hanging upside down from the top edge ----------------------------------------------------------
+// The edge pose turned over: the whole model is rolled 180 degrees in the picture (`flip`), so its
+// forearms rest along the top edge and its head hangs below them. Hair and clothes settle under the
+// real gravity, so they fall past the head. Directions in the picture turn with it.
+function top(frame) {
+  const aim = {};
+  for (const [k, [x, y, z]] of Object.entries(frame.aim || {})) aim[k] = [-x, -y, z];
+  const look = frame.look ? [-frame.look[0], -frame.look[1]] : undefined;
+  return { ...frame, name: frame.name.replace(/^peek_/, 'top_'), set: 'top', flip: true, aim, look };
+}
+const TOP = PEEK.map(top);
+
+export const FRAMES = [...PEEK, ...CORNER_R, ...CORNER_L, ...TOP, ...BODY];

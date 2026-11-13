@@ -2,7 +2,7 @@
 
     python scripts\\avatar_render\\finish.py D:\\RED\\models\\companion\\red\\raw D:\\RED\\models\\companion\\red
 
-Frames come in two sets (see frames.js). Every frame of a set gets the same crop, so the character never
+Frames come in sets (see frames.js): peek, the two bottom corners, top (hanging upside down) and body. Every frame of a set gets the same crop, so the character never
 jumps between frames, and both sets are scaled to the same pixels per metre, so the character is the same
 size when you pick it up. Peek frames are cut at the edge line: just under the forearms in `peek_idle`.
 The window puts the bottom of a peek frame on the screen edge.
@@ -33,10 +33,12 @@ def union_box(images: list[Image.Image]) -> tuple[int, int, int, int]:
             min(max(b[2] for b in boxes) + PAD, w), min(max(b[3] for b in boxes) + PAD, h))
 
 
-def edge_line(entry: dict) -> int:
-    """The y (raw pixels) just under the forearms of a peek frame."""
+def edge_line(entry: dict, upside_down: bool = False) -> int:
+    """The y (raw pixels) just under the forearms of a peek frame (just over them when hanging)."""
     marks = entry["marks"]
     ys = [marks[k][1] for k in ("leftLowerArm", "rightLowerArm", "leftHand", "rightHand") if marks.get(k)]
+    if upside_down:
+        return round(min(ys) - FOREARM * entry["pxPerMetre"])
     return round(max(ys) + FOREARM * entry["pxPerMetre"])
 
 
@@ -63,9 +65,12 @@ def contact_sheet(frames: list[tuple[str, Image.Image]], path: Path, columns: in
 def finish_set(name: str, entries: list[dict], raw: Path, out: Path, ppm: float) -> dict:
     images = [Image.open(raw / f"{e['name']}.png").convert("RGBA") for e in entries]
     left, top, right, bottom = union_box(images)
-    if name in ("peek", "cornerR", "cornerL"):
+    if name in ("peek", "cornerR", "cornerL", "top"):
         idle = next((e for e in entries if e["name"] == f"{name}_idle"), entries[0])
-        bottom = edge_line(idle)
+        if name == "top":
+            top = edge_line(idle, upside_down=True)   # the window puts the top of these on the top edge
+        else:
+            bottom = edge_line(idle)
     # Corners: the side edge runs through the wrist of the hand gripping it, so only its fingers show.
     if name == "cornerR":
         right = idle["marks"]["leftHand"][0]
@@ -100,7 +105,7 @@ def main() -> None:
     old = args.out / "frames.json"
     kept = json.loads(old.read_text(encoding="utf-8")) if old.exists() else {}
     sets = {}
-    for name in ("peek", "cornerR", "cornerL", "body"):
+    for name in ("peek", "cornerR", "cornerL", "top", "body"):
         entries = [f for f in meta["frames"] if f["set"] == name and (args.raw / f"{f['name']}.png").exists()]
         if entries:
             sets[name] = finish_set(name, entries, args.raw, args.out, args.ppm)
