@@ -151,7 +151,9 @@ Your settings are in `RED_HOME\config\.env` (copied from `.env.example`). Settin
 | `RED_QUICK_END_SILENCE` | A shorter pause that's enough when what you said sounds finished ("open Edge"). After "and", "um" or a comma Red still waits `RED_END_SILENCE`. `0` turns it off | `0.8` |
 | `RED_MAX_COMMAND_SECONDS` | The longest a command can be | `20` |
 | `RED_FOLLOW_UP_SECONDS` | After chat, an answer (Red asks "Anything more you want to know about it?"), a reply that asks you something, or something that failed, Red keeps listening this long (you hear the chime). After an action it just goes quiet. Say "no" or "that's all" and it stops. `0` turns it off | `7` |
-| `RED_OVERLAY` | What Red shows while it works: `glow` around the screen edges, a `card` in the corner, `notify` (Windows notifications), or `off` | `glow` |
+| `RED_OVERLAY` | What Red shows while it works: the `companion` peeking over the bottom edge of the screen (the glow if its pictures aren't installed), a `glow` around the screen edges, a `card` in the corner, `notify` (Windows notifications), or `off` | `companion` |
+| `RED_COMPANION` | Which companion peeks over the edge: `red`, `remy` or `asha`. Empty: the last one you picked from its right-click menu | empty (Red) |
+| `RED_COMPANION_SIZE` | How big the companion is: `small`, `medium` or `large` | `medium` |
 | `RED_WHISPER_DEVICE` | Speech recognition on `cpu`, `cuda` (NVIDIA GPU) or `auto` | `cpu` |
 | `RED_WHISPER_MODEL` | Speech recognition model | `small` |
 | `RED_TTS` | Voice engine: `kokoro` (more natural, default) or `piper` (fast fallback) | `kokoro` |

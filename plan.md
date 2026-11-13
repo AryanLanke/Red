@@ -234,6 +234,13 @@ Full design in docs/architecture.md §4–6. In short:
   Shippable: CC0 VRM avatars (100Avatars / open-source-avatars, ~300, public domain), Unity-chan (redistribution
   allowed with credit), Live2D samples (individuals/small business, per-character terms). "Free to download" ≠
   "free to redistribute": only CC0 or an explicit grant ships.
+- **Decided 2026-11-13 (the user):** **2D** for everyone, like peeking out of a window: the companion
+  leans on the bottom edge of the screen (or a corner) with only the upper body showing; picked up, the
+  whole body dangles and it says "whoa!". Looks: VRoid Studio's samples (explicit grant: any use,
+  changes, redistribution, no credit). **Red = AvatarSample_C** (a man), **Remy = AvatarSample_A**,
+  **Asha = AvatarSample_B** (a new name). Every pose more expressive than the stock presets. Built:
+  `red/avatar/` and `scripts/avatar_render` (progress.md 7.3.1). Still open: side-edge peeking, Red's
+  voice (still `af_heart`, a woman's), Bruno and Winston's looks.
 - **Rendering:** VRM 3D via QtWebEngine + three-vrm (spike first, see architecture §16); 2D sprites
   pre-rendered from the same VRM for Lite PCs and as the fallback; the glow stays as an option.
   Procedural animation (breathing, blinking, lean-in, lip sync from the voice loudness, expressions from emotion tags).

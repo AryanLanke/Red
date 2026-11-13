@@ -20,6 +20,7 @@ Last updated: 2026-11-09.
 | Confirmation, allowlist, command log, executor | `red/confirm.py`, `red/allowlist.py`, `red/known_folders.py`, `red/executor.py` | ✅ Done (Track A) |
 | Speech to text, text to speech, hotkey, wake word | `red/audio.py`, `red/stt.py`, `red/tts.py`, `red/listener.py`, `red/voice_confirm.py` | ✅ Done (Track B). The "Hey Red" wake word is Track E |
 | Floating overlay | `red/overlay.py` | ✅ Done (Track C) |
+| The companion on screen (2D, peeking over the bottom edge) | `red/avatar/`, `scripts/avatar_render/` | ✅ First version 2026-11-13 (7.3.1). Waits on the user trying it on the real desktop |
 | Repo sync tool | `red/tools/git_sync.py` | ✅ Done (Track C). The local music tool was removed on 2026-11-09 (7.4) |
 | Wiring it all together: settings, setup, voice loop, docs | `red/__main__.py`, `red/config.py`, `README.md`, `AGENTS.md` | ✅ Done (Track D, section 8.13). The shared venv install and the v0.1.0 tag are still to do |
 
@@ -525,6 +526,14 @@ Every command writes a `Timing` line to `red.log`: listen, transcribe, route, ac
 - States: `idle`, `listening`, `thinking`, `confirm`, `speaking`, `error`, each with a short text. It hides itself a few seconds after returning to `idle`.
 - Qt must own the main thread. Other threads update it through a thread-safe method (Qt signals).
 - Fallback if PySide6 can't start: a Windows notification.
+
+### 7.3.1 The companion (2026-11-13, the user's picks)
+
+- **Looks:** VRoid Studio's sample models, downloaded by the user from VRoid Hub. The licence in each file allows every use, changes and redistribution, no credit needed. **Red = AvatarSample_C** (the man), **Remy = AvatarSample_A**, **Asha = AvatarSample_B** (name picked for the user's brief: mixed Indian / African American; Sanskrit "hope", Swahili "life"). The VRMs are in `RED_HOME\config\companion\avatar-{a,b,c}.vrm`, not in git.
+- **2D, not 3D** (the user's choice): lighter on a laptop that already runs the LLM, Whisper and Kokoro. Frames are rendered from the VRM by `scripts/avatar_render` (three-vrm in headless Edge, pinned npm packages) into `RED_HOME\models\companion\<id>\`: 26 peek frames (idle, blink, 3 mouths, notice, listen, think, happy ×3, laugh ×2, sad ×2, cry, angry ×2, surprised, shy, wave ×3, sleep) and 5 body frames (3 dangling, enjoying it, dropping). Faces mix VRoid's own morphs past the stock presets; sad/angry/surprised start from `Fcl_ALL_*` because the separate eye morphs close the eyes on samples A and B.
+- **Where it sits:** the bottom edge of the work area (above the taskbar), anywhere along it or in a corner, forearms on the edge, so only the upper body shows, "looking out of a window". Side edges are not done yet.
+- **Behaviour:** breathing (the picture stretches slightly), blinking, the mouth follows Kokoro's loudness, a speech bubble types out the first line of the reply, anime marks over the head (zzz, !, ?, a tear, an anger mark, a note), a wave for greetings, notice when woken, sleep after 5 minutes, hidden while a full-screen app is in front. Hover cheers it up, click opens the chat window, right-click switches companion or hides it. Dragging picks it up: the whole body dangles and swings under the cursor, a "whoa!" clip plays (made once per voice with Kokoro into `sounds\`, never over Red's own voice), and on release it falls back to the edge where you let go; the spot is saved in `RED_HOME\cache\companion.json`.
+- **Not yet:** emotions come from a word guess on the reply (`emotion_from_text`) until speech carries emotion tags (plan §7); Red's voice is still `af_heart` (a woman's), so Red's "whoa!" is too; side-edge peeking; the companion's persona and wake name switching (lane 2).
 
 ### 7.4 Music (Track C)
 
