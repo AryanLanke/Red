@@ -4,7 +4,7 @@
 
 Red is a local, offline voice and action assistant for Windows. A local LLM turns a command into one JSON tool call, and Red validates it before anything runs.
 
-- [progress.md](progress.md) is the developer document: status, specs, decisions, open questions, and the parallel-sessions plan (section 8). Follow its specs and safety rules when building a feature, and keep its status up to date.
+- [progress.md](progress.md) is the developer document: status, specs, decisions and open questions. Follow its specs and safety rules when building a feature, and keep its status up to date.
 - [README.md](README.md) is for users. Keep it free of developer planning.
 
 **Status:** Days 1 to 5 are merged into one app: the Phase 1 tracks A, B and C, then Track D's integration. `python -m red` runs the full voice loop:
@@ -16,7 +16,7 @@ Red is a local, offline voice and action assistant for Windows. A local LLM turn
 6. the action
 7. Spoken reply (Kokoro TTS, or Piper fallback)
 
-The overlay shows each step. The Phase 2 tracks (D, E, F) work in worktrees under `D:\RED\worktrees\`, and progress.md section 8.12 decides which files each one may edit.
+The overlay shows each step. All the parallel tracks are merged; work happens on `main`.
 
 ## Commands
 

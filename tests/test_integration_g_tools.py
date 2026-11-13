@@ -104,7 +104,7 @@ CASES = [
                  contains("topic", "hugging face"),
                  marks=pytest.mark.xfail(strict=False, reason="known gap: the model still opens "
                                          "web_search for 'search the web ... and tell me' "
-                                         "(progress.md 8.18)")),
+                                         "(git show 94c6cae:progress.md, 8.18)")),
     ("open a search for hugging face", "web_search", contains("query", "hugging face")),
 ]
 

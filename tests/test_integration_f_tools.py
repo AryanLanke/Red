@@ -53,7 +53,7 @@ ANY = None
 
 def image_search(word):
     """web_search with site images, or open_url to an image search: the same page opens.
-    The model often builds the Google Images URL itself (see progress.md 8.15)."""
+    The model often builds the Google Images URL itself (see `git show 94c6cae:progress.md`, section 8.15)."""
     def check(args):
         if "url" in args:
             url = args["url"].lower()
