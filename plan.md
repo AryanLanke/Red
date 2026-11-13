@@ -350,6 +350,17 @@ Only when asked, never spoken unasked (see the goal).
 - **Check:** unit tests; the recap of a real day read to the user.
 
 #### B5. More small plugins
+**Hand-off from session 2 (2026-11-13): not started. Done before this: A0–A4, B1, B2 (steps 1–4), B3.1–B3.4, B4.
+Left: B3.5 (Gmail extras + IMAP/SMTP mail), B3.2's Spotify sign-in, B5 (all 8), B6, B2 step 5 (coder model).**
+**Exact next step: decide how to keep routing fast and right as tools grow.** The router prompt is now
+~6,000 tokens (it was 4,383 at the start of this run and already over `num_ctx=4096`); every tool adds
+~130, `fit_context` (red/router.py) grows the model's context to fit, and each growth costs one model
+reload (13–16 s). Eight more tools fit, but not many more. Options: (a) route in two steps (a short list of
+tool *groups* first, then only that group's tools), (b) shorter descriptions, (c) merge related tools into
+one with an `action` argument like `todo` does. Pick one, measure routing on the 48+ sentences in
+progress.md, then build B5 in the listed order (each as `red/plugins/<name>/` with `plugin.toml` and
+`tools.py`, tests with fakes, a Plugins-page entry for free). For mail: IMAP/SMTP with `imaplib`/`smtplib`,
+app password stored with `red/secrets.py`, send read back once.
 Small, each its own plugin; build in this order and let the user reorder:
 1. **Notes:** "note that…", "what did I note about X?" (markdown files in a folder you choose; works
    with an Obsidian vault).
