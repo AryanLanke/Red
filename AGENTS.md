@@ -1,6 +1,6 @@
 # AGENTS.md
 
-**Start here:** read [plan.md](plan.md) first. It lists the next tasks in order and the rules for working on Red.
+**Start here:** read [plan.md](plan.md) first. It lists the next tasks in order and the rules for working on Red. Then read [docs/architecture.md](docs/architecture.md): how Red is built (parts, event bus, companions, avatars, wake names, speech tags, hardware tiers, settings registry, shipping, testing). Build to it, and update it in the same commit when a design changes.
 
 Red is a local companion for Windows: a friend with a personality that lives on the PC, remembers the user, and does their work (apps, files, mail, code), growing through plugins. A local LLM turns a command into one JSON tool call, and Red validates it before anything runs.
 

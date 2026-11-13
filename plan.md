@@ -5,8 +5,10 @@ app, the installer, every feature, the character, the humour, the models, the co
 assistants, where to publish for free, and a seven-day project. Details of finished work stay in
 progress.md and `git log`.
 
-Read this first, then AGENTS.md. **If your usage limit is near (90%), read "Usage limit" in the Rules at the
-end first.** Follow "Two sessions at once" if two sessions are running.
+Read this first, then **[docs/architecture.md](docs/architecture.md)** (how everything is built: the parts,
+companions, avatars, wake names, speech tags, tiers, settings registry, shipping, testing), then AGENTS.md.
+**If your usage limit is near (90%), read "Usage limit" in the Rules at the end first.** Follow "Three
+sessions at once" (section 16) when sessions run in parallel.
 
 Contents: 1 What Red is · 2 What's wrong now (from your logs) · 3 Where we are · 4 Now: make Red feel alive
 · 5 The character, humour and chattiness · 6 The voice · 7 Models · 8 Every feature · 9 The Red app · 10 The
@@ -217,21 +219,56 @@ Red answers when spoken to in every mode. The setting changes only what it start
 Always: never during a full-screen app, game, call or while you're typing fast; never meetings, mail, to-dos
 or news; any remark you wave off ("not now") silences remarks for two hours and is remembered.
 
-### 5.4 The visible companion (the face)
-- An **original** character (nothing copied from Desktop Mate or anyone). Shape rule to confirm: square-ish,
-  soft, no outline (it follows the glow's "frosted, no rim" look); the colour is Red's glow palette.
+### 5.4 Companions: four characters instead of the glow (2026-11-14, the user's idea)
+Full design in docs/architecture.md §4–6. In short:
+- **A companion is a folder** (`companion.toml`, `persona.md`, a clip bank, an avatar, `LICENSE-assets.txt`):
+  its own **name = wake word**, personality, voice, humour/chattiness/temper defaults and look. Users can add more.
+- **Four ship** (names and voices are suggestions; you pick): **Red** (dry wit, the default), **Remy** (music
+  lover: hums, song references, suggests tracks), **Bruno** (grumpy and blunt, gets angry at bugs and slow
+  Wi-Fi, never cruel, secretly caring), **Winston** (a gentleman: formal, understated British humour).
+- **Switching:** every companion's wake name is always listened for; "Hey Bruno" wakes Bruno. Also "switch
+  to Winston" and the tray menu. Memory about *you* is shared; each companion keeps its own relationship note.
+- **Wake names:** stage 1 is Whisper-checked names (any name, no training); stage 2 is a trained model per shipped
+  name (later). One-syllable "Red" is part of why it misses today; 2–3 syllables wake better.
+- **Looks, legally free:** Desktop Mate's characters are licensed, paid IP, so they **can't** be taken.
+  Shippable: CC0 VRM avatars (100Avatars / open-source-avatars, ~300, public domain), Unity-chan (redistribution
+  allowed with credit), Live2D samples (individuals/small business, per-character terms). "Free to download" ≠
+  "free to redistribute": only CC0 or an explicit grant ships.
+- **Rendering:** VRM 3D via QtWebEngine + three-vrm (spike first, see architecture §16); 2D sprites
+  pre-rendered from the same VRM for Lite PCs and as the fallback; the glow stays as an option.
+  Procedural animation (breathing, blinking, lean-in, lip sync from the voice loudness, expressions from emotion tags).
+
+### 5.5 The face's behaviour (applies to every companion)
+- Each companion's look is picked by you from a contact sheet of shippable avatars (rendered offscreen);
+  no copying of any existing product's or fictional character.
 - **States:** asleep (idle, slow breathing), notices you (wake), listening (leans in), thinking (looks up),
   talking (mouth moves to the voice loudness), laughing, shy/oops, bored (idle 5 min), celebrating (a job done),
   sad (you're having a bad day, only if you said so).
 - Lives in a transparent click-through window; click opens the chat window; drag anywhere; sits on a corner
   or on top of the taskbar; hides during full-screen apps; on/off in the app; uses < 1% CPU when asleep.
-- **Show 3 sketches** (rendered offscreen to PNG) before building. You pick. Then sprites/animation as
-  vector drawing in PySide6 (no image assets to license) or a small rigged 2D set you approve.
-- Later: a **voice-reactive glow** version as the default for people who don't want a character.
+- The glow stays available for people who don't want a character.
 
 ---
 
 ## 6. The voice (laughing, pausing, male/female)
+
+**Decided 2026-11-14 (supersedes the ordering below where they differ):**
+1. **Emotion tags are the contract** (architecture §7): the chat model writes `[laugh] [chuckle] [sigh]
+   [mm-hmm] [hmm] [cough] [gasp] [pause] [angry] [happy] [sad] [excited]`; the speech layer turns them into
+   clips, pauses, voice blends or a live engine's controls, and fires `emotion` events for the avatar. A tag
+   is never read aloud. This works on every tier and is built first.
+2. **Shipped clip banks per companion:** rendered once at build time by an expressive engine *cloned to that
+   companion's Kokoro voice*, shipped in the installer (~20–30 MB each), so a no-GPU PC laughs and coughs too.
+   Pass line: you can't tell the clip from the voice in 7 of 10 blind pairs (the old laugh clips failed on
+   exactly this mismatch).
+3. **Training Kokoro to laugh is dropped** (no data, mismatch risk). Voice blends and per-mood speed/pitch
+   are kept (cheap, no training).
+4. **Live expressive engine only on Max** (8 GB+), one engine for all speech so nothing mismatches. Candidates
+   for the clip renderer and Max: Chatterbox, Zonos, Orpheus (cough/laugh/sigh tags), Dia.
+5. **"Mm-hmm" while you talk:** a quiet backchannel clip in a mid-sentence pause (session 1's listener
+   signals the pause).
+
+Earlier notes (kept for the candidate list and criteria):
 
 What we know: Kokoro is natural but flat; it can't laugh or sigh; a laugh clip glued in sounded wrong (the
 reason the earlier clips were removed). Written "haha" read aloud is worse than nothing.
@@ -262,6 +299,17 @@ reason the earlier clips were removed). Written "haha" read aloud is worse than 
 ## 7. Models
 
 Everything local, pinned by SHA-256, from `red/llm.py` `MODELS` and `models\` under RED_HOME.
+
+**Red is for every PC, not this one.** A 20-second speed test on first run (`red/bench.py`) picks a tier;
+the user can override it. Full table in docs/architecture.md §9.
+| Tier | Typical PC | Chat model | Voice and emotion | Face | First word |
+|---|---|---|---|---|---|
+| **Lite** | no GPU, 8 GB RAM | 1.5–3B on CPU | Kokoro/Piper + shipped clip banks | 2D sprites | ≤ 2.5 s (a clip at 0.2 s hides the wait) |
+| **Standard** | 4 GB GPU (RTX 3050 laptop) | 3B on GPU | Kokoro + clips | VRM if the spike passes | ≤ 1.5 s |
+| **Plus** | 6 GB GPU (this PC) | 4B on GPU | Kokoro + clips | VRM | ≤ 1.0 s |
+| **Max** | 8 GB+ GPU | 4–8B | a live expressive engine | VRM | ≤ 0.8 s |
+Minimum: Windows 10/11, 8 GB RAM, 4 cores, 10 GB disk. 4 GB of system RAM can't run Red (Windows uses ~3 GB).
+Smaller tiers lean on the gate and fast path, shorter replies, and two-step routing (a ~1.5k-token router prompt).
 
 | Job | Today (this PC) | Plan |
 |---|---|---|
@@ -388,42 +436,22 @@ answers "Hey Red", with no Python, git or command line. **Cost: $0.**
 
 ## 11. How it all fits together
 
-```
- mic ─► wake word (openWakeWord + Whisper check + voice match) ─┐
- hotkey / chat window (typed) ──────────────────────────────────┤
-                                                                ▼
-                    end-of-speech ─► Whisper ─► transcript filters (N5)
-                                                                ▼
-                    ┌── gate (N1): chit-chat? ─yes─► Chat model (stream) ─► reaction clip + speech
-                    │                │no
-                    │                ▼
-                    │        fast path (rules) ─► tool          screen sense (N3): window title always,
-                    │                │miss                       a look on demand
-                    │                ▼
-                    │        router: group → tool (JSON, schema-checked) ─► Executor ─► tool / plugin
-                    │                                    └─ confirm if destructive ─► log
-                    └── any failure ─► chat turn (never an apology) 
- memory (profile + facts) ─► chat prompt · greeter (idle) · learner (idle) · overlay/glow · companion
-```
-- **Threads:** Qt on the main thread (glow, chat window, companion); the voice loop on its own; the greeter
-  and learner are idle-only workers; speech is a stream. Nothing speaks over a command.
-- **Latency budget** (from you stopping to the first sound): end-of-speech wait ≤ 0.5 s · Whisper ≤ 0.5 s ·
-  gate/fast path ≤ 0.05 s · reaction clip at ≈ 0.2 s · first real word ≤ 1.0 s for chat, ≤ 2 s for a tool
-  that speaks, "open Edge" done in 1–3 s total.
-- **Folders** (`RED_HOME`, default `%LOCALAPPDATA%\Red`): `bin\`, `models\`, `cache\` (clips, samples),
-  `config\` (`.env`, allowlist, contacts, repos, plugins.json, `secrets\` DPAPI), `memory\` (profile, facts,
-  todo, greetings state), `plugins\`, `logs\` (red.log, commands.jsonl). **None of `memory\`, `secrets\`,
-  logs, voice clips or the wake corpus is ever in git or sent anywhere.**
-- **Plugin contract:** a folder with `plugin.toml` + `tools.py`; Tool classes with a schema; the model picks and
-  fills; the Executor confirms and logs; broken plugins are skipped; off plugins aren't imported.
-- **Router budget:** every tool costs ~130 prompt tokens; the router prompt is ~6,000 tokens and the context
-  grows to fit (`fit_context`), each growth is one 13–16 s reload. **Two-step routing** is how B5's eight
-  plugins fit: step one picks among ~10 groups (system, web, files, mail, code, apps, memory, media, work,
-  chat) from short names, step two sees only that group's tools.
-- **Safety:** model text never reaches a shell; risky actions are read back; allowlists; code Red writes is
-  never run; keys are pressed only from fixed combos and only when the right window is in front.
+**The architecture lives in [docs/architecture.md](docs/architecture.md)**:
+- the parts and what each owns, and the event bus that connects them;
+- threads and the latency budget;
+- the companion pack format; avatars (renderer interface, VRM and sprite backends); multi-name wake;
+- emotion tags and clip banks; memory layers; hardware tiers;
+- the settings registry (each setting declared once and generated into `.env.example`, the app pages and the wizard);
+- files; build/install/update/CI; the test levels; safety; licences; the spikes with pass lines.
 
----
+Build to it. When a task here needs a change of design, change architecture.md in the same commit.
+
+The short version:
+```
+ mic ─► wake (all companions' names) ─► Whisper ─► transcript filter ─► gate ─┬─ chat ─► persona + memory ─► tags ─► voice/clips ─► speakers
+ hotkey / chat window ──────────────────────────────────────────────────────┘ └─ command ─► fast path ─► router (2-step) ─► executor ─► tool/plugin
+ event bus: state · mouth · emotion · said/heard · companion · memory_saved ─► avatar · chat window · glow · tray
+```
 
 ## 12. Compared with others
 
@@ -484,81 +512,87 @@ Whisper, openWakeWord's pretrained parts, SearXNG, onnxruntime, each TTS candida
 
 ---
 
-## 14. The seven-day project (2026-11-14 to 11-20)
+## 14. The seven-day project (2026-11-14 to 11-20): v0.5, the first public preview
 
-Set up as a GitHub Project board (Backlog → Today → Doing → Needs your try → Done) with one issue per
-numbered task below; ask and I'll create it. **Two sessions:** session 1 (wake word and audio files) and
-session 2 (companion), as in the rules. Every day ends with: tests pass, pushed to `main`, the hidden Red
-restarted (by session 1), numbers written in progress.md. **Your time: about 20–30 minutes a day**, marked 👤.
+**Can all of it be done in 7 days? No, and pretending would ship something broken.** Here's what's honest:
+- **In 7 days, with three sessions in parallel and you giving about 30 minutes a day:** v0.5, a downloadable
+  preview with the fixes from your logs, four companions with their own personality, voice, wake name and
+  face, expressive sounds, the settings app, and an installer. It's on GitHub, itch.io and SourceForge, unsigned at first.
+- **Not in 7 days** (v0.6–v1.0, weeks 2–4):
+  - trained wake models per name (v0.5 uses Whisper-checked names);
+  - the live expressive engine (Max tier);
+  - all of B5's small plugins, mail over IMAP, Spotify sign-in, work mode;
+  - signing approval (SignPath takes days to weeks), the Microsoft Store;
+  - the persona LoRA, and polished 3D animation (v0.5 has procedural animation).
 
-**Day 1 (Sat 11-14): fast and honest** (session 2, hand the audio numbers to session 1)
-- N1 steps 1, 4, 5: the chat gate, reply length rules, prompt order. N2 all. Restart the hidden Red.
-- 👤 Say 20 chit-chat lines; we compare Timing before/after. **Done when:** "How are you?" first word ≤ 1.0 s,
-  zero "I didn't understand".
+**Three lanes** (section 16 has the file ownership). Every day ends with tests green, pushed to `main`,
+numbers in progress.md, and the hidden Red restarted by lane 1.
+- **Lane 1, session 1: listening and speed.**
+- **Lane 2, session 2: brains and companions.**
+- **Lane 3, session 3: shell, app and shipping.**
 
-**Day 2 (Sun 11-15): look, don't ask; stop inventing a life**
-- N3 (screen as a sense, window-title line), N4 (prompt rewrite, `chat_eval.py`, scored table).
-- 👤 Rate 20 replies 1–5 for "feels human". **Done when:** invented-body count 0; screen asks nothing back.
+| Day | Lane 1 (listening) | Lane 2 (brains, companions) | Lane 3 (shell, ship) | You 👤 |
+|---|---|---|---|---|
+| **1 Sat 11-14** | Restart with the context fix; N5 transcript filters; end-of-speech 0.5 s for finished sentences | N1 gate + reply length, N2 (no "didn't understand"), `red/events.py` | Spikes: **VRM in QtWebEngine** under Smart App Control; CI on GitHub Actions | 20 chit-chat lines (timing) |
+| **2 Sun 11-15** | Multi-name wake, stage 1 (Whisper-checked names, the names from companions) | `red/companions.py` + the pack format; Red as the first pack; N4 prompt + `chat_eval.py` | Avatar window: interface, VRM backend (or sprites if the spike failed), lip sync, emotions, states | Pick 4 avatars from a contact sheet of CC0 VRMs; pick names |
+| **3 Mon 11-16** | Wake corpus per name; voice match in the wizard flow | Remy, Bruno, Winston persona packs + per-companion eval; switching; relationship notes | Sprite pre-render from VRM for Lite; tray icon and menu (switch, mute, settings) | Rate 20 replies per companion; record the wake corpus (~10 min) |
+| **4 Tue 11-17** | N5 media-aware listening; the "mm-hmm" mid-pause signal | Emotion tags in prompts; `red/expressive.py`; N3 screen as a sense | `red/settings_registry.py`; the new settings app (Home, Companions, Personality, Voice, Listening, Memory, Plugins, Models, Privacy, General) | — |
+| **5 Wed 11-18** | Benchmark script (`bench_turns.py`) per tier; CPU-only run for Lite | Clip banks: render with the cloned engine for 4 voices; N7 humour devices | `red/bench.py` tier test; first-run wizard | **Blind listening test** (15 min): clips vs voice, voices per companion |
+| **6 Thu 11-19** | Wake replay ≥ 90/100 per name; TV test | Memory: history, "memory updated", temporary chat, export | `installer/build.ps1`, Inno Setup, updater; Windows Sandbox install test | Install in Sandbox with us |
+| **7 Fri 11-20** | Bug bash | Bug bash; licences in `THIRD_PARTY.md` | Release v0.5: GitHub Release + hashes, itch.io, SourceForge, winget PR, README, a 60-second video; SignPath application | Release checklist (15 min); watch the video |
 
-**Day 3 (Mon 11-16): reaction clips and humour v1**
-- N1 steps 2–3 (clips, shorter end-of-speech wait with session 1). N7 humour devices + budget + taste memory.
-- 👤 Listen to the clips and 10 jokes; "funny / not funny". **Done when:** first sound ≤ 0.3 s; 3 of 10 jokes land.
+**Gates (a day's work isn't done until):**
+- unit tests pass;
+- contract tests pass (companion.toml schema, settings registry ↔ .env.example, event payloads);
+- UI snapshots are approved;
+- the day's real-model check is in progress.md.
 
-**Day 4 (Tue 11-17): listening hygiene and the wake word** (session 1 leads, session 2 helps with tests)
-- N5; C1 with the corpus. 👤 Record the wake corpus (about 10 minutes), then 100 tries.
-- **Done when:** a 10-minute video plays with zero unwanted replies; "Hey Red" ≥ 90/100.
+**Release gate (day 7):**
+- routing ≥ 95% on 150 sentences;
+- chat eval: 0 invented-life lines for every companion;
+- first word ≤ 1.0 s on Plus and ≤ 2.5 s on a CPU-only run;
+- wake ≥ 90/100 per name;
+- a clean Sandbox install to a working wake and an uninstall that leaves nothing.
 
-**Day 5 (Wed 11-18): the voice**
-- C2 spike on this GPU; the blind A/B listening test; pick the male/female voice; laugh decision; earcons.
-- 👤 The listening test (15 min). **Done when:** one engine chosen (or "stay on Kokoro + clips"), written down.
+Anything that misses its gate moves to v0.6 rather than holding the release.
 
-**Day 6 (Thu 11-19): the installer, the app, more plugins**
-- C3: `build.ps1`, Inno Setup, the first-run wizard, Windows Sandbox test; the app's new Home/Personality pages.
-- Router group design, then the B5 plugins that cost little (notes, clipboard, windows, focus timer, fun).
-- 👤 Run the installer in Sandbox with me. **Done when:** a clean Sandbox gets to a working "Hey Red".
-
-**Day 7 (Fri 11-20): the face and the release**
-- D2: three character sketches → you pick → first animated version in the window; D1 glow with your design.
-- Release v0.5: `THIRD_PARTY.md`, README with screenshots, SignPath application, GitHub Release with hashes,
-  `aryanlanke.github.io/Red`, SourceForge and itch.io pages, winget manifest, a 60-second demo video.
-- 👤 Pick the character; watch the video. **Done when:** a stranger could install it from the GitHub page.
-
-**Stretch / week 2:** B3.5 mail (Gmail extras + IMAP), Spotify sign-in, B6 work mode, the persona LoRA and
-router fine-tune (needs your decision, section 15), the VS Code extension, the Microsoft Store.
-**Risks:** the expressive-voice spike may find nothing that fits 6 GB (then clips + Kokoro); signing may take
-days to approve (ship unsigned with the README note first); wake word accuracy depends on your recording time.
-
----
+**Risks and fallbacks:**
+- VRM fails Smart App Control or is too heavy → sprites for everyone in v0.5.
+- The cloned clips don't match → clips in the nearest Kokoro voice, fewer sounds.
+- A wake name misses → ship Red plus whichever names pass.
+- No signing yet → unsigned, with unblock steps.
+- Your time is the tightest resource: the 👤 column is what can't be parallelised.
 
 ## 15. Decisions for you
 
-1. **Training (section 7):** may a LoRA be trained on a free cloud GPU using *only text you approve* (no memory,
-   no voice, no logs unless you cleaned them)? Or stay 100% on this PC (slower, smaller)? Default: stay local
-   and prompt/eval first; train later only if you say yes.
-2. **Humour level default:** Normal (light teasing). Cheeky is opt-in. OK?
-3. **Chattiness default:** Friendly. Add the fourth level "Companion"?
-4. **Character shape:** the "no rounded edges, no outline" rule from the glow, does it apply to the character too?
-5. **Female or male voice** by default (you'll hear samples on Day 5).
-6. **Release name and licence:** keep MIT? (check `LICENSE`) The Red name, the GitHub org, and whether the
-   installer says "by Aryan Lanke".
-7. **Pause media on wake** (N5.3): OK to press the media key when "Hey Red" is heard during a video?
-8. **GitHub Project board:** create it with the issues now?
-
----
+1. **Companion names and personalities:** Red, Remy (music), Bruno (grumpy), Winston (gentleman), or yours?
+   Names become wake words: 2–3 syllables, distinct from each other, not a real or famous character.
+   (You wrote "faired": if you meant **Friday**, it works technically, but it's Iron Man's AI; a name of
+   our own is safer for a public release.)
+2. **Avatars:** pick 4 from a contact sheet of CC0 VRM avatars (day 2). Anime-style, realistic, or cartoon?
+3. **Bruno's anger:** how far? Default: grumbles and gets heated at *situations*, calms down if you're upset,
+   never insults you.
+4. **Training (section 7):** may a persona LoRA be trained on a free cloud GPU using only text you approve?
+   Default: no, prompts and evals first.
+5. **Humour default:** Normal. **Chattiness default:** Friendly; add the "Companion" level?
+6. **Glow:** keep it as an option once characters exist, or drop it?
+7. **Licence and credit:** keep `LICENSE` as is? Installer says "by Aryan Lanke"?
+8. **Pause media on wake** during a video (N5.3)?
+9. **A third session** for lane 3: will you run three sessions in parallel? Without it, the 7 days stretch to about 10.
+10. **GitHub Project board** with one issue per task: create it now?
 
 ## 16. Reference (kept from the earlier plans)
 
-### Two sessions at once
-| | Session 1: wake word and audio | Session 2: companion |
-|---|---|---|
-| Works in | `D:\RED\red`, on `main` | a worktree under `D:\RED\worktrees\` on its own branch, pushing each commit to `main` |
-| Owns | `red/wakeword.py`, `wake_test.py`, `wake_corpus.py`, `voice_setup.py`, `listener.py`, `audio.py`, `stt.py`, `voice_match.py`, `background.py`, `startup.py`, `llm.py` and their tests | everything new (`memory`, `greeter`, `chat_window`, `plugins`, `red/plugins/`, `secrets`, `desk`), plus `chat.py`, `smalltalk.py`, `speech.py`, `router.py`, `red/app/`, `red/tools/` |
-| Hidden Red | the only one that stops and starts it | never stops or starts it, never runs a live voice Red |
-| Test temp folder | `D:\RED\cache\pytest-tmp` | `D:\RED\cache\pytest-tmp-companion` |
+### Three sessions at once (from 2026-11-14)
+| | Session 1: listening and speed | Session 2: brains and companions | Session 3: shell, app and shipping |
+|---|---|---|---|
+| Works in | `D:\RED\red`, on `main` | a worktree `D:\RED\worktrees\<name>` on its own branch, pushing each commit to `main` | another worktree, same way |
+| Owns | `wakeword.py`, `wake_test.py`, `wake_corpus.py`, `voice_setup.py`, `listener.py`, `audio.py`, `stt.py`, `voice_match.py`, `background.py`, `startup.py`, `llm.py`, `scripts/bench_turns.py`, and their tests | `chat.py`, `smalltalk.py`, `speech.py`, `router.py`, `gate.py`, `companions.py`, `expressive.py`, `memory.py`, `history.py`, `events.py`, `red/tools/`, `red/plugins/`, `companions/` personas and clip banks | `overlay.py`, `chat_window.py`, `red/avatar/`, `tray.py`, `red/app/`, `settings_registry.py`, `bench.py`, `installer/`, `.github/`, `docs/` except architecture, README |
+| Hidden Red | the only one that stops and starts it | never | never |
+| Test temp folder | `D:\RED\cache\pytest-tmp` | `D:\RED\cache\pytest-tmp-companion` | `D:\RED\cache\pytest-tmp-ship` |
 
-Shared files (`red/__main__.py`, `red/config.py`, `.env.example`, `tests/conftest.py`, plan.md, progress.md,
-AGENTS.md, README.md): small additive edits only; fetch and rebase right before, commit and push right after.
-Never force-push. On a conflict in the other session's file, keep theirs and redo your change on top.
+- `docs/architecture.md` is shared: change it only together with the code that needs the change.
+- Interfaces between lanes are the event bus payloads, `companion.toml` and the settings registry. A lane that needs a change to another lane's interface writes the change into architecture.md and leaves a note in plan.md under the other lane's day.
 
 ### Finished tasks (details in progress.md)
 A0–A4 ✅ · B1 ✅ · B2 steps 1–4 ✅ (step 5, a coder model, waits) · B3.1 coding tools ✅ · B3.2–3.4 Spotify (no
