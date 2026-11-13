@@ -453,6 +453,15 @@ Every command writes a `Timing` line to `red.log`: listen, transcribe, route, ac
 - **Tests** never touch the user's memory: `tests/conftest.py` points `memory_dir` at the test's tmp folder and stops the learner thread from starting; tools without `bind_memory` refuse.
 - Also from this run: without being told, the character said it "can't play tracks". `CHAT_SYSTEM` now lists what Red can do.
 
+#### Hello, not briefings (2026-11-13, plan.md A3, fifth plan)
+
+- `red/greeter.py` polls every 10 s from `VoiceApp.run` (voice and background mode, not typed). Away means 30 minutes with no keyboard or mouse input (`GetLastInputInfo`, so a locked PC counts). Back means input in the last 15 s.
+- When: the day's first hello on Red's first check (sign-in or a start) or on coming back on a new day (the day turns at 4 AM). "Welcome back" after 30+ minutes away. Never at midnight while you keep working, and only once a day across restarts (`RED_HOME\memory\greetings.json` keeps the day and the last 8 lines, so yesterday's line doesn't repeat).
+- Never queued: `VoiceApp.greet` tries the command lock without waiting; busy means no hello. Blocked (full screen, a game, a presentation) means no hello, and none later.
+- Chatty adds a one-liner at most once an hour: late at night (midnight to 4 AM: "It's 2 AM, Aryan. You're still at it?") or after 2 hours at the PC without a 30-minute break.
+- Tests use a fake clock and fake idle time: a simulated day (9 AM start, a coffee break, lunch, a 45-minute meeting, evening) gets exactly 1 hello and 2 welcome-backs. No line mentions meetings, mail, to-dos, news or reminders (a test checks every line).
+- **Limit found:** the microphone consent store (`CapabilityAccessManager\ConsentStore\microphone`) has no usage recorded on this PC, desktop or packaged, so "another app is using the mic" (a call) always reads as no. The full-screen check works.
+
 ### 7.3 Overlay (Track C)
 
 - PySide6. Frameless, always on top, translucent, and doesn't take keyboard focus. Sits in the bottom-right corner of the primary screen.

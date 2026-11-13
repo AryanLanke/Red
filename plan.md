@@ -160,7 +160,15 @@ knows your name, your people, your projects and what you like.
 - **Check:** unit tests with `FakeLLM`; by voice, "my sister is Priya", restart Red, "what's my
   sister's name?"; first-word time for chat unchanged (±0.2 s).
 
-#### A3. Hello, not briefings
+#### A3. Hello, not briefings ✅ (2026-11-13)
+**Done:** `red/greeter.py` (a hello at the start of the day and after 30+ minutes away, with the name;
+lines vary and skip the last 8 used), `RED_CHATTINESS` (quiet, friendly, chatty) on the General page.
+Quiet during a full-screen app, game or presentation (`SHQueryUserNotificationState`) and while Red is
+busy (never queued). **Limit:** "a call" is checked through Windows' microphone consent store, which
+records nothing for desktop apps on this PC, so a Discord or Zoom call isn't detected yet. A later step
+could use the audio-session API.
+**Left for the user:** a day of normal use: expect one hello at the start of the day and one after each
+break of 30+ minutes, nothing else. Say if that's too much or too little.
 1. Red greets you on the first sign-in or unlock of the day, and when you're back after 30+ minutes
    away (`GetLastInputInfo` for idle time), **with your name**: "Morning, <name>!", "Hey <name>, you're
    back." Vary the line and don't repeat yesterday's.
