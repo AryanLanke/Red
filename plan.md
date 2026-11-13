@@ -130,7 +130,14 @@ words are in `a1-personality.txt`) and say what's too much or too little.
   `red/app/pages.py`.
 - **Check:** unit tests; 5 sample replies rendered to WAV for the user; first-word time unchanged.
 
-#### A2. Long-term memory
+#### A2. Long-term memory ✅ (2026-11-13)
+**Done:** `red/memory.py` (profile, facts, the name, the idle learner), the `remember`, `what_you_know`
+and `forget` tools, memory in the chat prompt, and the Memory page. Real model: all 14 test sentences
+routed right; "my sister is Priya", a restart, then "what's my sister's name?" answered "your sister is
+Priya"; chat first sentence 0.47 s with memory against 0.41 s without.
+**Left for the user:** after session 1 restarts the hidden Red: say anything to Red; it asks once "what
+should I call you?". Then try "my sister is …", restart, and "what's my sister's name?". Look at the
+Memory page (`python -m red app`).
 **Why:** today Red remembers 12 lines and then forgets (`MAX_TURNS` in `red/chat.py`). A companion
 knows your name, your people, your projects and what you like.
 1. `red/memory.py`: a short **profile** (`RED_HOME\memory\profile.md`: name, people, projects, likes)

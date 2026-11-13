@@ -442,6 +442,17 @@ Every command writes a `Timing` line to `red.log`: listen, transcribe, route, ac
 - The first draft copied an example line word for word and then offered to order a pizza. The examples are now marked "attitude only", and "never offer what you can't do" is a rule. A 4B model still sometimes sits on the fence when asked for an opinion ("tabs or spaces?").
 - Samples for the user: `RED_HOME\cache\samples-companion\a1-personality-*.wav`.
 
+#### Long-term memory (2026-11-13, plan.md A2, fifth plan)
+
+- **Files, never in git** (`RED_HOME\memory\`, also in `.gitignore`): `profile.md` (a short profile; Red reads the name from its `Name:` line), `facts.jsonl` (one fact per line in the user's own voice, "My sister is Priya.", with when, the source (told, learned or app) and the sentence it came from), `state.json` (whether Red has asked the name), `pending.jsonl` (sentences waiting for the learner, so a restart loses nothing).
+- **The name:** until the profile has one, Red asks once ever, at the end of a chat reply that doesn't already ask something: "By the way, what should I call you?". The answer ("Aryan", "it's Aryan", "I'm Aryan") or "call me Ari" at any time is caught before the router (`Chat.take_name`). "Hi" becomes "Morning, Aryan! What's up?"; the chat prompt says to use the name now and then, not in every sentence.
+- **Tools:** `remember` (refuses passwords, codes and cards), `what_you_know` (a summary, or the model answers from memory only), `forget` (destructive: asks once; "that" is the newest fact, "everything" all facts, otherwise the best word match; it finds the fact before asking, so it never asks about something it doesn't remember).
+- **Learning:** `Chat.reply` queues what the user said; the `Learner` thread asks the model once Red has been quiet for 20 s (`EXTRACT_SYSTEM`, at most 3 facts, about 0.8 s). Facts are put back in the user's voice (`first_person`: "Aryan is building … his project" became "I'm building … my project", so no guessed pronoun is ever kept). Learned facts never keep an address, email or phone number; nothing ever keeps a password, code, PIN, card, bank or ID number.
+- **Prompt:** the profile goes after the fixed chat prompt and the personality (rarely changes, so the cache holds); the 5 facts sharing the most words with the sentence (and the last two lines) go at the top of the chat prompt. Word overlap only: no embeddings until that's measured as too weak.
+- **Measured on the real model (qwen3.5-4b):** 14 sentences routed right (remember ×4 including a plain "my sister is Priya", what_you_know ×3, forget ×3, and chat, look_up, set_reminder and open_app untouched). The story "my sister is Priya", restart, "what's my sister's name?" answers "your sister is Priya". Chat first sentence: **0.47 s median with memory, 0.41 s without** (5 lines each).
+- **Tests** never touch the user's memory: `tests/conftest.py` points `memory_dir` at the test's tmp folder and stops the learner thread from starting; tools without `bind_memory` refuse.
+- Also from this run: without being told, the character said it "can't play tracks". `CHAT_SYSTEM` now lists what Red can do.
+
 ### 7.3 Overlay (Track C)
 
 - PySide6. Frameless, always on top, translucent, and doesn't take keyboard focus. Sits in the bottom-right corner of the primary screen.
