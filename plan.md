@@ -107,7 +107,7 @@ Two coding sessions run at the same time. Stay in your lane:
 
 ### Phase A: the companion core
 
-#### A0. Say what Red is now
+#### A0. Say what Red is now ✅ (2026-11-13)
 Update the one-line descriptions: AGENTS.md ("a local, offline voice and action assistant" → a local
 companion for Windows), the top of README.md, and progress.md 2 (Goals and scope). Also update AGENTS.md's
 "The only account Red talks to is the user's own Google account" rule to match the accounts rule in
@@ -314,6 +314,10 @@ as "Headed", "Heading", "Hit it", "Here Red" or "Hey". The mic is quiet (23% of 
 user's recording (`red wake-test --record`: "Hey Red" 30 times, "Hey Red, open YouTube" 10 times, 2
 minutes of normal talk, in `RED_HOME\cache\wake-corpus\`, never in git). Target on `--replay`:
 **≥ 95% hits, no false wakes on the talk.**
+
+**User report, 2026-11-13 (passed on by session 2 for session 1):** after the latest wake-word changes the
+user said "Red" / "Hey Red" again and Red still didn't notice. Check `red.log` "Wake skip:" lines from
+that time.
 
 **Finding from step 2:** a burst only ends after 0.3 s of quiet (PAUSE_AFTER), more than PAUSE_BEFORE
 (0.25 s), so "no pause before" never fires. A "Hey Red" said less than 0.3 s after other speech merges

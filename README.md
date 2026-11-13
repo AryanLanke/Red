@@ -1,6 +1,6 @@
 # Red
 
-A local voice and action assistant for your Windows laptop. Say "Hey Red" or press a shortcut, and Red listens, acts, and answers. Red runs entirely on your machine: no cloud model, no subscription, and its core features work offline.
+A local companion for your Windows laptop: a friend with a personality who lives on your PC, remembers you, and does your work. Say "Hey Red" or press a shortcut, and Red listens, talks back, and gets things done. Red runs entirely on your machine: no cloud model, no subscription, and its core features work offline.
 
 > **Status: v0.1 in progress.** Red takes spoken and typed commands, runs them, asks before anything risky, answers out loud, and shows a small status window. Developers can follow along in [progress.md](progress.md).
 

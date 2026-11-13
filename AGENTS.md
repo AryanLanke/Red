@@ -2,7 +2,7 @@
 
 **Start here:** read [plan.md](plan.md) first. It lists the next tasks in order and the rules for working on Red.
 
-Red is a local, offline voice and action assistant for Windows. A local LLM turns a command into one JSON tool call, and Red validates it before anything runs.
+Red is a local companion for Windows: a friend with a personality that lives on the PC, remembers the user, and does their work (apps, files, mail, code), growing through plugins. A local LLM turns a command into one JSON tool call, and Red validates it before anything runs.
 
 - [progress.md](progress.md) is the developer document: status, specs, decisions and open questions. Follow its specs and safety rules when building a feature, and keep its status up to date.
 - [README.md](README.md) is for users. Keep it free of developer planning.
@@ -99,5 +99,5 @@ The voice and UI modules are imported lazily, through `load_voice()` and inside 
   - `monkeypatch` to clear `RED_*` variables, with `load_settings(tmp_path)`
   - `monkeypatch` on `llm.start_ollama` / `llm.start_llama_server`
 - The wake phrase is "Hey Red" (`RED_WAKEWORD=hey_red`). Never use "Jarvis" as a wake word, default, prompt or user-facing text.
-- Red never calls a cloud model. Voice, screen and the AI stay on the PC. The only account Red talks to is the user's own Google account, and only after `python -m red google-login` (`red/google_auth.py`): mail and calendar text for the Gmail and Calendar tools, nothing else. Trading and financial automation are out of scope.
+- Red never calls a cloud model. Voice, screen and the AI stay on the PC. Red talks only to accounts the user signs into through Red: Google (after `python -m red google-login`, `red/google_auth.py`: mail and calendar text for the Gmail and Calendar tools) and plugins such as Spotify or other mail. Each service gets only what it needs. Tokens are encrypted with DPAPI and never go into git. Trading and financial automation are out of scope.
 - Windows Smart App Control blocks unsigned binaries. Exit code `0xC0E90002` from llama-server means it was blocked; Ollama is the default for this reason.

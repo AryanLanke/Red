@@ -29,9 +29,11 @@ Last updated: 2026-11-09.
 
 ## 2. Goals and scope
 
+**The aim since 2026-11-13:** Red is a companion for your Windows laptop, not a business assistant. A friend with a personality (casual, warm, dry humour, opinions) who lives on the PC, remembers you and uses your name, does your work (apps, files, mail, code), grows through plugins, and later sits on the desktop as a character. It greets you but never briefs you: meetings, mail, to-dos and news only when you ask. Everything below is still true; it's how Red helps. See plan.md "The goal".
+
 **The bigger goal (2026-11-08):** a voice assistant for Windows as good as "Hey Siri" and "OK Google", which Windows doesn't have. That means a wake word that reliably hears its owner, a pleasant, polished look, natural conversation (follow-ups, knowing when to stop), and a settings app instead of editing `.env`.
 
-**The aim:** a Jarvis for your own PC. You tell Red to do something and it does it, locally and safely.
+**The aim (2026-11-08):** an assistant for your own PC. You tell Red to do something and it does it, locally and safely.
 
 | You say | What Red does | Where it is in the plan |
 |---|---|---|
