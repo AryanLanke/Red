@@ -15,6 +15,7 @@ import logging
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Callable
 
@@ -108,12 +109,54 @@ def _start_if_needed(home: Path, *, runner: Callable = subprocess.run,
     return True
 
 
+WATCHDOG_SECONDS = 30.0
+MAX_RESTARTS_PER_HOUR = 3
+
+
+class Watchdog:
+    """Starts Red again after a crash (plan.md task 2.4).
+
+    A crash leaves red.pid behind with no process; `python -m red stop` deletes the file, so a
+    Red you stopped on purpose stays stopped. At most MAX_RESTARTS_PER_HOUR, so a Red that
+    crashes at start doesn't loop forever.
+    """
+
+    def __init__(self, home: Path, *, runner: Callable = subprocess.run,
+                 popen: Callable = subprocess.Popen, python: str | None = None):
+        self.home, self.runner, self.popen, self.python = home, runner, popen, python
+        self.restarts: list[float] = []
+        self.gave_up = False
+
+    def check(self, now: float) -> bool:
+        """Restart a crashed Red. True when it was started again."""
+        pid = read_pid(self.home)
+        if pid is None or is_running(pid, self.runner):
+            return False
+        self.restarts = [t for t in self.restarts if now - t < 3600]
+        if len(self.restarts) >= MAX_RESTARTS_PER_HOUR:
+            if not self.gave_up:
+                self.gave_up = True
+                log.error("Red stopped %d times in the last hour; not starting it again. See red.log, "
+                          "then press the hotkey or run 'python -m red background'.", len(self.restarts))
+            return False
+        log.warning("Red stopped unexpectedly (process %s); starting it again.", pid)
+        pid_file(self.home).unlink(missing_ok=True)
+        try:
+            start(self.home, popen=self.popen, runner=self.runner, python=self.python)
+        except BackgroundError:
+            return False
+        self.restarts.append(now)
+        self.gave_up = False
+        return True
+
+
 def watch(home: Path, *, hotkey: str, runner: Callable = subprocess.run,
           popen: Callable = subprocess.Popen) -> None:
     """Register the hotkey and start Red whenever it isn't running. Runs until killed.
 
     Red's own listener handles the hotkey while Red is running, so this only
-    acts when Red is down (the pid file says so). A second watcher is refused.
+    acts when Red is down (the pid file says so). Every WATCHDOG_SECONDS it also
+    starts a crashed Red again (`Watchdog`). A second watcher is refused.
     """
     from .listener import normalize_hotkey
     try:
@@ -133,8 +176,15 @@ def watch(home: Path, *, hotkey: str, runner: Callable = subprocess.run,
         hotkeys = keyboard.GlobalHotKeys({key: lambda: _start_if_needed(home, runner=runner,
                                                                         popen=popen)})
         hotkeys.start()
+        watchdog = Watchdog(home, runner=runner, popen=popen)
         try:
-            hotkeys.join()
+            while hotkeys.is_alive():
+                hotkeys.join(WATCHDOG_SECONDS)
+                if hotkeys.is_alive():
+                    try:
+                        watchdog.check(time.monotonic())
+                    except Exception:  # noqa: BLE001 - the hotkey must keep working
+                        log.exception("Watchdog check failed")
         finally:
             hotkeys.stop()
     finally:
@@ -148,7 +198,7 @@ def main(action: str, home: Path, hotkey: str | None = None) -> int:
         except BackgroundError as e:
             print(e)
             return 1
-        print(f"Red is running in the background (process {pid}). It takes about 40 seconds to "
+        print(f"Red is running in the background (process {pid}). It takes about 10 seconds to "
               "load; then say \"Hey Red\" or press Ctrl+Alt+R.\nStop it with: python -m red stop")
         return 0
     if action == "stop":

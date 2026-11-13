@@ -110,3 +110,43 @@ def test_hotkey_main_routes_to_the_watcher(tmp_path, monkeypatch, capsys):
     assert seen == [(tmp_path, "Ctrl+Alt+R")]
     assert bg.main("hotkey", tmp_path, hotkey=None) == 1
     assert "turned off" in capsys.readouterr().out
+
+
+# --- the watchdog: a crashed Red comes back (plan.md task 2.4) ----------------
+
+def crashed(tmp_path, pid=111):
+    bg.pid_file(tmp_path).parent.mkdir(parents=True, exist_ok=True)
+    bg.pid_file(tmp_path).write_text(str(pid), encoding="ascii")   # left behind, process gone
+
+
+def test_a_crashed_red_is_started_again(tmp_path, caplog):
+    crashed(tmp_path)
+    dog = bg.Watchdog(tmp_path, runner=Runner(), popen=Popen, python="pythonw.exe")
+    assert dog.check(now=0.0) is True
+    assert len(Popen.instances) == 1 and bg.read_pid(tmp_path) == 4242
+    assert "stopped unexpectedly" in caplog.text
+
+
+def test_a_running_red_is_left_alone(tmp_path):
+    crashed(tmp_path, pid=111)
+    dog = bg.Watchdog(tmp_path, runner=Runner(alive={111}), popen=Popen, python="pythonw.exe")
+    assert dog.check(now=0.0) is False and Popen.instances == []
+
+
+def test_a_red_stopped_on_purpose_stays_stopped(tmp_path):
+    runner = Runner(alive={111})
+    crashed(tmp_path, pid=111)
+    bg.stop(tmp_path, runner=runner)                              # python -m red stop
+    dog = bg.Watchdog(tmp_path, runner=runner, popen=Popen, python="pythonw.exe")
+    assert dog.check(now=0.0) is False and Popen.instances == []
+
+
+def test_at_most_three_restarts_an_hour(tmp_path, caplog):
+    dog = bg.Watchdog(tmp_path, runner=Runner(), popen=Popen, python="pythonw.exe")
+    for minute in range(4):
+        crashed(tmp_path)
+        dog.check(now=minute * 60.0)
+    assert len(Popen.instances) == 3
+    assert "not starting it again" in caplog.text
+    crashed(tmp_path)
+    assert dog.check(now=3700.0) is True                          # an hour later it tries again

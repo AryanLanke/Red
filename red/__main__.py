@@ -1026,6 +1026,9 @@ def main(argv: list[str] | None = None) -> int:
         from .voice_setup import main as voice_setup_main
         return voice_setup_main(settings)
     if args.cmd in ("background", "hotkey", "stop", "status"):
+        if args.cmd == "hotkey":         # the watchdog's restarts go to red.log
+            logging.basicConfig(filename=settings.logs_dir / "red.log", level=logging.INFO,
+                                format="%(asctime)s %(name)s %(levelname)s %(message)s")
         from .background import main as background_main
         return background_main(args.cmd, settings.home, hotkey=settings.hotkey)
     if args.cmd == "startup":
