@@ -10,6 +10,7 @@
     python -m red wake-test                see what the wake word hears from your microphone
     python -m red wake-test --record       record your own "Hey Red" takes (about 5 minutes)
     python -m red wake-test --replay       score the wake word on those recordings, offline
+    python -m red wake-test --learn        learn how Whisper hears your "Hey Red" from them
     python -m red background               run Red with no window (closing PowerShell won't stop it)
     python -m red hotkey                   watch Ctrl+Alt+R and start Red when it isn't running
     python -m red stop                     stop the hidden Red; status says whether it runs
@@ -988,6 +989,8 @@ def main(argv: list[str] | None = None) -> int:
                            help="record your own \"Hey Red\" takes and normal talk (about 5 minutes)")
     wake_mode.add_argument("--replay", action="store_true",
                            help="score the wake word on those recordings, offline")
+    wake_mode.add_argument("--learn", action="store_true",
+                           help="learn how Whisper hears your \"Hey Red\" from those recordings")
     sub.add_parser("voice-setup", help="say \"Hey Red\" a few times so Red learns your voice")
     sub.add_parser("google-login", help="optional: let Red use your Gmail, Calendar and Contacts")
     sub.add_parser("google-logout", help="sign Red out of Google")
@@ -1019,7 +1022,8 @@ def main(argv: list[str] | None = None) -> int:
         logging.basicConfig(filename=settings.logs_dir / "red.log", level=logging.INFO,
                             format="%(asctime)s %(name)s %(levelname)s %(message)s")
         from .wake_test import main as wake_test_main
-        return wake_test_main(settings, "record" if args.record else "replay" if args.replay else "live")
+        return wake_test_main(settings, "record" if args.record else "replay" if args.replay
+                              else "learn" if args.learn else "live")
     if args.cmd == "voice-setup":
         logging.basicConfig(filename=settings.logs_dir / "red.log", level=logging.INFO,
                             format="%(asctime)s %(name)s %(levelname)s %(message)s")

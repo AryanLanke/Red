@@ -5,6 +5,8 @@
     python -m red wake-test --replay   runs the real detector over those recordings and prints
                                        how many would wake Red, and how many false wakes the
                                        talk caused
+    python -m red wake-test --learn    learns how Whisper hears *your* "Hey Red" from them
+                                       ("Headed", "Here at"...), like voice-setup does
 
 The recordings stay in RED_HOME\\cache\\wake-corpus (your voice never goes into git or
 anywhere else). Each replay adds one line to RED_HOME\\logs\\wake-replay.jsonl, so a change
@@ -102,11 +104,14 @@ class _Heard(logging.Handler):
     def __init__(self):
         super().__init__()
         self.lines: list[str] = []
+        self.texts: list[str] = []          # just the words Whisper heard, for --learn
 
     def emit(self, record: logging.LogRecord) -> None:
         text = record.getMessage()
         if text.startswith("Wake check: "):
             self.lines.append(text[len("Wake check: "):])
+            if record.args and isinstance(record.args, tuple) and isinstance(record.args[0], str):
+                self.texts.append(record.args[0])
         elif text.startswith("Wake skip: "):
             self.lines.append("skipped, " + text[len("Wake skip: "):])
 
@@ -116,6 +121,7 @@ class Result:
     name: str
     wakes: int
     heard: list[str] = field(default_factory=list)
+    texts: list[str] = field(default_factory=list)
 
 
 def replay_file(detector, audio: np.ndarray, threshold: float) -> int:
@@ -130,9 +136,8 @@ def replay_file(detector, audio: np.ndarray, threshold: float) -> int:
     return wakes
 
 
-def replay(settings, *, out: Callable[[str], None] = print, make_detector: Callable | None = None,
-           now: Callable[[], float] = time.time) -> dict | None:
-    """Run the real detector over the recorded corpus and print the score card."""
+def _run_corpus(settings, out: Callable[[str], None], make_detector: Callable | None) -> list[Result] | None:
+    """Every recording through the detector, with what it heard. None (and a hint) if there are none."""
     from .wakeword import HeyRedDetector
 
     folder = corpus_dir(settings)
@@ -141,7 +146,6 @@ def replay(settings, *, out: Callable[[str], None] = print, make_detector: Calla
         out(f"No recordings in {folder}. Record them first: python -m red wake-test --record")
         return None
     detector = (make_detector or HeyRedDetector.create)(settings.models_dir / "wakeword")
-    threshold = settings.wakeword_threshold
     heard = _Heard()
     wake_log = logging.getLogger("red.wakeword")
     wake_log.addHandler(heard)
@@ -150,12 +154,58 @@ def replay(settings, *, out: Callable[[str], None] = print, make_detector: Calla
     results: list[Result] = []
     try:
         for path in files:
-            heard.lines = []
-            wakes = replay_file(detector, read_wav(path), threshold)
-            results.append(Result(path.stem, wakes, list(heard.lines)))
+            heard.lines, heard.texts = [], []
+            wakes = replay_file(detector, read_wav(path), settings.wakeword_threshold)
+            results.append(Result(path.stem, wakes, list(heard.lines), list(heard.texts)))
     finally:
         wake_log.removeHandler(heard)
         wake_log.setLevel(old_level)
+    return results
+
+
+def learn(settings, *, out: Callable[[str], None] = print, make_detector: Callable | None = None,
+          now=None) -> dict | None:
+    """Learn how Whisper hears *your* "Hey Red" from the recordings, like voice-setup does.
+
+    A misheard version ("Headed", "Here at") is added to RED_HOME\\models\\wakeword\\
+    hey_red_profile.json only if it came up at least twice, isn't a common word, and never
+    started anything you said in the 2 minutes of normal talk (so it can't wake Red by itself).
+    """
+    from .voice_setup import learn_profile, save_profile
+    from .wakeword import load_profile, phrase_key
+
+    results = _run_corpus(settings, out, make_detector)
+    if results is None:
+        return None
+    takes = [phrase_key(t) for r in results if r.name.startswith("hey-red") for t in r.texts]
+    talk = {phrase_key(t) for r in results if r.name == TALK_NAME for t in r.texts}
+    learned = learn_profile([(t, 0.0) for t in takes if t], now=now)
+    risky = sorted(p for p in learned["phrases"] if p in talk)
+    model_dir = settings.models_dir / "wakeword"
+    profile = load_profile(model_dir)
+    before = set(p for p in profile.get("phrases", []) if isinstance(p, str))
+    phrases = sorted((before | set(learned["phrases"])) - set(risky))
+    profile["phrases"] = phrases
+    profile.setdefault("max_clip_seconds", learned["max_clip_seconds"])
+    profile["learned_from_recordings"] = learned["created"]
+    path = save_profile(model_dir, profile)
+    new = sorted(set(phrases) - before)
+    out(f"Heard your \"Hey Red\" as: {', '.join(sorted(set(takes))) or 'nothing'}")
+    out(("Red will now also wake on: " + ", ".join(f'"{p}"' for p in new)) if new
+        else "Nothing new to learn.")
+    if risky:
+        out("Left out, because you also said them in normal talk: " + ", ".join(f'"{p}"' for p in risky))
+    out(f"Saved to {path}. Restart Red to use it, and run: python -m red wake-test --replay")
+    return profile
+
+
+def replay(settings, *, out: Callable[[str], None] = print, make_detector: Callable | None = None,
+           now: Callable[[], float] = time.time) -> dict | None:
+    """Run the real detector over the recorded corpus and print the score card."""
+    results = _run_corpus(settings, out, make_detector)
+    if results is None:
+        return None
+    threshold = settings.wakeword_threshold
 
     groups: dict[str, list[Result]] = {}
     for r in results:

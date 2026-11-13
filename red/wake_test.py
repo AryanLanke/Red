@@ -85,6 +85,9 @@ def main(settings, mode: str = "live") -> int:
     if mode == "replay":                 # no microphone: the hidden Red can keep running
         from .wake_corpus import replay
         return 0 if replay(settings) is not None else 1
+    if mode == "learn":
+        from .wake_corpus import learn
+        return 0 if learn(settings) is not None else 1
     was_running = background.stop(settings.home)
     if was_running:
         print("Paused the Red running in the background while we listen.")

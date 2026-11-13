@@ -99,6 +99,50 @@ def test_replay_counts_hits_misses_and_false_wakes(tmp_path):
     assert logged["hey-red"] == [3, 4] and logged["time"] == 100.0
 
 
+class ScriptedDetector:
+    """Logs a scripted transcript for each loud stretch, like the real detector, and never wakes."""
+
+    def __init__(self, texts):
+        self.texts, self.was_quiet = list(texts), True
+
+    def reset(self):
+        pass
+
+    def score(self, frame):
+        loud = np.abs(frame).max() > 0.5
+        if loud and self.was_quiet and self.texts:
+            logging.getLogger("red.wakeword").info("Wake check: heard %r (score %.2f, %s, peak %.2f)",
+                                                   self.texts.pop(0), 0.0, "short phrase", 0.9)
+        self.was_quiet = not loud
+        return 0.0
+
+
+def test_learn_adds_how_you_say_it_but_not_what_you_say_anyway(tmp_path):
+    settings = load_settings(tmp_path)
+    make_corpus(settings, hits=4, misses=0, talk_wakes=2)     # 4 takes + 1 command take + talk
+    heard = ["Headed", "Headed.", "Here at", "Here at", "Here at Open YouTube", "Here at the shop", "Okay"]
+    out = []
+    profile = wake_corpus.learn(settings, out=out.append,
+                                make_detector=lambda d: ScriptedDetector(heard))
+    # "headed": twice in the takes, never in the talk. "here at": also started a sentence in the talk.
+    assert profile["phrases"] == ["headed"]
+    text = "\n".join(out)
+    assert 'Red will now also wake on: "headed"' in text
+    assert 'Left out, because you also said them in normal talk: "here at"' in text
+    from red.wakeword import load_profile
+    assert load_profile(settings.models_dir / "wakeword")["phrases"] == ["headed"]
+
+
+def test_learn_keeps_phrases_from_an_earlier_voice_setup(tmp_path):
+    settings = load_settings(tmp_path)
+    from red.voice_setup import save_profile
+    save_profile(settings.models_dir / "wakeword", {"phrases": ["hey rat"], "max_clip_seconds": 2.0})
+    make_corpus(settings, hits=2, misses=0, talk_wakes=0)
+    profile = wake_corpus.learn(settings, out=lambda s: None,
+                                make_detector=lambda d: ScriptedDetector(["Hitter", "Hitter"]))
+    assert profile["phrases"] == ["hey rat", "hitter"] and profile["max_clip_seconds"] == 2.0
+
+
 def test_replay_without_a_corpus_says_how_to_record(tmp_path):
     out = []
     assert wake_corpus.replay(load_settings(tmp_path), out=out.append,
