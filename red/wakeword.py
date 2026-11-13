@@ -37,16 +37,20 @@ WAKE_CPU_THREADS = 4
 
 VAD_CHUNK = 512                    # Silero works on 32 ms chunks at 16 kHz
 VAD_CONTEXT = 64
-SPEECH_ON = 0.5                    # VAD probability that starts speech
-SPEECH_OFF = 0.35                  # ... and that counts as silence again
-SOFT_SPEECH = 0.25                 # below SPEECH_ON but maybe speech: logged as "too faint"
+# Tuned on the user's own recordings (wake-test --replay, 2026-11-13): 16/30 -> 20/30 "Hey Red" and
+# 5/10 -> 6/10 "Hey Red, open YouTube", still no false wake in 2 minutes of normal talk.
+SPEECH_ON = 0.35                   # VAD probability that starts speech (0.5 missed quiet "Hey"s)
+SPEECH_OFF = 0.25                  # ... and that counts as silence again
+SOFT_SPEECH = 0.2                  # below SPEECH_ON but maybe speech: logged as "too faint"
 MIN_CLIP_SECONDS = 0.35            # "Hey Red" takes about 0.5-1.1 s
 MAX_CLIP_SECONDS = 1.6
 PAUSE_BEFORE_SECONDS = 0.25        # quiet needed before the phrase
-PAUSE_AFTER_SECONDS = 0.3          # quiet that ends the phrase
+PAUSE_AFTER_SECONDS = 0.5          # quiet that ends the phrase (0.3 split "Hey ... Red" in two)
 PRE_ROLL_SECONDS = 0.2
 LONG_PHRASE_SECONDS = 1.25         # a "Hey Red" alone is shorter; longer has a command after it
 HEAD_SECONDS = 1.3                 # the start of a longer burst that is checked for "Hey Red"
+TARGET_PEAK = 0.3                  # a quieter clip is made this loud before Whisper (0: off)
+MAX_GAIN = 20.0
 
 _HEY = {"hey", "hay", "hei", "heh", "hej"}
 _HEY_CLOSE = {"hi", "eh", "ay", "ey", "heyy"}   # not "a": "a red car" must not match
@@ -265,6 +269,9 @@ class HeyRedDetector:
     def _evaluate(self, chunks: list | None = None, head: bool = False) -> float:
         """Score a clip. head: only the start of a longer burst ("Hey Red, open YouTube")."""
         clip = np.concatenate((chunks or self._clip) + [np.zeros(int(0.2 * SAMPLE_RATE), np.float32)])
+        peak = float(np.abs(clip).max()) if clip.size else 0.0
+        if TARGET_PEAK > 0 and 0 < peak < TARGET_PEAK:
+            clip = clip * min(TARGET_PEAK / peak, MAX_GAIN)   # a quiet microphone, made louder
         t0 = self._clock()
         text = self._transcribe(clip)
         self.busy_seconds += self._clock() - t0
@@ -274,7 +281,7 @@ class HeyRedDetector:
         # Logged so a missed "Hey Red" can be explained (RED_HOME\logs\red.log).
         # The loudness shows a microphone that is too quiet.
         log.info("Wake check: heard %r (score %.2f, %s, peak %.2f)", text[:60], score,
-                 "start of a longer phrase" if head else "short phrase", float(np.abs(clip).max()))
+                 "start of a longer phrase" if head else "short phrase", peak)
         if score > 0 and self.owner is not None and not self.owner(clip):
             return 0.0                       # the right words, but not your voice
         # "Hey Red, open YouTube" in one breath: keep the whole burst so far, so the command

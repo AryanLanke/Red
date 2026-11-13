@@ -74,9 +74,9 @@ def test_short_phrase_between_pauses_is_checked_and_fires():
     det, _, whisper = make()
     scores = run(det, noise(1.0), tone(0.7), noise(1.0))
     assert max(scores) == 1.0
-    assert whisper.clips and 0.9 < whisper.clips[0] < 1.6   # phrase + pre-roll + pause
+    assert whisper.clips and 0.9 < whisper.clips[0] < 1.8   # phrase + pre-roll + pause
     fired = int(np.argmax(scores)) * 1280 / SAMPLE_RATE
-    assert 1.7 < fired < 2.3                                # just after the pause that ends it
+    assert 1.9 < fired < 2.5                                # just after the pause that ends it
 
 
 def test_fires_once_per_phrase():
@@ -163,9 +163,9 @@ def test_phrase_run_into_previous_speech_is_skipped():
 
 def test_conversation_with_pauses_checks_only_short_isolated_bursts():
     det, _, whisper = make("Something else.")
-    pieces = [noise(0.5)]
+    pieces = [noise(0.8)]
     for length in (2.5, 0.8, 3.0, 1.9, 0.6, 4.0):
-        pieces += [tone(length), noise(0.5)]
+        pieces += [tone(length), noise(0.8)]
     run(det, *pieces)
     # The 0.8 s and 0.6 s bursts, and the first 1.3 s of each of the four long ones (cheap, once each).
     assert len(whisper.clips) == 6 and max(whisper.clips) < 2.0
@@ -225,7 +225,7 @@ class FaintVAD(LoudnessVAD):
     """Speech the VAD is unsure of: above the 'too faint' line, below the start of a clip."""
 
     def __call__(self, chunk):
-        return 0.4 if super().__call__(chunk) > 0.5 else 0.05
+        return 0.3 if super().__call__(chunk) > 0.5 else 0.05
 
 
 def test_speech_too_faint_to_start_a_clip_logs_why(caplog):
@@ -234,7 +234,14 @@ def test_speech_too_faint_to_start_a_clip_logs_why(caplog):
     det = HeyRedDetector(FaintVAD(), whisper)
     run(det, noise(1.0), tone(0.7), noise(1.0))
     assert whisper.clips == []
-    assert len(skips(caplog)) == 1 and "too faint" in skips(caplog)[0] and "VAD 0.40" in skips(caplog)[0]
+    assert len(skips(caplog)) == 1 and "too faint" in skips(caplog)[0] and "VAD 0.30" in skips(caplog)[0]
+
+
+def test_a_quiet_clip_is_made_louder_before_whisper():
+    heard = []
+    det = HeyRedDetector(LoudnessVAD(), lambda clip: heard.append(float(abs(clip).max())) or "Hey Red.")
+    run(det, noise(1.0), tone(0.7, amp=0.05), noise(1.0))
+    assert heard and heard[0] >= 0.29                       # TARGET_PEAK 0.3, from 0.05
 
 
 # "Hey Red, open YouTube" in one breath: the command is kept (plan.md task 1.3).
