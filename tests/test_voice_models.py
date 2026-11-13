@@ -2,7 +2,7 @@
 
 Piper's speech is fed straight into Whisper and the wake word detector.
 Whisper runs on the CPU (int8) so it never competes with the LLM for VRAM.
-Needs the models (python -m red.voice_demo --setup), so it only runs with
+Needs the models (python -m red setup), so it only runs with
 RED_INTEGRATION=1.
 """
 

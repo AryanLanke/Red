@@ -40,7 +40,7 @@ python -m red --dry-run               # typed loop that only shows tool calls
 python -m red run "open Downloads"    # run one command
 python -m red route "open Downloads"  # print the tool call for one command
 python -m red.overlay                 # overlay demo through every state
-python -m red.voice_demo              # voice only: transcript and read-back, no routing
+python -m red wake-test               # 30 s of live "Hey Red" checks: words heard, score, loudness
 ```
 
 There is no build step, linter or formatter set up. Dependencies are pinned exactly in `requirements*.txt`.
