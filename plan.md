@@ -1,523 +1,587 @@
-# Red: what to do next
+# Red: the whole plan
 
-Updated 2026-11-13 (fifth plan). The first three plans are done, and most of the fourth: see "Done so
-far", `git log` and progress.md. On 2026-11-13 the user changed Red's aim from a voice assistant to a
-**companion for the laptop**. This plan follows from that.
+Written 2026-11-14 (sixth plan). It replaces the fifth plan and folds in everything: what's broken now, the
+app, the installer, every feature, the character, the humour, the models, the comparison with other
+assistants, where to publish for free, and a seven-day project. Details of finished work stay in
+progress.md and `git log`.
 
-Read this first, then AGENTS.md. Do the tasks in order. Each task lists the files and how to check it.
-After finishing a task: run the tests, commit (several small commits), push to main, restart the hidden Red
-(`python -m red stop` then `python -m red background`), and tick it off here.
+Read this first, then AGENTS.md. **If your usage limit is near (90%), read "Usage limit" in the Rules at the
+end first.** Follow "Two sessions at once" if two sessions are running.
 
-**If your usage limit is near (90%), read "Usage limit" in the Rules first.**
+Contents: 1 What Red is · 2 What's wrong now (from your logs) · 3 Where we are · 4 Now: make Red feel alive
+· 5 The character, humour and chattiness · 6 The voice · 7 Models · 8 Every feature · 9 The Red app · 10 The
+installer · 11 How it all fits together · 12 Compared with others · 13 Where to publish for free · 14 The
+seven-day project · 15 Decisions for the user · 16 Reference · 17 Rules.
 
-## The goal
+---
 
-**Red is a companion for your Windows laptop, not a business assistant.** It's a friend with a
-personality who lives on the PC. You talk to it (or type), and it talks back like a person: casual, warm
-and funny, with opinions. It remembers you, does your work (apps, files, mail, code), grows through
-plugins, and later sits on the desktop as a character you can see. The main job is a companion you can
-talk to in between your work. Doing things is how it helps.
+## 1. What Red is
 
-- **Personality first.** Never corporate, never "How can I assist you". Dry humour, reactions,
-  opinions, short replies unless you want more.
-- **It says hello, it doesn't brief you.** Red may greet you ("Morning!", "Hey, you're back").
-  It does **not** read out meetings, mail or to-dos on its own, and it doesn't nag. It tells you
-  about those only when you ask. The only reminders it speaks are ones you set yourself
-  ("remind me at 5 to call Mom").
-- **Any Windows PC:** from a laptop with no GPU to one with an 8 GB+ GPU (RTX 3050, 4050 and so on).
-- **English only.**
-- **Local and free:** the AI model, speech-to-text, voice, wake word, memory and screen reading all
-  run on the PC with no account needed. The only exceptions are optional sign-ins the user chooses:
-  Google for mail and calendar, and app plugins such as Spotify or other mail (B3).
+**Red is a companion for your Windows laptop.** A friend with a personality who lives on the PC: you talk to
+it (or type), it talks back like a person, it remembers you, does your work (apps, files, mail, code), grows
+through plugins, and later sits on the desktop as a character you can see.
 
-Speed, measured from when you stop talking (the `Timing` lines in `red.log`):
+- **Personality first.** Never corporate, never "How can I assist you". Quick, dry, warm, with opinions.
+- **It says hello, it doesn't brief you.** Greetings yes; meetings, mail, to-dos and news only when asked.
+- **Honest.** It never claims a body, a day, music playing, or things it can't know. It never says "I can't
+  see your screen": it looks.
+- **Fast.** A friend doesn't think for four seconds before saying "I'm good, you?"
+- **Local and free.** The model, speech-to-text, voice, wake word, memory and screen reading run on the PC,
+  with no account. Only optional sign-ins the user chooses (Google, Spotify, other mail) leave the PC.
+- **Any Windows PC**, from no GPU to an 8 GB+ GPU. This PC: i-series laptop, RTX 4050 with **6 GB VRAM**,
+  15 GB RAM (the tier everything is tuned on). **English only.**
 
-| Request | Target |
+**Not doing:** smart home, other languages, Mac or Linux, cloud AI models at runtime, big models that spill
+onto the CPU, morning briefings or anything Red says unasked apart from greetings and reminders you set, a
+business tone, Steam.
+
+---
+
+## 2. What's wrong now (from your logs, 2026-11-12 to 11-13)
+
+You said: Red feels robotic; the humour doesn't land; it never really laughs; it asks what's on screen
+instead of looking; it says "I did not understand that"; "How are you?" takes seconds. I read
+`commands.jsonl` and `red.log`. You're right on every point, and here is the cause of each.
+
+| What you felt | Evidence in the logs | Cause | Fix (task) |
+|---|---|---|---|
+| "How are you?" is slow | "What's up?": route **1.1–2.3 s** + chat 0.7–1.3 s, first word **3.2–4.3 s** after you stop. Another **1.3–1.5 s** is "pause waited" | Every sentence goes to the *router* model first, even chit-chat; then the chat model; plus a fixed end-of-speech wait | N1 (instant chat path) |
+| "I did not understand that" | `Couldn't route 'Yeah': Not valid JSON: '{"tool": "none",'` (about 8 times a day) | The router's JSON is cut off. Likely cause: the router prompt (4,383 tokens) was longer than the model's context (4,096), so Ollama cut it. **Fixed in code on 11-13 (`fit_context`); the hidden Red hasn't been restarted with it.** Even so, a bad JSON must never reach you | N2 |
+| It asks instead of looking | "Do you think I'm staring at a blank screen?" → `none`: "I can't see your screen". Later "Can you see what's on my screen?" worked (3.7 s to look, 10 s to say it) | Only the exact "see my screen" phrasing reaches `describe_screen`; the chat prompt lets Red say it can't see | N3 |
+| Robotic, odd | "just chilling in the dark waiting for you to bring me coffee", "vibing with that quiet early hour", the time of day in almost every reply, "I'm trying too hard to sound like a cool friend" | The prompt hands Red the clock, so it narrates the hour; the "friend" prompt invites invented life; 4B models imitate the examples | N4 |
+| Answers the TV | "Cartman is a thumb", "No no no no no", "Master ×5", "I'm going to show you how to do it" ×2, "Hey, Luca" | After a reply Red keeps listening (follow-up window) and treats any speech, including the video playing, as for it; Whisper makes words from noise | N5 |
+| The humour isn't funny; no laugh | "Wait, really?", "Haha, hold up", "Heh" written out; "Could you laugh?" → "Haha, seriously?" | Written laughter read by a voice that can't laugh; no humour design, just "be witty" | N6, N7, section 6 |
+| Long waits after a question | `speak 20.45 s` for a look-up; `speak 10 s` for a screen answer | Replies too long to say; look-up reads a long source summary | N1 (length rules) |
+
+**Honest limit on "0.01 seconds":** a reply the model writes can't start in 0.01 s; the best local result
+is about 0.7–1.0 s to the first word. What can be instant: canned replies for greetings (already 0 s), and a
+cached sound ("Mm.", "Ha.", "Oh?") played within about 0.2 s while the answer is written. That is what N1
+builds, and it is how a person does it too.
+
+---
+
+## 3. Where we are (2026-11-14)
+
+Done and pushed (1,760 tests pass). Details in progress.md.
+- **Voice loop** (plans 1–4): hotkey and "Hey Red" wake word, Whisper, Kokoro voice, streamed speech, cutting in,
+  ~60 PC tools, fast path, Gmail and Calendar, voice match, several commands per sentence, Red's own SearXNG,
+  watchdog restarts, Ollama tuned (2.4–4.9 s instead of 20 s on this PC).
+- **Companion core** (fifth plan, session 2): character prompt and a Personality box (A1); **long-term memory**
+  with the name asked once, `remember`/`what_you_know`/`forget`, an idle learner, and a Memory page (A2);
+  greetings with Chattiness (A3); the chat window on Ctrl+Alt+Space (A4); plugins (B1); write/explain/fix code,
+  never run (B2); coding-tool plugin for VS Code, Qoder, Antigravity, Freebuff (B3.1); Spotify search,
+  WhatsApp, Discord (B3.2–4); DPAPI secrets; to-dos and a day recap (B4); the router-context fix.
+- **Wake word** (session 1): "Hey Red" tuned on your voice, 16/30 → 20/30. Target 95/100 is open (C1).
+- **Waiting on you:** listen to the A1 samples; try memory, greetings, chat window, code and the app plugins
+  after the hidden Red restarts; record the wake corpus; the glow design; picks for voice and character.
+
+---
+
+## 4. Now: make Red feel alive (do these before anything new)
+
+Order matters: speed and honesty first, because nothing else is believable while it lags and invents things.
+Each has a **Check** with numbers from `red.log` Timing lines before and after.
+
+### N1. Chat first, instantly
+1. **A gate before the router.** A fast rule check says "this is a command" (it has an action verb or a known
+   app, file, site or tool word, or a number plus unit) or "this is just talking" (greetings, feelings,
+   opinions, "how are you", "what do you think", "tell me about your day", jokes, "I'm bored"). Talking skips
+   the router completely and goes straight to the chat model, streaming. Unsure → the router, as today.
+   Today's cost for a chat line: router 1.1–2.3 s that adds nothing.
+2. **Instant sound.** At start, render about 30 short reaction clips with the chosen voice ("Mm.", "Ha.",
+   "Oh?", "Hm, let me think.", "Okay.", "Ooh.") into the cache. When a turn is going to the model, play a
+   fitting one within ~0.2 s of the end of your speech (never for commands; "open Edge" just opens). Pick
+   by the sentence's mood (question, joke, bad news). Never the same clip twice in a row.
+3. **Shorter end-of-speech wait.** "pause waited" is 1.3–1.5 s of every turn. A finished sentence ("How are
+   you?") should end after about 0.5 s; unfinished ("open Edge and...") still waits. `smalltalk.sounds_finished`
+   exists; widen it and lower `RED_QUICK_END_SILENCE` from 0.8 to ~0.5, measured so it doesn't cut you off.
+   (listener/audio are session 1's files: hand them the numbers, or do it with them.)
+4. **Reply length by kind.** Chat: 1–2 sentences, a third sentence only when you ask for more. Look-up and
+   screen answers: the answer first, at most 3 sentences, "want the rest?" for more (no 20-second readouts).
+5. **Keep the fixed prompt first** so Ollama's prompt cache holds; the changing parts (memory facts, time)
+   last. Move the clock out of the chat prompt (see N4).
+- **Files:** `red/chat.py`, `red/router.py` (gate), `red/smalltalk.py`, `red/speech.py`, a new `red/reactions.py`,
+  `red/__main__.py`; the end-silence numbers belong to `listener.py`/`audio.py` (session 1).
+- **Check:** "How are you?", "What's up?", "I'm bored", "tell me a joke": first sound ≤ 0.3 s (clip), first
+  real word ≤ 1.0 s after you stop (now 3.2–4.3 s). 20 chat lines measured, median and worst in progress.md.
+
+### N2. Never say "I didn't understand that"
+1. Restart the hidden Red with the context fix, then count `Not valid JSON` lines for a day. Target: zero.
+2. Whatever happens, a failed route becomes **a chat turn**, not an apology: the sentence goes to the chat
+   model. "Sorry, I didn't understand that" is only for when the model itself is down.
+3. The router never writes chat replies. Its `none` tool carries no text; the chat model answers. That also
+   removes the 150 tokens the router spends writing a reply that is then thrown away.
+4. Tests: truncated JSON, empty output, a wrong tool name, a timeout → each ends as a chat turn.
+- **Files:** `red/router.py`, `red/__main__.py`, `red/chat.py`. `red/llm.py` (session 1's) only if a token limit is found.
+- **Check:** 100 mixed sentences replayed from `commands.jsonl`; no apologies except with the model off.
+
+### N3. Look, don't ask
+1. **Screen is a sense, not a tool you must name.** Any sentence about "this", "here", "my screen", "what am I
+   looking at", "what's this error", "is it blank", "what do you think of this", "read this", "who is this"
+   goes to the screen path. The chat prompt says Red *can* see the screen when asked and never says "I
+   can't see". Never "what's on your screen?" back to the user.
+2. **Cheap context always, a look on demand.** Every chat prompt gets one line: the active app and window
+   title ("VS Code: plan.md"; Windows API, local, no image). "What do you think of this?" then already knows
+   it's about plan.md. A real look (screenshot → OCR, or the vision model) happens when the question needs it.
+3. **Seeing well.** Today: OCR text plus title, which answered correctly ("You're in VS Code with a Claude
+   session open") in 3.7 s. Add a vision model where the GPU allows (the model table has Qwen-VL class
+   candidates; 6 GB VRAM can't hold it beside the chat model, so load it only for a look and measure the
+   swap). Say what you see first, in one sentence, then ask a question only if it helps.
+4. **Privacy.** A screenshot is read locally and thrown away; a setting turns the always-on window-title line
+   off; never read a password field or a window titled with a banking or password-manager word.
+- **Files:** `red/tools/screen.py`, `red/fastpath.py`, `red/chat.py`, `red/screen.py`.
+- **Check:** 10 real screens (code, a video page, a PDF, a game launcher, a blank desktop, an error dialog):
+  each answered correctly without a question back; look time and total time in progress.md.
+
+### N4. Stop inventing a life
+1. Rewrite the character prompt from the logs (see section 5): ban the patterns that appear ("chilling in
+   the dark", "waiting for you to wake up", "vibing", "bring me coffee", describing its own surroundings,
+   mentioning the hour, "I'm trying too hard"). Red's inner life is about **the conversation and you**, not a
+   room or a body.
+2. **Time is a fact, not a topic.** Remove the clock from the chat prompt. Give it only when the sentence is
+   about time, or to the greeter (which already has it).
+3. **Run a scored evaluation, not vibes.** `scripts/chat_eval.py`: 40 fixed user lines (chit-chat, feelings,
+   opinions, jokes, a bad day, a flirt, a rude one, "do you love me", a technical question, "go away").
+   It writes Red's replies to a file and counts: invented body/place/time (target 0), starts with the same
+   word as the last reply (≤ 20%), over 2 sentences (≤ 10%), answers the actual question (read by you, 1–5).
+   Rerun after every prompt change; keep the table in progress.md.
+- **Check:** eval table before and after; 20 of your own lines from the log re-run.
+
+### N5. Don't answer the TV (listening hygiene)
+Cases in the log: a video's speech, "no no no no", repeated phrases, "Master ×5", "Hey, Luca".
+1. **Follow-up window is for you only.** After a reply Red listens ~7 s. In that window require the owner's
+   voice (voice match on, `RED_VOICE_MATCH`), speech that starts within 3 s, and a clean transcript.
+2. **Garbage filters** on the transcript: the same word or phrase repeated 3+ times; Whisper's own
+   `no_speech_prob`/`avg_logprob` too low; fewer than two real words that aren't filler; a sentence that is
+   a known Whisper hallucination ("Thanks for watching", "Subtitles by"). Ignore, don't answer.
+3. **Media aware.** While a video or music plays, the wake word needs a stronger match; the user can say
+   "Hey Red, pause" and Red pauses first, then listens. Option: pause media on wake (media key) and resume.
+4. **No echo of itself.** Red's own speech is out of the mic path (pause the wake word while talking, except
+   for cut-ins).
+- **Files:** `stt.py`, `listener.py`, `voice_match.py`, `audio.py` (session 1's), plus a transcript filter in
+  `red/smalltalk.py`. **Session 1 owns the audio ones; give them this list.**
+- **Check:** a 10-minute YouTube video playing at normal volume: zero unwanted replies; 30 "Hey Red" still wake.
+
+### N6. Emotion you can hear
+See section 6: a real laugh needs a different voice engine; until then Red writes less fake laughter and
+uses pauses, rhythm and the reaction clips.
+
+### N7. Humour that lands
+See section 5: a humour system with devices, a budget, memory callbacks and your feedback.
+
+---
+
+## 5. The character, humour and chattiness
+
+### 5.1 Who Red is (the character bible, `docs/character.md`, short enough to fit in a prompt)
+- **One line:** the dry-witted friend who's good with computers and quietly on your side.
+- **Voice:** short sentences. Understatement. Says the true thing lightly. Reacts first ("Oof."), then
+  answers. Never explains its own joke. Never a lecture. Never "great question".
+- **Opinions:** has them, picks a side, changes them if you make a good point ("Fair. You win that one.").
+- **Warmth under the jokes:** when you're stressed, tired or sad the jokes stop, it says one true, kind
+  thing and asks one question. It notices patterns kindly ("third late night this week").
+- **Honest about itself:** it's software on your laptop and doesn't pretend otherwise, but doesn't lecture
+  about being an AI either. No body, no food, no sleep, no surroundings, no "my day".
+- **Running bits** (grow from memory, never forced): your project names, your friends' names, what you
+  said you'd do, in-jokes you made together. Callbacks are the cheapest real humour.
+- **Never:** corporate lines, "as an AI", lists of abilities, invented facts about itself, swearing at you,
+  mocking real struggles, jokes about protected groups, pushing you to talk when you said you're busy.
+- **Relationship stages** (from memory): the first week it's friendly and curious and asks a few things;
+  after a month it teases, callbacks, finishes your jokes. Stored as a number of days talking, not a prompt claim.
+
+### 5.2 Humour system
+A 4B model told "be funny" gives "Haha, wait, really?" Humour needs design:
+1. **Devices**, each with 5–8 hand-written examples in the prompt pool, one picked per reply (not all at once):
+   *understatement*, *mock offence*, *playful roast of you* (gentle, about choices, never you), *absurd
+   exaggeration*, *callback to something you said*, *deadpan literalism*, *self-deprecating about being software*,
+   *anticlimax* (set up serious, land small).
+2. **A humour budget.** At most one attempt in about three replies, none when you're stressed, rushed or just
+   gave a command; more when you're relaxed and chatting. Tracked in code, not asked of the model.
+3. **Timing.** Setup, a half-second pause, punchline, in separate sentences (section 6). Short beats long.
+4. **Taste memory.** You can say "that was funny" / "not funny" / "less jokes" / "more roasting"; Red stores
+   which devices land (a small score per device in the memory folder) and shifts. The Personality box still
+   overrides. A humour dial in the app: *Off / Light / Normal / Cheeky*.
+5. **Eval.** Section N4's table gains a "made you smile" column that you fill in on 20 lines. Keep what scores.
+6. **Later, training (section 7):** a small LoRA on a few hundred good exchanges, because prompts only go so far.
+
+### 5.3 Chattiness (how much Red speaks unasked)
+Red answers when spoken to in every mode. The setting changes only what it starts.
+
+| Level | What it does unasked |
 |---|---|
-| "open Edge", "volume up", "pause", "lock" | done in about 1–3 s |
-| "play Believer" | playing in about 2–3 s |
-| a question or chat | Red starts talking in about 1–2 s |
-| a real job ("write me a script that…", "draft a mail to…") | something visible within 2 s (the chat window starts filling), then as long as the job needs |
+| **Quiet** | Nothing. Only answers. Reminders you set still fire. |
+| **Friendly** (default) | A hello at the start of your day and when you're back after 30+ minutes, with your name. |
+| **Chatty** | Friendly, plus at most one short remark an hour, only when something earned it: very late at night, 2 hours without a break, you finished something (a to-do, a coding agent's job), a sad song stuck on repeat. |
+| **Companion** (new) | Chatty, plus it can start a topic when you've been idle at the desk a while ("Still alive over there?"), react to what you're doing in a few words (a build finished, a video ended), and comment on the weather you asked about earlier. Max 3 an hour. |
 
-**Not doing:**
-- smart home
-- other languages
-- Mac or Linux
-- cloud AI models
-- big models that run partly on the CPU (gpt-oss-20b, Qwen3.5-35B-A3B), which are too slow
-- morning briefings, meeting alerts, or anything Red says unasked apart from a greeting and the
-  reminders you set
-- a business or "professional assistant" tone
+Always: never during a full-screen app, game, call or while you're typing fast; never meetings, mail, to-dos
+or news; any remark you wave off ("not now") silences remarks for two hours and is remembered.
 
-## Compared with others
+### 5.4 The visible companion (the face)
+- An **original** character (nothing copied from Desktop Mate or anyone). Shape rule to confirm: square-ish,
+  soft, no outline (it follows the glow's "frosted, no rim" look); the colour is Red's glow palette.
+- **States:** asleep (idle, slow breathing), notices you (wake), listening (leans in), thinking (looks up),
+  talking (mouth moves to the voice loudness), laughing, shy/oops, bored (idle 5 min), celebrating (a job done),
+  sad (you're having a bad day, only if you said so).
+- Lives in a transparent click-through window; click opens the chat window; drag anywhere; sits on a corner
+  or on top of the taskbar; hides during full-screen apps; on/off in the app; uses < 1% CPU when asleep.
+- **Show 3 sketches** (rendered offscreen to PNG) before building. You pick. Then sprites/animation as
+  vector drawing in PySide6 (no image assets to license) or a small rigged 2D set you approve.
+- Later: a **voice-reactive glow** version as the default for people who don't want a character.
 
-The user compared Red with OpenJarvis (Stanford's open-source local-AI framework, Apache 2.0) on
-2026-11-13. The rule: **take ideas, not code.** Write Red's own version of an idea; don't copy files.
+---
 
-| | Where they lead | Where Red wins |
+## 6. The voice (laughing, pausing, male/female)
+
+What we know: Kokoro is natural but flat; it can't laugh or sigh; a laugh clip glued in sounded wrong (the
+reason the earlier clips were removed). Written "haha" read aloud is worse than nothing.
+
+1. **Now (N6):** stop writing "Haha"/"Heh" as words. Short reactions are cached clips of the same voice
+   ("Ha." said as a short breath, "Hm." "Oh?"), pauses by punctuation (done), shorter sentences.
+2. **The real fix (C2): an expressive TTS engine** that supports laugh, sigh and pause tags. Spike on this
+   RTX 4050 (6 GB, shared with the chat model):
+   | Candidate | What to check |
+   |---|---|
+   | Chatterbox (Resemble AI) | licence, VRAM, speed, laugh/emotion control |
+   | Orpheus (3B, GGUF) | `<laugh>` `<sigh>` tags; 3B beside a 4B chat model won't fit 6 GB: CPU or swap |
+   | Sesame CSM-1B | natural conversation prosody; licence and speed |
+   | Dia | `(laughs)` tags; 1.6B; speed |
+   | Kokoro + a laugh sample bank | the cheap fallback if none fits |
+   Criteria: first audio ≤ ~1 s, runs with the 4B model loaded (or swaps in < 2 s), no unsigned DLLs, licence
+   allows redistribution, **a blind A/B listening test with you**: 10 lines each, you pick. One winner at most.
+3. **The model writes tags only when the voice supports them** (`[laugh]`, `[sigh]`, `[pause]`); otherwise
+   the tags are stripped before speaking, so nothing ever reads "laugh" aloud.
+4. **Voices:** the female/male choice with a Play sample button (Kokoro `af_heart`, `am_michael`, `bm_george`
+   and more are ready in `cache\voice-samples`); you pick by ear. Speed slider exists.
+5. **Silence is part of speech:** a short half-second before a punchline, a longer one before bad news.
+6. **Earcons:** a soft chime for wake, a different one for "done", a gentle tick when it starts thinking. Short,
+   quiet, original (synthesised, nothing licensed), off in the app if you hate them.
+
+---
+
+## 7. Models
+
+Everything local, pinned by SHA-256, from `red/llm.py` `MODELS` and `models\` under RED_HOME.
+
+| Job | Today (this PC) | Plan |
 |---|---|---|
-| **OpenJarvis** | Long-term memory (a profile plus facts saved in the background), plugins ("skills", MCP), a chat window, a one-line installer, auto-start with restart on crash | No personality, no wake word, no PC control (just a raw `shell_exec`), no desktop character; it's a framework for developers, not a friend |
-| **Desktop Mate** | Charm: a cute character on the desktop | No brains, no PC control |
-| **Copilot / Siri** | Pre-installed, polished | Corporate tone, cloud |
-| **Braina, VoiceAttack, PyGPT** | Plugins, macros, reliable triggers | Paid, rigid or a workbench; none of them is a companion |
+| **Chat + answers** | Qwen3.5 4B (Ollama, ~3.4 GB, thinking off) | Keep. Add **a persona LoRA** later (below). No-GPU PCs: Qwen2.5 3B. 8 GB+ GPUs: offer a 7–8B. |
+| **Router (picks the tool)** | The same 4B, JSON-constrained, 4–5k-token prompt, 0.9–1.5 s | **Make it cheaper:** the gate (N1) skips it for chat; two-step routing (pick a tool *group*, then a tool) cuts the prompt to ~1.5k tokens; try a 1–1.5B model for the first step if the 4B stays the bottleneck. |
+| **Speech to text** | Whisper `base.en`, CPU (this PC), `small.en` default elsewhere | Try `distil-small.en` and `small.en` on GPU when VRAM allows; hotwords for your names; filters from N5. |
+| **Wake word** | openWakeWord "hey_red" (custom) + a Whisper check + voice match | C1: 95/100 target; retrain with Kokoro Indian-English voices and your clips if needed. **Check the licence of openWakeWord's pretrained parts before release.** |
+| **Speaker match** | CAM++ ONNX | Keep; on by default once tested. |
+| **Voice (TTS)** | Kokoro 82M ONNX (CPU), Piper fallback | C2 expressive engine spike, section 6. |
+| **Screen** | OCR + window title; vision flag exists | A small vision model loaded only for a look (Qwen-VL class, ≤ 3B); measure swap time on 6 GB. |
+| **Memory search** | word overlap | Add a small embedding model (e.g. a MiniLM-class ONNX, ~25 MB) only if overlap measures weak. |
+| **Code** | the 4B (7 of 10 right) | Spike a coder model for `write_code` only (B2 step 5), loaded on demand. |
 
-Red's edge: **personality + memory + PC control + a face**, all local.
+**"It needs to be trained a lot."** Fair, and here is the honest order of what moves quality:
+1. **Prompts, routing and memory** (done mostly, N-tasks above): the cheapest, the most effect. Do first.
+2. **Evaluate** with the 40-line chat eval and 100 routed sentences, so "better" is a number.
+3. **Persona LoRA (SFT)** on the 4B: a few hundred high-quality exchanges in Red's voice (and its humour
+   devices) so it stops needing a long prompt, answers shorter and funnier, and routes in fewer tokens.
+   Data sources, in order of preference: (a) your own logs, **rated by you** (keep the good ones, rewrite the
+   bad); (b) lines written and curated by you and a coding agent; (c) permissively licensed dialogue sets;
+   (d) generated by a local model and then filtered by you. Never your voice recordings, never memory files.
+   Training needs ≥ 12 GB VRAM for a 4B QLoRA, so this PC (6 GB) can't; a free Colab or Kaggle GPU can.
+   **This is a decision for you** (section 15): it's the one place something leaves the PC, and only
+   public-safe training text would.
+4. **Router fine-tune:** the same method on a 1B model for tool selection from your real `commands.jsonl`
+   (private, stays local). Biggest speed win after the gate.
+5. Only then consider a bigger base model.
 
-## Done so far
+---
 
-- **Plans 1–3** (2026-11-08 to 11-12): the voice loop, ~50 PC tools, fast path, streamed speech,
-  Gmail and Calendar, voice match, several commands per sentence, Kokoro, "open YouTube", the right song,
-  `notify_when_done`, the Red app wizard (`red/app/`), Red's own SearXNG. Details: progress.md 7.
-- **Fourth plan** (2026-11-13):
-  - Clean-up: stale handoff docs, worktrees and merged branches gone. `cache\voice-samples` and
-    `cache\train_hey_red` kept.
-  - Wake word steps 1–3: `red wake-test --record/--replay` (waiting for the user to record), "Wake
-    skip:" lines for every guard, and "Hey Red, open YouTube" in one breath. The rest is task C1.
-  - On whenever the PC is on: Ollama answers in **2.4–4.9 s instead of 19.7–21.6 s**
-    (`OLLAMA_VULKAN=0` with NVIDIA, the GPU library remembered and pinned); `Startup:` lines show
-    "Hey Red" live **9.4 s** after start and the model warm at **18.3 s**; the watchdog in `red hotkey`
-    starts a crashed Red again (at most 3 times an hour). **Left: a reboot test by the user.**
-  - Laugh clips removed and the laugh line dropped from `CHAT_SYSTEM`.
+## 8. Every feature
 
-## Tasks, in order (fifth plan, 2026-11-13)
+✅ done and tested · 🔧 built, needs your try · ⏳ planned · ❌ won't
 
-**Ship every commit to `main` on its own** (many small commits, each pushed right away).
+**Talking**
+- ✅ Hotkey Ctrl+Alt+R and "Hey Red" (wake word being tuned, C1) · ✅ follow-ups · ✅ cut in by voice ·
+  ✅ several commands per sentence · ✅ spoken confirmations for risky actions · 🔧 voice match (owner only)
+- ✅ Streaming speech sentence by sentence · ✅ punctuation pauses · ⏳ reaction clips (N1) · ⏳ laughs (C2)
+- 🔧 Memory: name, profile, facts, learner, `remember`/`what_you_know`/`forget`, Memory page
+- 🔧 Personality box, humour dial ⏳, chattiness 🔧 (four levels ⏳)
+- ⏳ Mood that follows you across a day (no narrating the clock)
 
-### Two sessions at once (from 2026-11-13)
+**PC control** (✅ unless noted)
+- Open apps, folders, websites, settings pages · find files · volume, media keys, screenshot, lock, sleep,
+  shutdown, restart, Recycle Bin · timers, reminders (survive restarts) · repo sync check · notify when an
+  app finishes · battery, time, date · play any song/video on YouTube
+- ⏳ Windows: snap, minimise all, switch app, close window (asks) · ⏳ system: Wi-Fi, Bluetooth, night light ·
+  ⏳ clipboard: explain, summarise, shorten what I copied · ⏳ dictation "type this: …" · ⏳ focus timer
 
-Two coding sessions run at the same time. Stay in your lane:
+**Knowing things**
+- ✅ Look-up (Wikipedia + Red's own web search, cross-checked) · weather, news · answers from the model
+- 🔧 Screen: describe (N3 makes it automatic) · ⏳ read a PDF, docx, txt and answer from it
 
-| | Session 1: wake word | Session 2: companion |
+**Work**
+- 🔧 Write / explain / fix code in the chat window, never run · 🔧 coding tools (VS Code, Qoder, Antigravity,
+  Freebuff): open, hand a task, "what did it change?" · ⏳ more tools via `[coding.*]` · ⏳ VS Code extension
+- ✅ Gmail and Calendar (optional sign-in, send/delete read back) · ⏳ mail drafts in your style, "anything
+  important?" · ⏳ other mail by IMAP/SMTP with an app password · 🔧 to-dos, day recap · ⏳ notes (Obsidian-friendly)
+- ⏳ **Work mode:** several steps with a plan shown, Stop button, step limit (B6)
+
+**Apps and fun**
+- 🔧 Spotify search and what's playing (🔧) · ⏳ Spotify sign-in for "play X on Spotify" (needs Premium) ·
+  🔧 WhatsApp (send to saved numbers, read back; no reading chats) · 🔧 Discord (open, mute/deafen; no messages)
+- ⏳ Telegram, Steam *launching* (not the store), OneDrive, browser tabs · ⏳ games: 20 questions, would-you-rather,
+  quiz, debate (debate ✅)
+
+**The shell**
+- 🔧 Chat window (typed + spoken in one thread, code with Copy/Save/Open in VS Code, drafts with Send)
+- ✅ Glow around the screen edges (final design waiting for you) · ⏳ the companion character
+- 🔧 Red app with seven pages · ⏳ tray icon, first-run wizard, one-click installer, auto-update, uninstaller
+
+**❌ Not doing:** reading your WhatsApp or Discord messages, automating your Discord account, trading or
+financial automation, smart home, cloud models, selling or sharing your memory.
+
+---
+
+## 9. The Red app (`python -m red app`, later the tray icon)
+
+Today: Hardware Check, Model Status, Audio Setup, Voice Settings, General (hotkey, overlay, chattiness,
+personality), Memory, Plugins.
+Target, in one window with a left list instead of tabs:
+1. **Home:** is Red running, what it's listening for, a Talk button, latest conversation, a mic level meter.
+2. **Voice:** voice (female/male, Play sample), speed, earcons, laugh style (when C2 lands).
+3. **Personality:** character summary, humour dial, chattiness (4 levels), custom text, the "taste" scores.
+4. **Memory:** profile, facts, "what Red learned today", export/delete everything.
+5. **Listening:** wake phrase and *train my voice*, sensitivity, hotkeys, microphone, voice match, the wake test.
+6. **Models:** current model, a pick per hardware tier with a "best for" line, downloads with progress and
+   checksums, speech-to-text size.
+7. **Plugins:** on/off, what each needs, a sign-in button per plugin (Google, Spotify, mail), install from a folder.
+8. **Screen and privacy:** look at the screen on/off, window-title line on/off, what's stored, where.
+9. **Companion:** character on/off, which one, size, corner, behaviour during full screen.
+10. **General:** start with Windows, updates, language is English, logs folder, "report a problem" (makes a
+    redacted bundle you can send; nothing automatic).
+Rules: a Save button that says what restarts; every setting writes to `.env` or a named file; no setting
+that needs the command line; follows the glow look (frosted, no rim).
+
+---
+
+## 10. The one-click installer
+
+Goal: a person with a Windows 11 laptop downloads **one file**, double-clicks, and ends with a Red that
+answers "Hey Red", with no Python, git or command line. **Cost: $0.**
+1. **Build** (`installer/build.ps1`): an embeddable Python 3.11, Red's pinned wheels (pure Python or signed
+   DLLs only, Smart App Control), the `red` package, the first-run app. `Red-Setup.exe` from **Inno Setup**
+   (free): per-user install to `%LOCALAPPDATA%\Red`, no admin, Start menu, optional start with Windows, an
+   uninstaller that offers to keep or delete memory and models. Size target: installer < 150 MB; models
+   download on first run (about 3.5–6 GB depending on the tier) with a progress bar, resume and SHA-256.
+2. **First-run wizard** (the Red app, 8 screens): (1) hardware check and the model for this PC; (2) downloads;
+   (3) microphone and a level meter; (4) *say "Hey Red" ten times* (voice-setup) and a spoken test; (5) pick
+   the voice (play samples); (6) **your name and a few things about you**, which seed memory; (7) plugins to
+   turn on and optional sign-ins (Google, Spotify, mail), each skippable; (8) the first hello.
+3. **Updates:** the app checks the GitHub release feed (one HTTPS request, no tracking), shows what's new,
+   downloads, checks the hash, and installs on restart. Off by default for the cautious, on in the wizard.
+4. **Signing is what makes Windows trust it.** Smart App Control blocks unsigned programs outright; SmartScreen
+   warns on unknown ones. $0 options: **SignPath Foundation** (free code signing for open-source projects;
+   apply with the GitHub repo), or **publishing through the Microsoft Store** (the Store signs the package;
+   check the current individual-developer fee). Until then: the README says how to unblock, and the
+   installer is built so every file inside is pinned and hashed.
+5. **Tests:** a clean Windows Sandbox/VM with Smart App Control on; download → working "Hey Red" with no
+   command line; uninstall leaves nothing but what you chose to keep; install over a running Red works.
+6. **Also:** `install.ps1` one-liner for people who prefer PowerShell; a portable zip.
+
+---
+
+## 11. How it all fits together
+
+```
+ mic ─► wake word (openWakeWord + Whisper check + voice match) ─┐
+ hotkey / chat window (typed) ──────────────────────────────────┤
+                                                                ▼
+                    end-of-speech ─► Whisper ─► transcript filters (N5)
+                                                                ▼
+                    ┌── gate (N1): chit-chat? ─yes─► Chat model (stream) ─► reaction clip + speech
+                    │                │no
+                    │                ▼
+                    │        fast path (rules) ─► tool          screen sense (N3): window title always,
+                    │                │miss                       a look on demand
+                    │                ▼
+                    │        router: group → tool (JSON, schema-checked) ─► Executor ─► tool / plugin
+                    │                                    └─ confirm if destructive ─► log
+                    └── any failure ─► chat turn (never an apology) 
+ memory (profile + facts) ─► chat prompt · greeter (idle) · learner (idle) · overlay/glow · companion
+```
+- **Threads:** Qt on the main thread (glow, chat window, companion); the voice loop on its own; the greeter
+  and learner are idle-only workers; speech is a stream. Nothing speaks over a command.
+- **Latency budget** (from you stopping to the first sound): end-of-speech wait ≤ 0.5 s · Whisper ≤ 0.5 s ·
+  gate/fast path ≤ 0.05 s · reaction clip at ≈ 0.2 s · first real word ≤ 1.0 s for chat, ≤ 2 s for a tool
+  that speaks, "open Edge" done in 1–3 s total.
+- **Folders** (`RED_HOME`, default `%LOCALAPPDATA%\Red`): `bin\`, `models\`, `cache\` (clips, samples),
+  `config\` (`.env`, allowlist, contacts, repos, plugins.json, `secrets\` DPAPI), `memory\` (profile, facts,
+  todo, greetings state), `plugins\`, `logs\` (red.log, commands.jsonl). **None of `memory\`, `secrets\`,
+  logs, voice clips or the wake corpus is ever in git or sent anywhere.**
+- **Plugin contract:** a folder with `plugin.toml` + `tools.py`; Tool classes with a schema; the model picks and
+  fills; the Executor confirms and logs; broken plugins are skipped; off plugins aren't imported.
+- **Router budget:** every tool costs ~130 prompt tokens; the router prompt is ~6,000 tokens and the context
+  grows to fit (`fit_context`), each growth is one 13–16 s reload. **Two-step routing** is how B5's eight
+  plugins fit: step one picks among ~10 groups (system, web, files, mail, code, apps, memory, media, work,
+  chat) from short names, step two sees only that group's tools.
+- **Safety:** model text never reaches a shell; risky actions are read back; allowlists; code Red writes is
+  never run; keys are pressed only from fixed combos and only when the right window is in front.
+
+---
+
+## 12. Compared with others
+
+(From what I know up to mid-2026; verify prices and features before using these in public text.)
+
+**Voice assistants and big-company assistants**
+| | Strengths | Weaknesses for you | Red's edge |
+|---|---|---|---|
+| Siri, Google Assistant, Alexa | Always on, huge integrations, instant | Corporate tone, cloud, little memory of *you*, not on Windows | Personality, local, memory, PC control |
+| Windows Copilot ("Hey Copilot") | Preinstalled, fluent, voice-first, cloud-smart | Cloud, account, generic tone, watches little of your workflow | Local, yours, friend not helper |
+| ChatGPT / Claude / Gemini voice | Best conversation and humour, real laughter and emotion in voice modes | Cloud and subscription, no PC control, no wake word on Windows | Local, free, acts on your PC. **Their fluency is the bar for how Red *feels*.** |
+| Grok companions, Pi, Replika, Character.AI | Companion feel, memory, persona | Cloud, accounts, no PC control, some paywalled | Local, works for you, no data leaves |
+| Windows Recall / screen-memory tools | Remember what you saw | Heavy, privacy worries | Red looks only when asked |
+
+**Local and open-source assistants**
+| | Strengths | Weaknesses | Red's edge |
+|---|---|---|---|
+| OpenJarvis (Stanford) | Framework, long-term memory, skills/MCP, installer | No personality, no wake word, raw `shell_exec`, developer-first | Friend, safe tools, a face |
+| Home Assistant Assist / Rhasspy / OVOS | Solid offline voice for smart homes | Smart-home focus, rigid intents | Open-ended chat, PC work |
+| Open Interpreter, Leon | Run code, agents | Run model code on your PC (risky), no companion | Never runs model text |
+| Jan, LM Studio, Open WebUI, AnythingLLM | Nice local chat and model management | Chat boxes, not voice-first, no PC control | Voice, wake word, control |
+| Braina, VoiceAttack | Triggers, macros, plugins | Paid, rigid, not conversational | Free, conversational |
+
+**Desktop companions**
+| | Strengths | Weaknesses | Red's edge |
+|---|---|---|---|
+| Desktop Mate | Charm, a character on screen | No brains, no PC control | A mind behind the face |
+| Shimeji, BonziBuddy/Clippy (history) | Nostalgia, desktop pets | No real conversation | Real talk, memory |
+| AI VTubers (Neuro-sama style) | Personality, humour, audience | Cloud/streaming focus, not a personal tool | Private, personal, useful |
+
+**Red's edge in one line:** personality + memory + PC control + a face, all local and free.
+**Where others still lead, and what we do about it:** voice naturalness and real laughter (C2); speed of the
+big cloud assistants (N1 gets to ~1 s); polish of preinstalled ones (installer, signing, app); integrations
+(plugins).
+
+---
+
+## 13. Where to publish for free (not Steam)
+
+| Place | What it gives | Notes |
 |---|---|---|
-| Works in | `D:\RED\red`, on `main` | the worktree `D:\RED\worktrees\companion` (branch `companion`), pushing each commit to `main` |
-| Tasks | finish anything left from the fourth plan, then **C1** now (not waiting for the installer) | **Phase A** (A0–A4), then **Phase B** (B1–B6), in order |
-| Owns these files | `red/wakeword.py`, `wake_test.py`, `wake_corpus.py`, `voice_setup.py`, `listener.py`, `audio.py`, `stt.py`, `voice_match.py`, `background.py`, `startup.py`, `llm.py` and their tests | everything new it creates (`red/memory.py`, `greeter.py`, `chat_window.py`, `plugins.py`, `red/plugins/`, `red/secrets.py`…), plus `red/chat.py`, `smalltalk.py`, `speech.py`, `red/app/`, `red/tools/` and their tests |
-| The hidden Red | the **only** one that stops and starts it | never stops or starts it, and never runs a live voice Red |
+| **GitHub Releases** (primary) | Free hosting of `Red-Setup.exe` + SHA-256, release notes, the update feed | Free; 2 GB per file; the source of truth for everything below |
+| **SourceForge** | Free project page, download stats, mirrors, a release area; Windows users still use it | Upload the same installer; mark it open source; page copy needs care (it has a past with bundled installers: say "no ads, no bundles") |
+| **itch.io** | Free page, supports non-game apps, a `butler` upload tool, devlog, comments, a good audience for indie tools | No fee needed for free downloads; good for the companion character demo |
+| **winget** | `winget install AryanLanke.Red`, free, via a pull request to `microsoft/winget-pkgs` | Needs a stable installer URL and hash; it works unsigned but is smoother once signed |
+| **Scoop** / **Chocolatey** | Command-line installs; Scoop (own bucket, instant), Chocolatey (community moderation) | Cheap to add once releases are stable |
+| **Microsoft Store** | Store signs the package (solves SmartScreen/Smart App Control), automatic updates | Check the current individual developer registration cost and the MSIX packaging effort; a later step |
+| **FossHub, Uptodown, MajorGeeks, Softpedia** | Download portals with traffic | Free to submit; accept only signed or clean builds; slower to update |
+| **AlternativeTo, OpenAlternative, awesome lists** | Discovery as "an alternative to Copilot/Siri/Desktop Mate" | Free listing |
+| **Product Hunt, Hacker News ("Show HN"), Reddit** (r/LocalLLaMA, r/selfhosted, r/Windows11, r/opensource) | Launch day attention, feedback | Needs a good 60-second demo video and a working installer first |
+| **YouTube** (demo + "how I built it"), **GitHub Pages** (`aryanlanke.github.io/Red`) | Your own front door | Free |
+| **Hugging Face** | A model card/page for the persona LoRA and the wake-word model, if you train and share them | Free; check each model's licence |
+| **Money, optional:** GitHub Sponsors, Ko-fi, Patreon | Donations; no sales | Free to set up |
+
+**Before any release, check:** the licences of everything inside (Kokoro and its eSpeak-NG phonemizer, Qwen,
+Whisper, openWakeWord's pretrained parts, SearXNG, onnxruntime, each TTS candidate) and write
+`THIRD_PARTY.md`; choose Red's own licence (today: `LICENSE`); and sign the installer (section 10).
+
+---
+
+## 14. The seven-day project (2026-11-14 to 11-20)
+
+Set up as a GitHub Project board (Backlog → Today → Doing → Needs your try → Done) with one issue per
+numbered task below; ask and I'll create it. **Two sessions:** session 1 (wake word and audio files) and
+session 2 (companion), as in the rules. Every day ends with: tests pass, pushed to `main`, the hidden Red
+restarted (by session 1), numbers written in progress.md. **Your time: about 20–30 minutes a day**, marked 👤.
+
+**Day 1 (Sat 11-14): fast and honest** (session 2, hand the audio numbers to session 1)
+- N1 steps 1, 4, 5: the chat gate, reply length rules, prompt order. N2 all. Restart the hidden Red.
+- 👤 Say 20 chit-chat lines; we compare Timing before/after. **Done when:** "How are you?" first word ≤ 1.0 s,
+  zero "I didn't understand".
+
+**Day 2 (Sun 11-15): look, don't ask; stop inventing a life**
+- N3 (screen as a sense, window-title line), N4 (prompt rewrite, `chat_eval.py`, scored table).
+- 👤 Rate 20 replies 1–5 for "feels human". **Done when:** invented-body count 0; screen asks nothing back.
+
+**Day 3 (Mon 11-16): reaction clips and humour v1**
+- N1 steps 2–3 (clips, shorter end-of-speech wait with session 1). N7 humour devices + budget + taste memory.
+- 👤 Listen to the clips and 10 jokes; "funny / not funny". **Done when:** first sound ≤ 0.3 s; 3 of 10 jokes land.
+
+**Day 4 (Tue 11-17): listening hygiene and the wake word** (session 1 leads, session 2 helps with tests)
+- N5; C1 with the corpus. 👤 Record the wake corpus (about 10 minutes), then 100 tries.
+- **Done when:** a 10-minute video plays with zero unwanted replies; "Hey Red" ≥ 90/100.
+
+**Day 5 (Wed 11-18): the voice**
+- C2 spike on this GPU; the blind A/B listening test; pick the male/female voice; laugh decision; earcons.
+- 👤 The listening test (15 min). **Done when:** one engine chosen (or "stay on Kokoro + clips"), written down.
+
+**Day 6 (Thu 11-19): the installer, the app, more plugins**
+- C3: `build.ps1`, Inno Setup, the first-run wizard, Windows Sandbox test; the app's new Home/Personality pages.
+- Router group design, then the B5 plugins that cost little (notes, clipboard, windows, focus timer, fun).
+- 👤 Run the installer in Sandbox with me. **Done when:** a clean Sandbox gets to a working "Hey Red".
+
+**Day 7 (Fri 11-20): the face and the release**
+- D2: three character sketches → you pick → first animated version in the window; D1 glow with your design.
+- Release v0.5: `THIRD_PARTY.md`, README with screenshots, SignPath application, GitHub Release with hashes,
+  `aryanlanke.github.io/Red`, SourceForge and itch.io pages, winget manifest, a 60-second demo video.
+- 👤 Pick the character; watch the video. **Done when:** a stranger could install it from the GitHub page.
+
+**Stretch / week 2:** B3.5 mail (Gmail extras + IMAP), Spotify sign-in, B6 work mode, the persona LoRA and
+router fine-tune (needs your decision, section 15), the VS Code extension, the Microsoft Store.
+**Risks:** the expressive-voice spike may find nothing that fits 6 GB (then clips + Kokoro); signing may take
+days to approve (ship unsigned with the README note first); wake word accuracy depends on your recording time.
+
+---
+
+## 15. Decisions for you
+
+1. **Training (section 7):** may a LoRA be trained on a free cloud GPU using *only text you approve* (no memory,
+   no voice, no logs unless you cleaned them)? Or stay 100% on this PC (slower, smaller)? Default: stay local
+   and prompt/eval first; train later only if you say yes.
+2. **Humour level default:** Normal (light teasing). Cheeky is opt-in. OK?
+3. **Chattiness default:** Friendly. Add the fourth level "Companion"?
+4. **Character shape:** the "no rounded edges, no outline" rule from the glow, does it apply to the character too?
+5. **Female or male voice** by default (you'll hear samples on Day 5).
+6. **Release name and licence:** keep MIT? (check `LICENSE`) The Red name, the GitHub org, and whether the
+   installer says "by Aryan Lanke".
+7. **Pause media on wake** (N5.3): OK to press the media key when "Hey Red" is heard during a video?
+8. **GitHub Project board:** create it with the issues now?
+
+---
+
+## 16. Reference (kept from the earlier plans)
+
+### Two sessions at once
+| | Session 1: wake word and audio | Session 2: companion |
+|---|---|---|
+| Works in | `D:\RED\red`, on `main` | a worktree under `D:\RED\worktrees\` on its own branch, pushing each commit to `main` |
+| Owns | `red/wakeword.py`, `wake_test.py`, `wake_corpus.py`, `voice_setup.py`, `listener.py`, `audio.py`, `stt.py`, `voice_match.py`, `background.py`, `startup.py`, `llm.py` and their tests | everything new (`memory`, `greeter`, `chat_window`, `plugins`, `red/plugins/`, `secrets`, `desk`), plus `chat.py`, `smalltalk.py`, `speech.py`, `router.py`, `red/app/`, `red/tools/` |
+| Hidden Red | the only one that stops and starts it | never stops or starts it, never runs a live voice Red |
 | Test temp folder | `D:\RED\cache\pytest-tmp` | `D:\RED\cache\pytest-tmp-companion` |
 
-- **Shared files** (`red/__main__.py`, `red/config.py`, `.env.example`, `tests/conftest.py`, plan.md,
-  progress.md, AGENTS.md, README.md): small additive edits only. Get the latest `main` right before
-  editing one; commit and push right after.
-- Each session ticks off only its own tasks in plan.md and writes only its own notes in progress.md.
-- Before every push: session 1 runs `git pull --rebase`; session 2 runs `git fetch origin` then
-  `git rebase origin/main`. Then test and push. **Never force-push.** On a conflict in a file the
-  other session owns, keep their version and redo your change on top.
-- Session 2's commits reach the hidden Red only when session 1 pulls and restarts it.
-- C2, C3 and Phase D wait until both sessions are done.
+Shared files (`red/__main__.py`, `red/config.py`, `.env.example`, `tests/conftest.py`, plan.md, progress.md,
+AGENTS.md, README.md): small additive edits only; fetch and rebase right before, commit and push right after.
+Never force-push. On a conflict in the other session's file, keep theirs and redo your change on top.
 
-### Phase A: the companion core
+### Finished tasks (details in progress.md)
+A0–A4 ✅ · B1 ✅ · B2 steps 1–4 ✅ (step 5, a coder model, waits) · B3.1 coding tools ✅ · B3.2–3.4 Spotify (no
+account), WhatsApp, Discord ✅ built, need your try · B4 ✅. **Left from B3:** 3.2's Spotify sign-in, 3.5 mail
+(Gmail extras + IMAP/SMTP with an app password through `red/secrets.py`, send read back once). **B5** (small
+plugins, build in this order: notes, read a document, clipboard, windows, dictation, system, focus timer,
+fun) and **B6** (work mode: a plan shown, Stop button, step limit, 2–4 steps first, measured on 20 real jobs).
+**C1** wake word ≥ 95/100 (session 1; steps 4–7 in the old plan: personal spellings, looser guards measured,
+wake check on its own thread, retrain only if needed). **C2** and **C3** are sections 6 and 10 above.
+**D1** the glow waits for your design; **D2** the character is section 5.4.
 
-#### A0. Say what Red is now ✅ (2026-11-13)
-Update the one-line descriptions: AGENTS.md ("a local, offline voice and action assistant" → a local
-companion for Windows), the top of README.md, and progress.md 2 (Goals and scope). Also update AGENTS.md's
-"The only account Red talks to is the user's own Google account" rule to match the accounts rule in
-this file's Rules (plugins the user signs into). Nothing else changes.
+### The speed plan (still applies)
+Numbers first (`Timing` lines in `red.log`), widen the fast path, one model call for a question, cut look-up's
+web wait, cache the router prompt (Ollama), route with a small model, preload the voice. Done when "open Edge"
+takes 1–3 s, a question or chat's first word ≤ 1 s, and "play Believer" 2–3 s.
 
-#### A1. A personality, not a professional (old task 3 steps 2–3) ✅ (2026-11-13)
-**Done:** the character prompt, the Personality box (General page, `config\personality.txt`) and
-punctuation pauses. First sentence of a chat reply, real model: median 0.59 s new against 0.69 s old.
-**Left for the user:** listen to `D:\RED\cache\samples-companion\a1-personality-1.wav` … `-5.wav` (the
-words are in `a1-personality.txt`) and say what's too much or too little.
-1. Rewrite `CHAT_SYSTEM` (`red/chat.py`): a concrete character (dry humour, opinions, reacts before
-   answering, teases lightly, admits what it can't do). Add 4–6 short example exchanges that show
-   taste. Give `ANSWER_SYSTEM` and tool replies a light touch too ("Done." is fine; "I have
-   successfully completed your request" is not).
-2. A **custom personality** text in the Red app (General page), added to the prompt, so the user can
-   tune it. Persona presets (Witty, Calm, Minimal) come later.
-3. Pauses from punctuation instead of a flat 0.12 s: comma ~0.15 s, sentence ~0.3 s, "..." or a dash
-   ~0.5 s. Long sentences are cut at commas so the intonation resets.
-- **Files:** `red/chat.py`, `red/smalltalk.py`, `red/tools/assistant.py`, `red/speech.py`,
-  `red/app/pages.py`.
-- **Check:** unit tests; 5 sample replies rendered to WAV for the user; first-word time unchanged.
+### Later
+Persona presets (Witty, Calm, Minimal), MCP support for local tool servers, a VS Code extension (also check
+Qoder and Antigravity, which are VS Code forks), Telegram, Steam *launching*, browser tabs, OneDrive, Ollama
+that reuses the cached prompt for Qwen3.5 (check each release), a phone-less wake via your headset button.
 
-#### A2. Long-term memory ✅ (2026-11-13)
-**Done:** `red/memory.py` (profile, facts, the name, the idle learner), the `remember`, `what_you_know`
-and `forget` tools, memory in the chat prompt, and the Memory page. Real model: all 14 test sentences
-routed right; "my sister is Priya", a restart, then "what's my sister's name?" answered "your sister is
-Priya"; chat first sentence 0.47 s with memory against 0.41 s without.
-**Left for the user:** after session 1 restarts the hidden Red: say anything to Red; it asks once "what
-should I call you?". Then try "my sister is …", restart, and "what's my sister's name?". Look at the
-Memory page (`python -m red app`).
-**Why:** today Red remembers 12 lines and then forgets (`MAX_TURNS` in `red/chat.py`). A companion
-knows your name, your people, your projects and what you like.
-1. `red/memory.py`: a short **profile** (`RED_HOME\memory\profile.md`: name, people, projects, likes)
-   and a list of **facts** (`RED_HOME\memory\facts.jsonl`: text, when, from which chat). Never in git.
-   **Red knows who you are and uses your name** (the user's choice, 2026-11-13). The name comes from
-   the profile. Until it's there, Red asks once in the first chat ("What should I call you?"); "call
-   me …" changes it. Use the name like a friend would: in greetings and now and then, not in every
-   sentence.
-2. Tools: `remember` ("remember my sister is Priya"), `what_you_know` ("what do you know about me?"),
-   `forget` ("forget that"; destructive, so it asks once).
-3. After a chat, a background worker asks the local model for new facts about the user, **only when
-   Red is idle**, so it never slows a reply. Drop anything that looks like a password, a code, a card
-   or an address the user didn't ask to keep.
-4. The profile plus the 5 facts that best match the current sentence (simple word overlap first; no
-   embeddings until that's measured as too weak) go into the chat prompt. Keep the fixed part of the
-   prompt first so Ollama's prompt cache still works.
-5. A **Memory** page in the Red app: see, edit and delete everything Red knows.
-- **Files:** `red/memory.py` (new), `red/chat.py`, `red/tools/memory.py` (new), `red/app/pages.py`,
-  `tests/test_memory.py`.
-- **Check:** unit tests with `FakeLLM`; by voice, "my sister is Priya", restart Red, "what's my
-  sister's name?"; first-word time for chat unchanged (±0.2 s).
 
-#### A3. Hello, not briefings ✅ (2026-11-13)
-**Done:** `red/greeter.py` (a hello at the start of the day and after 30+ minutes away, with the name;
-lines vary and skip the last 8 used), `RED_CHATTINESS` (quiet, friendly, chatty) on the General page.
-Quiet during a full-screen app, game or presentation (`SHQueryUserNotificationState`) and while Red is
-busy (never queued). **Limit:** "a call" is checked through Windows' microphone consent store, which
-records nothing for desktop apps on this PC, so a Discord or Zoom call isn't detected yet. A later step
-could use the audio-session API.
-**Left for the user:** a day of normal use: expect one hello at the start of the day and one after each
-break of 30+ minutes, nothing else. Say if that's too much or too little.
-1. Red greets you on the first sign-in or unlock of the day, and when you're back after 30+ minutes
-   away (`GetLastInputInfo` for idle time), **with your name**: "Morning, <name>!", "Hey <name>, you're
-   back." Vary the line and don't repeat yesterday's.
-2. **Never** put meetings, mail, to-dos or news in a greeting.
-3. A **Chattiness** setting: *Quiet* (only answers), *Friendly* (greetings; the default), *Chatty*
-   (greetings plus an occasional one-liner, at most once an hour, such as "It's 2 am, you're still at
-   it?"). Never while a full-screen app, a game or a call is up (the mic in use by another app).
-- **Files:** `red/greeter.py` (new), `red/__main__.py`, `red/smalltalk.py`, `red/app/pages.py`,
-  `.env.example` (`RED_CHATTINESS`).
-- **Check:** unit tests with a fake clock and fake idle time; a day of normal use with no more than the
-  expected greetings.
-
-#### A4. The chat window ✅ (2026-11-13)
-**Done:** `red/chat_window.py`: Ctrl+Alt+Space (`RED_CHAT_HOTKEY`, its own pynput hotkey, so
-`listener.py` is untouched) or "open chat" (the `open_chat` tool). Typed and spoken turns share one
-`Chat`. Code blocks have Copy and Save (Documents\Red Code; the dialog asks before replacing). Drafts
-get a Send button that goes through the Executor's read-back. Milky glass, no edge line, square
-corners (offscreen renders checked). Real model: 11 sentences routed right ("open chat" ×4, "let's
-chat" stays conversation, WhatsApp, Discord, Telegram and Spotify stay `open_app`).
-**Left for the user:** after session 1 restarts the hidden Red, press Ctrl+Alt+Space, type something,
-then say "Hey Red, …" and check both turns are in the window. The real blur-behind can only be judged on
-screen. Nothing creates mail drafts in the window yet (B3); with the overlay off or set to notify, there's
-no window.
-**Why:** a companion you can type to as well as talk to. Code, mail drafts and lists need a place to
-be seen, and a missed "Hey Red" stops being a dead end.
-1. A window opened by a hotkey (suggestion: Ctrl+Alt+Space) or by saying "open chat". It holds the
-   conversation (typed and spoken, the same `Chat` memory) and tool results.
-2. Code blocks with **Copy** and **Save** buttons; mail drafts with **Send** (still read back once).
-3. The look follows the glow rules: frosted, milky glass, no rim line, no rounded-edge outline.
-- **Files:** `red/chat_window.py` (new), `red/__main__.py`, `red/listener.py` (hotkey).
-- **Check:** offscreen renders that you look at before saying it's done; typed and spoken turns land
-  in one conversation.
-
-### Phase B: plugins and doing your work
-
-#### B1. Plugins ✅ (2026-11-13)
-**Done:** `red/plugins.py`, a Plugins page (reads `plugin.toml` only, never imports), `python -m red
-plugins list | on NAME | off NAME`, and `default_registry(plugins=…)`. Red's own plugins load straight
-from `red/plugins/` (so updates reach them); setup copies them to `RED_HOME\plugins\_examples\` to read
-(folders starting with `_` never load). A plugin that's broken, exits, ships `.pyd`/`.dll`, or clashes
-on a tool name is skipped with the reason shown. An off plugin isn't imported at all. MCP stays later.
-**Why:** the user wants Red to grow through many plugins.
-1. A plugin is a folder `RED_HOME\plugins\<name>\` with `plugin.toml` (name, version, description,
-   author, what it needs) and `tools.py` (plain `Tool` subclasses, the same format as `red/tools/`).
-2. Red loads them at start. A plugin that fails to import is skipped and logged; it never stops Red.
-3. A **Plugins** page in the Red app (on/off per plugin) and `python -m red plugins list`.
-4. Safety: plugins are code the user installed. The model only picks a plugin tool and fills its
-   schema-checked arguments; model text never reaches a shell. Pure Python only (Smart App Control).
-5. Red's own plugins below ship in `red/plugins/` and are copied in by setup, so they're examples
-   too.
-6. Later: MCP support for local tool servers the user installs.
-- **Files:** `red/plugins.py` (new), `red/tools/__init__.py`, `red/app/pages.py`, `red/__main__.py`,
-  `tests/test_plugins.py`.
-- **Check:** a test plugin loads; a broken one is skipped; on/off works.
-
-#### B2. Write code ✅ (2026-11-13, steps 1–4; step 5 waits)
-**Done:** the `code` plugin (`red/plugins/code/`): `write_code` streams into the chat window and says one
-line; `explain_code` and `fix_code` read the clipboard or a named file (never changed). Save → Documents\Red
-Code, then "Open in VS Code" (Code.exe with the saved path, no shell). Python is checked with
-`compile()` only; Red never runs code. "Write me a poem" is answered in words, not code. Real model
-(qwen3.5-4b), 10 requests: first code on screen **0.6–1.0 s**, done in **1.7–11.2 s**; **7 of 10
-correct**, 3 with real bugs (progress.md has the table).
-**Left:** (a) the user's own 10 requests. (b) Step 5, the coder-model spike: it needs a ~5 GB pull into
-the Ollama the hidden Red uses, and swapping models makes the hidden Red reload. Do it when session 1 is
-done and the user agrees to the download. Candidates to check: current Qwen coder tags that fit 8 GB, and
-their licences.
-**Why:** "write me a Python script that renames my photos by date" should just work.
-1. A `write_code` tool: Red writes the code (streamed) into the chat window. It **never reads code
-   aloud**; it says one line ("Here you go, it's in the chat window") and what the code does.
-2. Copy to clipboard, save to a file (a Save dialog, `Documents\Red Code` by default, never overwriting
-   without asking), and open the saved file in VS Code (through the allowlist).
-3. "Explain this code" and "fix this" for the clipboard or a file you name.
-4. **Red never runs the code it writes** (Rules: never run model text).
-5. Model: Qwen3.5 4B is fine for scripts and snippets up to ~100 lines. Spike a coder model that fits
-   an 8 GB GPU (check current Ollama tags and licences), loaded only for `write_code`. Measure quality
-   on 10 real requests and the swap time; keep it only if it's clearly better.
-- **Files:** `red/plugins/code/` (new), `red/chat_window.py`.
-- **Check:** 10 requests from the user; results table in progress.md.
-
-#### B3. App plugins: coding tools, Spotify, WhatsApp, Discord, mail
-The user asked for these on 2026-11-13. Each is its own plugin and can be turned off. Each starts with
-what works with no account, and adds a sign-in only where it's needed. Sign-in tokens are stored on the
-PC, encrypted with Windows DPAPI (`CryptProtectData` through ctypes, a signed system API), in
-`RED_HOME\config\`, never in git. An app's data goes only to that app and to the local model.
-
-**B3 progress (2026-11-13):** `red/secrets.py` (DPAPI) ✅, `red/desk.py` (clipboard, keys, fronting) ✅,
-and item 1 below (the `coding` plugin) ✅ built and tested with fakes; Spotify, WhatsApp, Discord and mail
-are next. **Found on the way:** the router prompt (4,383 tokens) was already over `num_ctx=4096`, and the
-plugins made it 5,204, which sent "check my repos" to `list_reminders`. `fit_context` (red/router.py) now
-raises the context to fit (8192 today). Session 1: this changes the model load size, so the first start
-after pulling reloads the model once (13 s measured); routing times stayed 0.7–1.4 s.
-**Left for the user (item 1):** try "open Red in Qoder", "tell Qoder to fix …" (it reads the task back, then
-opens Qoder and puts the task on the clipboard; it presses nothing in Qoder, which has no known chat
-shortcut, so you paste), "what did it change?". Tell me each tool's chat shortcut to make it paste and
-send by itself (`[coding.qoder] chat_key = "ctrl+l"` in allowlist.toml).
-
-**Spotify (no account), WhatsApp and Discord ✅ built 2026-11-13** with fakes (`red/plugins/spotify|whatsapp|discord`).
-Spotify: `spotify_search`, `whats_playing` (reads Spotify's window title instead of PowerShell: simpler, no
-network). The Spotify Web API sign-in (play a named song, playlists, like) is **not built**: it needs the user
-to register a developer app and Premium; ask first. WhatsApp: add `[phones]` to contacts.toml, then
-"message Rahul on WhatsApp: running late" reads back, opens the chat filled in and presses Enter only with
-WhatsApp in front. Discord: set `mute_key`, `deafen_key` and saved channels under `[discord]` in
-allowlist.toml. **Left for the user:** try each once; the WhatsApp link behaviour on this PC is unchecked
-(no live app was opened).
-
-1. **Coding tools: VS Code, Qoder, Freebuff, Antigravity and other coding agents** (first; it goes with B2) ✅
-   The user codes with several tools: VS Code, Qoder (an agentic IDE), Freebuff (Codebuff's free
-   desktop coding agent), Google Antigravity (an agentic IDE) and others. Red sits between the user and them, like a friend at the desk.
-   - **Know the tools.** A `[coding]` table in `allowlist.toml` names each tool and how to start it.
-     Found on this PC (2026-11-13): VS Code (`code.cmd` on PATH), Qoder
-     (`%LOCALAPPDATA%\Qoder\Qoder Launcher\Qoder Launcher.exe`), Freebuff
-     (`%LOCALAPPDATA%\Programs\@codebufffreebuff-desktop\Freebuff.exe`), and Google's Antigravity in two
-     installs: the IDE (`%LOCALAPPDATA%\Programs\Antigravity IDE\_\Antigravity IDE.exe`, with a
-     command-line launcher `bin\antigravity-ide.cmd` that isn't on PATH, likely VS Code-style folder and
-     `--goto` arguments; check) and the Antigravity app (`%LOCALAPPDATA%\Programs\antigravity\Antigravity.exe`).
-     Qoder, Freebuff and the Antigravity app have no command on PATH. The first-run wizard finds the
-     installed ones on other PCs.
-   - **Open:** "open Red in Qoder", "open Freebuff", "open plan.md in VS Code at line 40". Project names
-     come from `repos.toml` and files must exist; only those reach the tool's command line, never model
-     text. Spike whether Qoder's launcher and Freebuff take a folder argument (Qoder is a VS Code fork).
-   - **Hand a task to an agent:** "Hey Red, tell Qoder to fix the failing tests in Red." Red reads the
-     task back once, opens the project in that tool, brings its window to the front, and puts the task
-     in the agent's chat box (clipboard, then paste with the tool's chat shortcut). It presses Enter only
-     on a clear yes. The task is the user's own words typed into the app as text, never run as a
-     command. A command-line agent (Claude Code, Codex and the like, when installed) starts in a new
-     terminal in the project, with the task given as one argument (no shell string). Spike each tool:
-     which ones have a reliable chat shortcut or command line.
-   - **"Tell me when it's done":** reuse `notify_when_done` (`red/tools/watch.py`) on that tool's
-     window. The user asked for it, so speaking up when it's done is fine.
-   - **"What did it change?":** a short spoken summary of what the agent changed (`git diff --stat` and
-     new commit messages in that repo, read-only git), with the details in the chat window.
-   - **VS Code extras:** a file at a line (`code --goto`), compare two files (`code --diff`), and code
-     from `write_code` opening as a new file. Later, Red's own small extension (TypeScript), talking to
-     Red on loopback with a token: insert at the cursor, "explain what I selected", "what's this error?"
-     (the Problems list). Check whether it also loads in Qoder and Antigravity (both VS Code forks).
-     Spike it before building.
-2. **Spotify**
-   - No account: open Spotify, play/pause/next/back (media keys, already there), "search Spotify for X"
-     (a `spotify:search:` link), "what's playing?" (the Windows media session through PowerShell).
-   - With sign-in (optional): "play Believer on Spotify", playlists, like this song. The Spotify Web
-     API with PKCE (no secret). Check Spotify's current developer rules first: playback control needs
-     Premium, and new developer apps have limits.
-3. **WhatsApp** (WhatsApp Desktop)
-   - "Message Rahul on WhatsApp: running late" opens the chat with the text filled in
-     (`whatsapp://send?phone=…&text=…`), with numbers from `contacts.toml` (a new optional phone field;
-     old files keep working). Red reads the message back, then presses Enter only on a clear yes and only
-     with WhatsApp's window in front. Check that the link works on this PC first.
-   - Open WhatsApp or a chat. **No reading messages:** WhatsApp has no API for personal accounts, and
-     Red doesn't scrape apps.
-4. **Discord**
-   - Open Discord, open a server or channel (`discord://` links saved by name), mute/unmute and deafen
-     (Red presses the keybinds the user sets in Discord).
-   - **No reading or sending messages as the user.** Automating a user account breaks Discord's terms
-     and can get the account banned. A bot in the user's own server can come later if wanted.
-5. **Mail**
-   - Gmail (already there): add "anything important in my inbox?" (the top few by sender and subject,
-     in one breath) and drafts in your style (a few of your own sent mails as examples; the draft opens
-     in the chat window; sending is still read back once).
-   - Other mail (Outlook.com, Yahoo, college mail): IMAP and SMTP with an app password, using Python's
-     own `imaplib` and `smtplib`, so check, read, reply and send work like Gmail.
-6. **Others, after these** (the user picks the order): Telegram Desktop (`tg://` links), launching
-   installed Steam games by name (`steam://` links), Notion, browser tabs, OneDrive.
-- **Files:** `red/plugins/coding/`, `spotify/`, `whatsapp/`, `discord/`, `mail_imap/` (new);
-  `red/tools/gmail.py`; `red/secrets.py` (new, DPAPI); `contacts.example.toml`.
-- **Check:** unit tests with fakes for every plugin (no real app opens in a test); each one tried by
-  the user.
-
-#### B4. To-dos and "what did I do today?" ✅ (2026-11-13)
-**Done:** the `todo` plugin: `todo` (add, list, done, clear; one tool to save router tokens) and
-`day_recap` (command log, today's git commits, finished to-dos). The calendar part is not in the recap yet
-(Google is optional). Real model routes all 6 sentences; "mark the slides done" falls back to the user's own
-words. **Left for the user:** the recap of a real day, read aloud.
-Only when asked, never spoken unasked (see the goal).
-1. A local to-do list (`RED_HOME\memory\todo.json`): "add finish the slides", "what's left?", "mark the
-   slides done", "clear done ones".
-2. "What did I do today?": a short recap from `commands.jsonl`, git commits in `repos.toml`, finished
-   to-dos and today's calendar.
-- **Files:** `red/plugins/todo/` (new).
-- **Check:** unit tests; the recap of a real day read to the user.
-
-#### B5. More small plugins
-**Hand-off from session 2 (2026-11-13): not started. Done before this: A0–A4, B1, B2 (steps 1–4), B3.1–B3.4, B4.
-Left: B3.5 (Gmail extras + IMAP/SMTP mail), B3.2's Spotify sign-in, B5 (all 8), B6, B2 step 5 (coder model).**
-**Exact next step: decide how to keep routing fast and right as tools grow.** The router prompt is now
-~6,000 tokens (it was 4,383 at the start of this run and already over `num_ctx=4096`); every tool adds
-~130, `fit_context` (red/router.py) grows the model's context to fit, and each growth costs one model
-reload (13–16 s). Eight more tools fit, but not many more. Options: (a) route in two steps (a short list of
-tool *groups* first, then only that group's tools), (b) shorter descriptions, (c) merge related tools into
-one with an `action` argument like `todo` does. Pick one, measure routing on the 48+ sentences in
-progress.md, then build B5 in the listed order (each as `red/plugins/<name>/` with `plugin.toml` and
-`tools.py`, tests with fakes, a Plugins-page entry for free). For mail: IMAP/SMTP with `imaplib`/`smtplib`,
-app password stored with `red/secrets.py`, send read back once.
-Small, each its own plugin; build in this order and let the user reorder:
-1. **Notes:** "note that…", "what did I note about X?" (markdown files in a folder you choose; works
-   with an Obsidian vault).
-2. **Read a document:** summarise or answer from a txt, md, pdf or docx you name (pure-Python
-   readers: `pypdf`; docx through `zipfile` + `xml.etree`, not `lxml`).
-3. **Clipboard:** "explain what I copied", "summarise this", "make it shorter".
-4. **Windows:** snap left/right, minimise all, switch to an app, close the window in front (asks).
-5. **Dictation:** "type this: …" into the window in front (your words, not the model's).
-6. **System:** battery, Wi-Fi, Bluetooth and night light through signed Windows settings.
-7. **Focus timer:** "25 minutes of focus" with a soft chime at the end.
-8. **Fun:** 20 questions, would-you-rather, a quick quiz. A companion should be fun.
-- **Check:** each plugin has unit tests and appears on the Plugins page.
-
-#### B6. Jobs with several steps (work mode)
-"Find last week's report, summarise it and mail it to Rahul." Red shows the plan in the chat window,
-runs each step as a normal tool (confirmations as usual), has a Stop button, and has a step limit.
-**Honest limit:** a 4B model is weak at long chains, so start with 2–4 steps and measure on 20 real
-jobs before promising more.
-- **Files:** `red/router.py`, `red/chat_window.py`, `red/executor.py`.
-
-### Phase C: shipping (the wake word is fixed here, with the installer)
-
-The user chose to finish the wake word together with the installer, because voice-setup is part of the
-first-run wizard.
-
-#### C1. "Hey Red" wakes 95 times in 100 (rest of the old task 1)
-**Progress (2026-11-13, session 1):** the user recorded the corpus. On `--replay`: "Hey Red" **16/30 →
-25/30 (83%)**, with a command 5/10 → 9/10, 0 false wakes (steps 4 and 5 done; numbers per step in
-progress.md 7.2). Step 6: beam 1 was faster but lost 2 hits, kept beam 5. **Next:** the user's 100
-live tries; if still under 95%, step 7.
-**Why:** in `red.log`, 1,936 wake checks and only 22 scored above 0. Whisper writes the user's "Hey Red"
-as "Headed", "Heading", "Hit it", "Here Red" or "Hey". The mic is quiet (23% of peaks under 0.05).
-`voice-setup` was never run. Steps 1–3 are done (see "Done so far"); the corpus tool waits for the
-user's recording (`red wake-test --record`: "Hey Red" 30 times, "Hey Red, open YouTube" 10 times, 2
-minutes of normal talk, in `RED_HOME\cache\wake-corpus\`, never in git). Target on `--replay`:
-**≥ 95% hits, no false wakes on the talk.**
-
-**User report, 2026-11-13 (passed on by session 2 for session 1):** after the latest wake-word changes the
-user said "Red" / "Hey Red" again and Red still didn't notice. Check `red.log` "Wake skip:" lines from
-that time.
-
-**Finding from step 2:** a burst only ends after 0.3 s of quiet (PAUSE_AFTER), more than PAUSE_BEFORE
-(0.25 s), so "no pause before" never fires. A "Hey Red" said less than 0.3 s after other speech merges
-into it, and only the start of the merged burst is checked. Faint speech shows VAD 0.42–0.49 with peaks
-of 0.02–0.03.
-4. Personal spellings through `voice-setup` (`red/voice_setup.py`), part of the first-run wizard:
-   "Headed" or "Hit it" wake for this user only.
-5. Looser guards, each measured: look at merged bursts (the finding above), always check the first
-   1.3 s of a long burst, VAD start ~0.35, loudness normalised before Whisper.
-6. Wake checks on their own worker thread; `beam_size=1` if the corpus allows. (Lower priority: the mic
-   keeps buffering while Whisper runs, so this costs delay, not missed words.)
-7. Only if 4–6 miss 95%: retrain the openWakeWord model (`scripts/train_hey_red/`) with Kokoro's
-   Indian-English voices and the user's clips, as a fast first stage that triggers a Whisper check.
-- **Files:** `red/wakeword.py`, `red/wake_test.py`, `red/listener.py`, `red/voice_setup.py`,
-  `red/__main__.py`, `tests/test_wakeword.py`.
-- **Check:** replay numbers before and after each step in progress.md; then the user's 100 tries.
-
-#### C2. A voice that really laughs and pauses (GPU), and a male voice (old task 4)
-1. Spike first (`scripts/tts_bench.py`): local expressive TTS with laugh, sigh and pause tags
-   (Chatterbox, Orpheus GGUF, Dia, Sesame CSM; check current versions and licences). On the user's GPU
-   with the 4B model loaded: first audio ≤ ~1 s, VRAM, does a laugh sound real, licence, Smart App
-   Control. Results table in progress.md; pick at most one.
-2. The winner becomes an engine behind `make_speaker` (`red/tts_kokoro.py`); `RED_TTS=auto` uses it on
-   a fitting GPU, else Kokoro, else Piper. Models pinned with SHA-256.
-3. Male voice: a male/female choice with a Play sample button in the wizard and the Voice page. Kokoro
-   has `am_michael`, `am_puck`, `bm_george` and more (samples in `cache\voice-samples`). The user picks
-   by ear.
-
-#### C3. One-click installer (old task 6)
-`installer/build.ps1` bundles the embeddable Python, the pinned wheels and `red`; Inno Setup makes
-`Red-Setup.exe` (per-user to `%LOCALAPPDATA%\Red`, no admin, `RED_HOME`, Start menu, startup entries,
-uninstaller). Then the first-run wizard: hardware and model, downloads with checksums, mic and level
-meter, voice-setup, voice choice, web search, optional Google sign-in, **plugins to turn on**, and
-**your name and a few things about you** (seeds memory). `install.ps1` does the same in one line.
-GitHub Releases with SHA-256 hashes; the README notes the "unknown publisher" warning.
-- **Check:** a clean Windows Sandbox or VM with Smart App Control on: download to a working "Hey Red"
-  with no command line; the uninstaller leaves nothing.
-
-### Phase D: the face
-
-#### D1. The glow (waiting for the user's design)
-`red/overlay.py` `GlowWindow` stays as it is until the user shares the design. Then build it, render
-every state offscreen, look, and update `tests/test_voice_feel.py`.
-
-#### D2. The desktop companion (old task 7, now the face of Red)
-An **original** 2D character (not a copy of Desktop Mate's or anyone's) in a transparent, click-through
-PySide6 window: sleeps when idle, perks up at "Hey Red" or a greeting, thinks, talks with its mouth
-moving to the TTS loudness. Click it to open the chat window; drag it anywhere; on/off in the Red app.
-Show the user 2–3 sketches rendered offscreen before building.
-
-**Needed from the user:** a reboot test (old task 2), listening to personality samples (A1), a day of
-greetings (A3), 10 code requests (B2), trying each app plugin and signing in to Spotify if wanted
-(B3), the wake corpus and 100 tries (C1), picking the male voice (C2),
-the glow design (D1), picking the character sketch (D2).
-
-### For the user to decide
-- **Chattiness default:** Friendly (greetings only) is the plan's default. Chatty instead?
-- **Decided 2026-11-13:** Red uses the user's name (A2, A3). Plugins wanted, with sign-ins where needed
-  (B3): coding tools (VS Code, Qoder, Freebuff, Antigravity and other agents), Spotify, Discord, WhatsApp, mail.
-- **Mascot shape:** the Rules forbid rounded edges and an outline on the glow. Does that apply to the
-  character too?
-
-## Speed plan: the first word in about a second (2026-11-11)
-
-Still applies to quick commands and chat. Measure with the `Timing` lines in `red.log`
-(red/__main__.py:672) before and after every step, and never ship a step without numbers.
-
-Where the time goes (one command, from when you stop talking): listen → transcribe (Whisper) → route →
-tool → speak. A question today is two full 4B generations in a row, plus a web search.
-
-1. **Numbers first.** Real first-word times for "open Edge", "what is a black hole" (answer), "who made
-   Siri" (look_up), "weather in Pune", and one chat line.
-2. **Widen the fast path** (`red/fastpath.py`): "who is/was X", "when was X", "where is X", "how
-   tall/big/far is X", "what does X mean", "how do I X" → straight to `answer`/`look_up`. Check against
-   `commands.jsonl`: every sentence the fast path now answers must be one the model would have routed
-   the same way.
-3. **One model call for a question, not two:** when the fast path knows it's `answer` or `look_up`,
-   skip the router call.
-4. **Cut look_up's web wait:** budgets ~3 s and ~1.0 s instead of 6 s and 1.5 s
-   (red/tools/sources.py:42–47).
-5. **Cache the router prompt in Ollama:** nothing may vary the prefix between calls (red/llm.py:252);
-   check that `num_ctx=4096` fits it.
-6. **Route with a small model, answer with the big one**, only if 2–5 aren't enough.
-7. **The first spoken word:** preload the Kokoro voice; check Ollama isn't unloading between the 240 s
-   warm-ups.
-
-Done when "open Edge" takes 1–3 s, a question or chat's first word 1–2 s, and "play Believer" 2–3 s.
-
-## Shipping ($0 budget)
-
-1. One-line installer: `irm https://raw.githubusercontent.com/AryanLanke/Red/main/install.ps1 | iex`.
-2. `Red-Setup.exe` (Inno Setup). Without a code-signing certificate, Windows warns about an unknown
-   publisher.
-3. Free channels: GitHub Releases (SHA-256 hashes), a GitHub Pages site (`aryanlanke.github.io/Red`),
-   `winget` (`winget install AryanLanke.Red`), itch.io, SourceForge.
-
-## Later: more for the Red app
-
-**Sections:**
-- **Model:** the current model, a pick from `MODELS` with each one's `best_for` line, downloads, and the
-  hardware recommendation.
-- **Voice:** voices with a Play sample button, male and female, and speed.
-- **Personality:** custom personality text, Chattiness, and later persona presets.
-- **Memory:** everything Red knows about you, editable (A2).
-- **Plugins:** on/off per plugin (B1).
-- **Wake phrase and listening:** "Hey Red" with voice training, sensitivity, hotkeys, microphone, voice
-  match on/off and re-recording.
-- **Speech-to-text:** Whisper model (`base.en` / `small.en`) and device.
-- **Browser:** `RED_BROWSER` and the search engine.
-- **Web search:** on or off, with the privacy note, and whether SearXNG is running.
-- **Accounts:** sign in and out of Google, Spotify and other mail.
-- **General:** start with Windows (`red/startup.py`).
-
-Also later: Ollama that reuses the cached prompt for Qwen3.5 (check each new Ollama release,
-progress.md 5), so Qwen3.5 can be the model for PCs with no GPU too.
-
-## Rules: what to do and what not to do
+## 17. Rules: what to do and what not to do
 
 Do:
 - Read the latest lines of `RED_HOME\logs\commands.jsonl` and `red.log` before changing behaviour. The
@@ -573,3 +637,11 @@ Any agent:
 - Don't write code through shell here-docs: they turn `\b` into a backspace and break quotes. Write files
   with your editor tool, and after any script edit search the changed files for control characters.
 - Don't change `D:\RED\config\.env` without asking the user.
+
+Also, from the logs of 2026-11-13 (sixth plan):
+- Never say "I can't see your screen": look, or say what blocked the look. Never ask the user what is on their own screen.
+- Never narrate the clock, the room, a body or a "day". Red's inner life is the conversation and the user.
+- Never write laughter as words ("Haha", "Heh") unless the voice engine can speak laughter tags.
+- A failed route is a chat turn, never "I didn't understand that" (only when the model itself is down).
+- Don't answer speech that isn't for Red (a video, the TV, repeated noise).
+
