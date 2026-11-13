@@ -40,8 +40,6 @@ bin/
 *.wav
 # Synthetic Piper clips for the voice-match tests (no one's real voice).
 !tests/fixtures/voice/*.wav
-# The bundled laugh clips Red plays for "haha" (CC0 / public domain).
-!red/assets/laugh/*.wav
 *.mp3
 *.flac
 *.ogg

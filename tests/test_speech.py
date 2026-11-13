@@ -140,43 +140,6 @@ def test_cancel_stops_at_once():
     assert stream.spoken == ["One.", "Two."]
 
 
-def test_a_laugh_word_plays_a_clip_instead_of_being_spoken():
-    clip = np.full(8, 0.5, dtype=np.float32)
-    events = []
-
-    class LaughPlayer:
-        def play(self, audio, rate):
-            events.append(("play", int(rate), audio is clip))
-
-        def wait(self):
-            events.append(("wait",))
-
-        def stop(self):
-            pass
-
-    class LaughVoice:
-        def __init__(self):
-            self.player = LaughPlayer()
-
-        def synthesize(self, text):
-            events.append(("make", text))
-            return np.full(10, 1.0, dtype=np.float32), 22050
-
-        def stop(self):
-            pass
-
-    stream = sp.SpeechStream(LaughVoice(), laugh_clips=[clip])
-    stream.say("Haha, that's good.")
-    stream.finish(timeout=5)
-    assert events == [
-        ("play", 16000, True),       # the laugh clip, at the clip's own rate
-        ("make", "that's good."),    # the words are made while the laugh plays
-        ("wait",),
-        ("play", 22050, False),      # then the words
-        ("wait",),
-    ]
-
-
 def test_a_speaker_without_synthesize_says_each_sentence():
     said = []
 
