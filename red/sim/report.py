@@ -44,6 +44,7 @@ def summarize(results: list[dict]) -> dict:
         "passed": sum(1 for r in results if r.get("passed")),
         "turns": len(turns),
         "turns_failed": sum(1 for t in turns if t.get("failures")),
+        "slow_turns": sum(1 for t in turns if t.get("warnings") or any(str(f).startswith("slow") for f in t.get("failures", []))),
         "first_word_median": statistics.median(first) if first else 0.0,
         "first_word_p90": percentile(first, 0.9),
         "categories": {c: (sum(1 for r in rs if r["passed"]), len(rs)) for c, rs in sorted(by_cat.items())},
@@ -81,6 +82,8 @@ def conversation(r: dict) -> str:
             lines.append(f"  - judge: human {j['human']}, context {j['context']}, character {j['character']} - {j.get('why', '')}")
         for f in t.get("failures", []):
             lines.append(f"  - **FAIL** {f}")
+        for f in t.get("warnings", []):
+            lines.append(f"  - slow (not counted as a failure): {f}")
     return "\n".join(lines)
 
 
@@ -94,7 +97,7 @@ def render(results: list[dict], title: str = "Simulation report", notes: list[st
         f"{s['turns_failed']} of {s['turns']} turns had a failure.**",
         "",
         f"Speed (transcript to Red's first word): median **{s['first_word_median']:.2f} s**, "
-        f"90th percentile **{s['first_word_p90']:.2f} s**.",
+        f"90th percentile **{s['first_word_p90']:.2f} s**; {s['slow_turns']} turns over their budget.",
         "",
     ]
     if s["judge"]:

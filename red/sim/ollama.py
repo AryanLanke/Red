@@ -10,6 +10,7 @@ import urllib.request
 from ..llm import OllamaClient
 
 DEFAULT_MODEL = "qwen3.5:4b-q4_K_M"
+DEFAULT_CTX = 8192
 
 
 def find_port() -> int | None:
@@ -45,5 +46,7 @@ def client(port: int | None = None, model: str = DEFAULT_MODEL, num_ctx: int | N
     port = port or find_port()
     if port is None:
         raise RuntimeError("Red's Ollama isn't running (the sim never starts a second one)")
-    ctx = num_ctx or loaded_context(port, model) or 6144
+    # 8192 is what common.md tells every session to send. A different size makes Ollama reload the
+    # model (10 to 40 s on this GPU, for the user's Red too), so sessions must agree on one.
+    ctx = num_ctx or DEFAULT_CTX
     return OllamaClient(f"http://127.0.0.1:{port}", model, "5m", thinking=True, options={"num_ctx": ctx})

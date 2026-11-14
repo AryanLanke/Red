@@ -77,8 +77,14 @@ def cmd_run(args) -> int:
     def pause() -> bool:
         return bool(args.minutes and time.time() - started > args.minutes * 60)
 
+    try:                                   # load the model first, so no turn pays for the load
+        from ..chat import CHAT_SCHEMA
+        llm.complete_json("Reply with one short word.", "hi", CHAT_SCHEMA, temperature=0.0, max_tokens=6)
+    except Exception as e:  # noqa: BLE001
+        print(f"(warm-up failed: {e})")
     results = runner.run_all(found, llm, companions_filter=wanted, judge=judge, out_dir=out,
-                             real_home=_home(), max_pairs=cap, should_pause=pause, seed=args.seed)
+                             real_home=_home(), max_pairs=cap, should_pause=pause, seed=args.seed,
+                             strict_speed=args.strict_speed)
     rows = [r.to_dict() for r in results]
     text = report.render(rows, title=f"Simulation report {out.name}", worst=10)
     (out / "report.md").write_text(text, encoding="utf-8")
@@ -126,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
     sp.add_argument("--limit", type=int, default=None, help="at most this many conversations")
     sp.add_argument("--big", action="store_true", help="the user is away: no cap")
     sp.add_argument("--minutes", type=float, default=None, help="stop starting conversations after this long")
+    sp.add_argument("--strict-speed", action="store_true", help="a turn over its speed budget fails the conversation")
     sp.add_argument("--label", default="")
     sp.add_argument("--out", default=None)
     sp.add_argument("--seed", type=int, default=0)
