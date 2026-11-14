@@ -448,6 +448,8 @@ class VoiceApp:
         self._state("idle", f"Red is ready. {ready}")
         from .greeter import attach_greeter
         self.greeter = attach_greeter(self)     # hello, never a briefing (RED_CHATTINESS)
+        from . import actions
+        actions.bind(self)                      # the companion menu's back end (red/actions.py)
         from .idle import attach_idle
         self.idle = attach_idle(self)           # looks around, grumbles, plays a song (red/idle.py)
         from . import chat_window
