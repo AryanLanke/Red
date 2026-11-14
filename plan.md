@@ -40,6 +40,9 @@ Put each flaw on its own line, with A or B if you know which track it belongs to
 - [ ] (A) Red still feels slow to answer.
 - [ ] (A) Remy and Asha sound the same; all three should sound younger and different.
 - [ ] (A/B) The user feels every night-2 change has small flaws. Ask nothing: try each feature end to end (the simulated user once it exists, or tests and logs), list what's broken here, and fix the worst first.
+  - [x] (B) 2026-11-14, b4ae06c b56d903 65ecc30: B's only night-2 change on main is the companion's mic button. Drove the real Red window offscreen in all 6 placements × 7 mic states and looked at the sheet. Fixed: (1) a mouth left zipped by the last run (mic.json) showed an open mic at start; (2) "not for me?" was painted over Red's eyes, and now sits where the bubbles go; (3) `attach_tray` crashed Python (access violation) when no Qt app existed, e.g. `tests/test_avatar_wiring.py` run alone. Try: say something not for Red in conversation mode; the grey tag should appear above his head.
+  - [ ] (A) `listener.write_mic_state` overwrites mic.json with only `{"muted": ...}`, so turning the mic off or on drops conversation's `"zipped"`. It should merge, like `conversation.write_state` does.
+  - [ ] (B) night-2 motion isn't on main yet; it gets checked the same way when B1 lands it.
 
 ## Track A: brains and voice
 Owns: everything in `red/` **except** `red/avatar/`, `red/app/`, `red/tray.py`, `red/windows.py`; plus `scripts/` (except `scripts/avatar_render/`), `companions/`, `sounds/`, `training/`, `tests/` for those files.
