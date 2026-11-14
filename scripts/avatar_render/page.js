@@ -26,7 +26,15 @@ const SETS = {
   // Hanging from a top corner: the bottom-corner poses turned over (finish.py cuts the side and the top).
   topL: { width: 1000, height: 1000 },
   topR: { width: 1000, height: 1000 },
+  // The climbing frame: the whole body, framed like `body` (finish.py cuts the gripped edge).
+  sideL: { width: 800, height: 1400 },
+  sideR: { width: 800, height: 1400 },
+  climbL: { width: 800, height: 1400 },
+  climbR: { width: 800, height: 1400 },
+  bars: { width: 800, height: 1400 },
+  sit: { width: 800, height: 1400 },
 };
+const WHOLE_BODY = ['sideL', 'sideR', 'climbL', 'climbR', 'bars', 'sit'];
 
 const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(1);
@@ -46,6 +54,7 @@ scene.add(lookTarget);
 
 let vrm = null;
 let flip = 1;
+let baseYaw = 0;
 let headY = 1.4;
 let morphMeshes = [];
 const views = {};
@@ -107,6 +116,8 @@ window.loadModel = async (url) => {
   views.top = { centerY: -(headY - 0.12), visible: 1.0 };      // the peek view, turned over
   views.topL = views.top;
   views.topR = views.top;
+  for (const set of WHOLE_BODY) views[set] = views.body;
+  baseYaw = vrm.scene.rotation.y;        // VRM 0.0 models are already turned round (rotateVRM0)
   vrm.lookAt.target = lookTarget;
   vrm.lookAt.autoUpdate = true;
 
@@ -161,6 +172,7 @@ function project(name, size) {
 window.renderFrame = (frame) => {
   const size = useView(frame.set || 'body');
   vrm.scene.rotation.z = frame.flip ? Math.PI : 0;       // upside down (rolled about the camera's axis)
+  vrm.scene.rotation.y = baseYaw + deg(frame.yaw);       // turned toward a side (the climbing frame)
   vrm.scene.updateMatrixWorld(true);
   vrm.humanoid.resetNormalizedPose();
   for (const [bone, angles] of Object.entries(frame.bones || {})) {

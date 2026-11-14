@@ -52,6 +52,12 @@ class Window:
     pid: int
     exe: str          # lower case, e.g. "msedge.exe"
     title: str
+    # Where it is on the screen, in physical pixels (left, top, right, bottom): the visible frame
+    # (DWM's extended frame bounds, without the invisible resize border), or GetWindowRect.
+    rect: tuple[int, int, int, int] | None = None
+    minimised: bool = False
+    maximised: bool = False
+    cls: str = ""     # the window class, e.g. "Chrome_WidgetWin_1"
 
 
 @dataclass
@@ -353,6 +359,10 @@ def watch(target: Target, desktop: Desktop | None = None):
 SW_RESTORE = 9
 GW_OWNER = 4
 DWMWA_CLOAKED = 14
+DWMWA_EXTENDED_FRAME_BOUNDS = 9
+DESKTOP_CLASSES = frozenset({"Progman", "WorkerW"})        # the desktop's own windows
+SHELL_CLASSES = DESKTOP_CLASSES | {"Shell_TrayWnd", "Shell_SecondaryTrayWnd"}
+DESKTOP_SWITCHDESKTOP = 0x0100
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 VK_MENU = 0x12
 VK_UNASSIGNED = 0x88       # a key nothing uses: stops the Alt tap from opening a menu
@@ -393,6 +403,13 @@ class Win32Desktop:
         u.InvalidateRect.argtypes = [wintypes.HWND, ctypes.c_void_p, wintypes.BOOL]
         u.InvalidateRect.restype = wintypes.BOOL
         u.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
+        u.IsZoomed.argtypes = [wintypes.HWND]
+        u.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+        u.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+        u.OpenInputDesktop.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        u.OpenInputDesktop.restype = wintypes.HANDLE
+        u.SwitchDesktop.argtypes = [wintypes.HANDLE]
+        u.CloseDesktop.argtypes = [wintypes.HANDLE]
         u.keybd_event.argtypes = [wintypes.BYTE, wintypes.BYTE, wintypes.DWORD, ctypes.c_void_p]
         k.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
         k.OpenProcess.restype = wintypes.HANDLE
@@ -427,6 +444,28 @@ class Win32Desktop:
                                                 self._ct.byref(value), self._ct.sizeof(value))
         return res == 0 and value.value != 0
 
+    def rect(self, hwnd) -> tuple[int, int, int, int] | None:
+        """The visible frame of a window (physical pixels): DWM's bounds, else GetWindowRect."""
+        r = self._wt.RECT()
+        if self.dwmapi is not None:
+            res = self.dwmapi.DwmGetWindowAttribute(self._wt.HWND(hwnd), DWMWA_EXTENDED_FRAME_BOUNDS,
+                                                    self._ct.byref(r), self._ct.sizeof(r))
+            if res == 0 and r.right > r.left:
+                return (r.left, r.top, r.right, r.bottom)
+        if self.user32.GetWindowRect(hwnd, self._ct.byref(r)):
+            return (r.left, r.top, r.right, r.bottom)
+        return None
+
+    def class_name(self, hwnd) -> str:
+        buf = self._ct.create_unicode_buffer(128)
+        self.user32.GetClassNameW(hwnd, buf, 128)
+        return buf.value
+
+    def _window(self, hwnd, title: str, pid: int) -> Window:
+        u = self.user32
+        return Window(int(hwnd), pid, self._exe(pid), title, self.rect(hwnd), bool(u.IsIconic(hwnd)),
+                      bool(u.IsZoomed(hwnd)), self.class_name(hwnd))
+
     def windows(self) -> list[Window]:
         u = self.user32
         found: list[Window] = []
@@ -442,11 +481,64 @@ class Win32Desktop:
             pid = self._wt.DWORD(0)
             u.GetWindowThreadProcessId(hwnd, self._ct.byref(pid))
             if pid.value != self._own_pid:          # never Red's own glow
-                found.append(Window(int(hwnd), pid.value, self._exe(pid.value), buf.value))
+                found.append(self._window(hwnd, buf.value, pid.value))
             return True
 
         u.EnumWindows(self._enum_proc(visit), 0)   # topmost first
         return found
+
+    def foreground(self) -> Window | None:
+        """The window in front (with its frame), or None. Red's own windows count as nothing."""
+        u = self.user32
+        hwnd = u.GetForegroundWindow()
+        if not hwnd:
+            return None
+        pid = self._wt.DWORD(0)
+        u.GetWindowThreadProcessId(hwnd, self._ct.byref(pid))
+        if pid.value == self._own_pid:
+            return None
+        length = max(0, u.GetWindowTextLengthW(hwnd))
+        buf = self._ct.create_unicode_buffer(length + 1)
+        u.GetWindowTextW(hwnd, buf, length + 1)
+        return self._window(hwnd, buf.value, pid.value)
+
+    def screen_locked(self) -> bool:
+        """True while the lock screen is up: the input desktop can't be switched to from here."""
+        u = self.user32
+        desk = u.OpenInputDesktop(0, False, DESKTOP_SWITCHDESKTOP)
+        if not desk:
+            return True
+        try:
+            return not u.SwitchDesktop(desk)
+        finally:
+            u.CloseDesktop(desk)
+
+
+def desktop_in_front(foreground: Window | None, windows: list[Window]) -> bool:
+    """The desktop is what the user sees: its own window is in front, or every app window is minimised.
+
+    `foreground` and `windows` come from a Desktop (Win32Desktop, or a fake in tests). The taskbar in
+    front (a click on it) counts as the desktop only when nothing else is open."""
+    apps = [w for w in windows if w.cls not in SHELL_CLASSES]
+    if foreground is not None and foreground.cls in DESKTOP_CLASSES:
+        return True
+    if all(w.minimised for w in apps):
+        return True
+    return foreground is not None and foreground.cls in SHELL_CLASSES and not apps
+
+
+_desktop: Win32Desktop | None = None
+
+
+def win32() -> Win32Desktop | None:
+    """One shared Win32Desktop, or None off Windows (or if user32 can't be loaded)."""
+    global _desktop
+    if _desktop is None and sys.platform == "win32":
+        try:
+            _desktop = Win32Desktop()
+        except Exception:  # noqa: BLE001
+            log.exception("Can't read the desktop's windows")
+    return _desktop
 
     def front(self, hwnd: int) -> bool:
         return front_window(_Win32Front(self), hwnd)
