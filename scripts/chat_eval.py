@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from red import speech  # noqa: E402
+from red import emotion, speech  # noqa: E402
 from red.chat import CHAT_SCHEMA, CHAT_TEMPERATURE, Chat, human, invented_life, written_laughter  # noqa: E402
 from red.llm import OllamaClient  # noqa: E402
 
@@ -88,6 +88,7 @@ def main() -> int:
                 if re.match(r"^\w+: ", line) and not line.startswith(("User:", "A:"))]
     today = datetime.now().strftime("%A").lower()
     bad, raw_bad, firsts = 0, 0, []
+    tagged, spoken_tags = 0, 0
     for _ in range(args.repeat):
         for said in SENTENCES:
             chat.turns.clear()
@@ -107,6 +108,8 @@ def main() -> int:
                 if len(out) >= 3:
                     break
             reply = " ".join(out)
+            tagged += any(emotion.split_tag(s)[1] for s in raw[:1])
+            spoken_tags += bool(re.search(r"\[[A-Za-z ]+\]", reply))
             problems = check(reply, examples, today)
             if not reply:
                 problems.append("dropped everything")      # Chat would say its stock fallback line
@@ -119,6 +122,7 @@ def main() -> int:
     print(f"\n{len(firsts)} replies, {bad} broke a rule as spoken ({raw_bad} as the model wrote them); "
           f"first sentence median {firsts[len(firsts) // 2]:.2f} s, "
           f"max {firsts[-1]:.2f} s")
+    print(f"feeling tag on the first sentence: {tagged}/{len(firsts)}; a tag left in the spoken text: {spoken_tags}")
     return 1 if bad else 0
 
 

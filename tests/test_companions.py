@@ -233,7 +233,7 @@ def test_switching_changes_the_next_prompt(tmp_path):
 
 def test_a_companion_without_a_persona_still_gets_its_name(tmp_path):
     chat = chatmod.Chat(None, persona=lambda: companions.load("kira", tmp_path))
-    assert chat.system().endswith("Your name is Kira, not Red.")
+    assert "Your name is Kira, not Red." in chat.system()
 
 
 def test_a_broken_persona_callable_does_not_break_chat():

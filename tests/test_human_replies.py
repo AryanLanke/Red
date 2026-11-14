@@ -132,3 +132,9 @@ def test_when_every_line_is_invented_the_reply_dodges_instead_of_stalling():
         def complete_json(self, system, user, schema, **kw):
             return json.dumps({"reply": "Just sitting here with my coffee."})
     assert Chat(Typed()).reply("typed, no stream") == "Not much. What about you?"
+
+
+@pytest.mark.parametrize("line", ["Not much, just thinking about your last text.", "Just thinking about what you said.",
+                                  "Just existing, mostly."])
+def test_narrated_thoughts_about_the_user_are_caught(line):
+    assert invented_life(line), line

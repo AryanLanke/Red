@@ -536,6 +536,12 @@ Every command writes a `Timing` line to `red.log`: listen, transcribe, route, ac
 - **Eval (`scripts/chat_eval.py --companion <id>`, 20 of the user's sentences each, real model):** 0 invented-life lines and 0 written laughter as spoken for all five. Remaining flags: Red 1 (every line the model wrote was an invented life, so Chat said its stock "lost my train of thought"; now it deflects with "Not much. What about you?"), Winston 1 ("a pleasant afternoon" at 21:30). As the model wrote them (before `human()`): red 1, remy 6, asha 1, bruno 1, winston 1 lines were caught. A music-lover's version of invented life ("vibin'", "on repeat", "in my head", "my speakers") is now caught too.
 - **First sentence:** the GPU was shared with the other two lanes' renders and Whisper runs, so absolute numbers moved from 0.5 s to 1.2 s during the evals; measured interleaved in one run, the persona costs +0.0 to +0.15 s over no persona. Median with the GPU quiet: see the final report.
 
+#### Emotion tags (2026-11-13, plan.md 0.3 lane 2 task 5, night 1)
+
+- The chat prompt (after the persona) asks for one feeling at the start of a reply: `[happy]`, `[annoyed]`, `[sad]`, `[surprised]`, `[shy]`, `[laugh]` or `[neutral]`. `red/emotion.py` cuts every short bracketed tag out of each sentence before it is spoken (`human()` does too, so one can never be read aloud) and emits `events.emit("emotion", name=..., strength=...)` before the sentence is queued, so the face changes before the words. A later sentence with its own tag changes the feeling again. Names are the avatar's own: happy, laugh, sad, angry, surprised, shy, thinking, sleepy, neutral (strength 0 = plain face); `[annoyed]` is `angry` at 0.5, `[angry]` 0.9.
+- Without a tag, `emotion.classify()` guesses from the words (keyword lists, under a millisecond, no model). `emotion_from_text` in red/avatar stays as the avatar's own fallback until lane 3 subscribes.
+- Real model (`scripts/chat_eval.py`, 20 sentences): the model wrote a tag on the first sentence 16/20 (Red) and 12/20 (Asha); 0 tags left in spoken text.
+
 ### 7.3 Overlay (Track C)
 
 - PySide6. Frameless, always on top, translucent, and doesn't take keyboard focus. Sits in the bottom-right corner of the primary screen.

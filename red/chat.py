@@ -19,6 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+from . import emotion as _emotion
 from . import speech as _speech
 from .llm import complete
 from .tools.assistant import spoken
@@ -155,10 +156,12 @@ def with_persona(system: str, companion) -> str:
     if companion is None:
         return system
     text = persona_prompt(companion)
+    feeling = (f"\nStart every reply with how you feel, in brackets: {_emotion.PROMPT_LIST}. "
+               "It is never spoken, so don't mention it.")
     if not text:
-        return system if companion.name == "Red" else f"{system}\nYour name is {companion.name}, not Red."
+        return (system if companion.name == "Red" else f"{system}\nYour name is {companion.name}, not Red.") + feeling
     return (f"{system}\nWho you are now. This is your character: where it differs from the one above, "
-            f"this wins. The rules above about how you talk and what you never make up still apply.\n{text}")
+            f"this wins. The rules above about how you talk and what you never make up still apply.\n{text}{feeling}")
 
 
 def with_personality(system: str, personality: str) -> str:
@@ -186,7 +189,7 @@ _INVENTED_LIFE = re.compile(
     r"|i (?:went|ate|slept|walked|drank|cooked|watched)\b"
     # A music lover's version of the same thing: a playlist running, a song in their head.
     r"|\bvibin(?:g|')?(?!\w)|\bon repeat\b|stuck on a loop|(?:in|inside) my (?:head|ears|speakers)"
-    r"|just (?:waiting|thinking about|existing) (?:for|about|here)|my circuits|running (?:a bit |a little )?hot|open tabs"
+    r"|just (?:waiting (?:for|here)|existing|thinking about (?:what|how|that|your|the|you)\b)|your last (?:text|message)|my circuits|running (?:a bit |a little )?hot|open tabs"
     r"|my (?:speakers|headphones|playlists?|ears|head)\b"
     r"|(?:i'?m|i am|just|been) (?:listening|jamming|grooving|humming|spinning) to\b"
     r"|(?:listening|jamming|grooving) to (?:a|an|some|the|this|that|my) (?:playlist|song|track|album|music|beat|tune|mix)"
@@ -215,6 +218,7 @@ def written_laughter(text: str) -> bool:
 def human(sentence: str) -> str:
     """One sentence as a person would say it: "" when it narrates an invented life,
     written laughter taken out ("Haha, fair." -> "Fair.")."""
+    sentence, _ = _emotion.split_tag(sentence or "")          # a tag is never read aloud
     if not sentence or invented_life(sentence):
         if sentence:
             log.info("Dropped an invented-life line: %r", sentence[:120])
@@ -450,12 +454,18 @@ class Chat:
         prompt = self._debate_prompt(said) if self.is_debate else self.prompt(said)
         pieces = _speech.stream_field(self.llm, system, prompt, CHAT_SCHEMA, "reply",
                                       temperature=CHAT_TEMPERATURE)
+        tag, felt = None, False
         try:
             for sentence in _speech.sentences(pieces):
+                sentence, found = _emotion.split_tag(sentence)
+                tag = found or tag
                 text = human(spoken(sentence, max_sentences=50, max_chars=MAX_REPLY))
                 if not text:
                     self._dropped = True
                     continue
+                if tag or not felt:               # the face changes before the words do
+                    _emotion.emit(*_emotion.resolve(text, tag))
+                    tag, felt = None, True
                 stream.say(text)
                 said_back.append(text)
                 limit = 4 if self.is_debate else 3
@@ -499,6 +509,8 @@ class Chat:
                 kept = [human(s) for s in _speech.sentences([raw])]
                 self._dropped = not any(kept)
                 text = " ".join(filter(None, kept))
+                if text:
+                    _emotion.emit(*_emotion.resolve(text, _emotion.split_tag(raw)[1]))
                 text = spoken(text, max_sentences=4 if self.is_debate else 3)
             except Exception as e:  # noqa: BLE001 - a dull reply beats no reply
                 log.warning("Chat reply failed: %s", e)
