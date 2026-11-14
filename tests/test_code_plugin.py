@@ -94,25 +94,50 @@ def test_write_code_streams_into_the_window_and_says_one_line(code, folder, tmp_
     write = tool(code, "write_code", llm, ui)
     write.set_command("write me a script that says hi")
     reply = write.run(request="a script that says hi")
-    assert reply == "Here you go, it's in the chat window. It prints hi."
+    # Where it is, what it does, what to do next (plan.md 1, Act).
+    assert reply == ("Done, it's in the chat window and saved as says-hi.py in Documents, Red Code. "
+                     "It prints hi. Run it with Python, or tell me what to change.")
     assert "```" not in reply and "pathlib" not in reply                 # never read aloud
     stream = ui.streams[0]
     assert ui.shown == 1 and stream.updates[0] == "Writing it..."
     assert any(u.startswith("```python\nimport pathlib") for u in stream.updates[1:])   # it grew live
     assert stream.final.startswith("It prints hi.\n```python\nimport pathlib")
+    assert stream.final.endswith(f"Saved as {folder / 'says-hi.py'}")
+    assert (folder / "says-hi.py").read_text(encoding="utf-8").startswith("import pathlib")
     assert not marker.exists()                                             # Red never runs it
     assert "write me a script that says hi" in llm.calls[0][1]             # the user's own words
 
 
 def test_write_code_without_a_window_saves_a_new_file(code, folder):
     folder.mkdir(parents=True)
-    (folder / "red-code.py").write_text("old", encoding="utf-8")
+    (folder / "print-hi.py").write_text("old", encoding="utf-8")
     write = tool(code, "write_code", CodeLLM("print('hi')"))
-    reply = write.run(request="say hi")
-    assert reply == "Here you go, I saved it as red-code-2.py in Documents, Red Code. It prints hi."
-    assert (folder / "red-code.py").read_text(encoding="utf-8") == "old"   # never replaced
-    assert (folder / "red-code-2.py").read_text(encoding="utf-8") == "print('hi')\n"
+    reply = write.run(request="print hi")
+    assert reply == ("Done, I saved it as print-hi-2.py in Documents, Red Code. It prints hi. "
+                     "Run it with Python, or tell me what to change.")
+    assert (folder / "print-hi.py").read_text(encoding="utf-8") == "old"     # never replaced
+    assert (folder / "print-hi-2.py").read_text(encoding="utf-8") == "print('hi')\n"
     assert write.last_details == "```python\nprint('hi')\n```"
+
+
+@pytest.mark.parametrize("request_, language, name", [
+    ("Write a code for me that adds 2 binary numbers in Python language", "python", "adds-2-binary-numbers.py"),
+    ("make a PowerShell script to list big files", "powershell", "list-big-files.ps1"),
+    ("write some code", "python", "red-code.py"),
+    ("a web page with a red button", "html", "web-page-red-button.html"),
+])
+def test_the_file_is_named_after_what_the_code_does(code, request_, language, name):
+    assert code.file_name_for(request_, language) == name
+
+
+def test_a_window_still_gets_the_code_when_saving_fails(code, folder, monkeypatch):
+    def broken(self, result, name=""):
+        raise code.ToolError("disk full")
+    monkeypatch.setattr(code._CodeTool, "save", broken)
+    ui = FakeUI()
+    reply = tool(code, "write_code", CodeLLM("print('hi')"), ui).run(request="say hi")
+    assert reply.startswith("Done, it's in the chat window. I couldn't save a copy.")
+    assert "print('hi')" in ui.streams[0].final
 
 
 def test_a_poem_is_words_not_code(code, folder):

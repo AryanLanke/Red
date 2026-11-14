@@ -18,7 +18,7 @@ import json
 import re
 from pathlib import Path
 
-from red.chat_window import code_filename, red_code_folder
+from red.chat_window import EXTENSIONS, code_filename, red_code_folder
 from red.llm import LLMError, complete
 from red.speech import JsonFieldReader
 from red.tools.assistant import _UsesLLM, ask_model, spoken
@@ -88,6 +88,35 @@ def syntax_problem(code: str, language: str) -> str:
 
 def fenced(language: str, code: str) -> str:
     return f"```{language}\n{code}\n```"
+
+
+_NAME_FILLER = frozenset(
+    "a an the for me that which who in on of to and with my your please can could would will you i we "
+    "want need like said say write wrote make create build give code coding program script function "
+    "app language simple small quick some just ok okay skip thing this it is be so now".split())
+_NAME_FILLER_LANGS = frozenset(EXTENSIONS) | {"py", "js", "ps", "ps1", "c", "cpp"}
+
+NEXT_STEPS = {
+    "python": "Run it with Python, or tell me what to change.",
+    "powershell": "Run it in PowerShell, or tell me what to change.",
+    "javascript": "Run it with Node, or tell me what to change.",
+    "html": "Open it in your browser, or tell me what to change.",
+}
+
+
+def next_step(language: str) -> str:
+    """What to do with the code now, in one spoken sentence."""
+    return NEXT_STEPS.get(language, "Tell me if you want anything changed.")
+
+
+def file_name_for(request: str, language: str) -> str:
+    """A file name from what the code does: "adds two binary numbers" -> adds-two-binary-numbers.py."""
+    words = [w for w in re.findall(r"[a-z0-9]+", (request or "").lower())
+             if w not in _NAME_FILLER and w not in _NAME_FILLER_LANGS]
+    if not words:
+        return code_filename(language)
+    stem = "-".join(words[:4])[:40].strip("-")
+    return code_filename(language).replace("red-code", stem, 1)
 
 
 def free_path(folder: Path, name: str) -> Path:
@@ -223,15 +252,20 @@ class _CodeTool(_UsesLLM):
         if stream is not None:
             stream.done(text)
             return "it's in the chat window"
+        path = self.save(result)
+        self.last_details = fenced(result["language"], result["code"])
+        return f"I saved it as {path.name} in Documents, Red Code"
+
+    def save(self, result: dict, name: str = "") -> Path:
+        """The code as a new file in Documents\\Red Code (never over an old one)."""
         folder = red_code_folder()
         try:
             folder.mkdir(parents=True, exist_ok=True)
-            path = free_path(folder, code_filename(result["language"]))
+            path = free_path(folder, name or code_filename(result["language"]))
             path.write_text(result["code"] + "\n", encoding="utf-8")
         except OSError as e:
             raise ToolError(f"I wrote it, but couldn't save it: {e}") from e
-        self.last_details = fenced(result["language"], result["code"])
-        return f"I saved it as {path.name} in Documents, Red Code"
+        return path
 
     def open_stream(self, first: str):
         if self._chat is None:
@@ -275,11 +309,28 @@ class WriteCode(_CodeTool):
         stream = self.open_stream("Writing it...")
         result = self.ask_for_code(WRITE_SYSTEM, prompt, stream)
         problem = syntax_problem(result["code"], result["language"])
-        note = f"(It doesn't parse yet, {problem}. Say \"fix this\" after copying it.)" if problem else ""
-        where = self.show(result, stream, note)
-        reply = f"Here you go, {where}. {result['summary']}".strip()
+        note = f" (It doesn't parse yet, {problem}. Say \"fix this\" after copying it.)" if problem else ""
+        code_block = fenced(result["language"], result["code"])
+        # What it did and where it is (plan.md 1, Act): always a file too, so the code has a real place.
+        try:
+            path = self.save(result, file_name_for(said, result["language"]))
+        except ToolError:
+            if stream is None:
+                raise
+            path = None
+        self.last_details = ""
+        if stream is not None:
+            stream.done(f"{result['summary']}{note}\n{code_block}" + (f"\nSaved as {path}" if path else ""))
+            where = (f"it's in the chat window and saved as {path.name} in Documents, Red Code" if path
+                     else "it's in the chat window. I couldn't save a copy")
+        else:
+            self.last_details = code_block
+            where = f"I saved it as {path.name} in Documents, Red Code"
+        reply = f"Done, {where}. {result['summary']}".strip()
         if problem:
-            reply += " Heads up, it has a syntax error, so give it a look."
+            reply += " Heads up, it has a syntax error, so copy it and say fix this."
+        else:
+            reply += " " + next_step(result["language"])
         return reply
 
 
