@@ -101,3 +101,34 @@ def test_the_clock_is_only_in_the_prompt_when_time_comes_up():
         chat.reply("I already woke up man")
     assert "Friday" not in llm.calls[0]
     assert "It's Friday 12:00 PM" in llm.calls[1]
+
+
+MUSIC_LOVER_INVENTED = [
+    "Not much, just vibin'.", "Just vibing to a playlist on repeat.", "I can hear that song in my head.",
+    "Listening to a playlist right now.", "Only as loud as my speakers allow.", "Running a bit hot, mostly from all these open tabs.",
+]
+
+
+@pytest.mark.parametrize("line", MUSIC_LOVER_INVENTED)
+def test_a_music_lovers_invented_life_is_caught_too(line):
+    assert invented_life(line), line
+
+
+@pytest.mark.parametrize("line", ["I'm listening.", "Are you listening to me? Yes.", "Love that song.",
+                                  "What are you listening to?", "That's a good vibe."])
+def test_music_talk_that_claims_nothing_passes(line):
+    assert not invented_life(line), line
+
+
+def test_when_every_line_is_invented_the_reply_dodges_instead_of_stalling():
+    llm = StreamLLM("Just waiting by my terminal for you. Sitting here with my coffee.")
+    stream = Spoken()
+    with sp.speaking_to(stream):
+        text = Chat(llm).reply("what are you doing right now?")
+    assert text == "Not much. What about you?" and stream.said == []
+
+
+    class Typed:
+        def complete_json(self, system, user, schema, **kw):
+            return json.dumps({"reply": "Just sitting here with my coffee."})
+    assert Chat(Typed()).reply("typed, no stream") == "Not much. What about you?"

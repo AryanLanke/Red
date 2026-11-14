@@ -56,7 +56,7 @@ Contents: 1 Goals and limits · 2 The parts · 3 Runtime and threads · 4 Compan
 | Router | `router.py` ✅, `fastpath.py` ✅ | picking a tool; two-step groups ⏳ | write chat replies (N2) |
 | Executor | `executor.py` ✅ | confirm, run, log | speak by itself |
 | Chat | `chat.py` ✅ | the reply in the companion's character | pick tools |
-| Companion runtime | ⏳ `red/companions.py` | loading packs, the active one, switching | render anything |
+| Companion runtime | ✅ `red/companions.py` | loading packs, the active one, switching | render anything |
 | Speech | `speech.py` ✅, `tts*.py` ✅, ⏳ `red/expressive.py` | turning tagged text into sound; clips; engines | decide what to say |
 | Senses | `screen.py` ✅, `tools/screen.py` ✅ | window title always, a look on demand | keep screenshots |
 | Memory | `memory.py` ✅, ⏳ `red/history.py` | facts, profile, relationship notes, past chats | leave the PC |

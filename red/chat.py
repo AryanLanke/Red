@@ -90,6 +90,7 @@ _DEBATE_TOPIC = re.compile(
     re.IGNORECASE)
 _QUIZ_TOPIC = re.compile(r"\bquiz me\s*(?:about|on|with)?\s*(.*)", re.IGNORECASE)
 YOUR_TURN = "Your turn."
+DEFLECT = "Not much. What about you?"      # when every line the model wrote was an invented life
 
 
 def debate_topic_from(said: str) -> str:
@@ -254,6 +255,7 @@ class Chat:
         self._last = clock()
         self.is_debate = False
         self.debate_topic = ""
+        self._dropped = False             # the last reply had lines human() dropped
 
     def _expire(self) -> None:
         if self._clock() - self._last > self._forget_after:
@@ -443,6 +445,7 @@ class Chat:
     def _reply_streaming(self, said: str, stream) -> str:
         """Speak each sentence of the reply as soon as the model has written it."""
         said_back: list[str] = []
+        self._dropped = False
         system = self.system()
         prompt = self._debate_prompt(said) if self.is_debate else self.prompt(said)
         pieces = _speech.stream_field(self.llm, system, prompt, CHAT_SCHEMA, "reply",
@@ -451,6 +454,7 @@ class Chat:
             for sentence in _speech.sentences(pieces):
                 text = human(spoken(sentence, max_sentences=50, max_chars=MAX_REPLY))
                 if not text:
+                    self._dropped = True
                     continue
                 stream.say(text)
                 said_back.append(text)
@@ -483,6 +487,7 @@ class Chat:
         if not self.is_debate and DEBATE_START.search(said):
             self.begin_debate(said)
         text = ""
+        self._dropped = False
         streamed = False
         stream = _speech.current()
         if self.llm is not None and stream is not None and hasattr(self.llm, "stream_json"):
@@ -491,12 +496,16 @@ class Chat:
         elif self.llm is not None:
             try:
                 raw = str(json.loads(self._ask(said))["reply"])
-                text = " ".join(filter(None, (human(s) for s in _speech.sentences([raw]))))
+                kept = [human(s) for s in _speech.sentences([raw])]
+                self._dropped = not any(kept)
+                text = " ".join(filter(None, kept))
                 text = spoken(text, max_sentences=4 if self.is_debate else 3)
             except Exception as e:  # noqa: BLE001 - a dull reply beats no reply
                 log.warning("Chat reply failed: %s", e)
         if self.is_debate:
             text = with_your_turn(text) if text else text
+        if not text and self._dropped and not fallback:
+            text = DEFLECT                       # the model only said what a person wouldn't: dodge, don't stall
         text = text or fallback or "Sorry, I lost my train of thought. Say that again?"
         if not text.rstrip().endswith("?"):           # one question at a time
             question = self._ask_name()
