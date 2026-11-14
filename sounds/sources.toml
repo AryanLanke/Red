@@ -1,0 +1,2938 @@
+# Licensed clips for the reaction packs (scripts/sound_assign.py; scripts/make_sounds.py builds from this).
+# No audio in git: each file is downloaded, its SHA-256 checked, trimmed and loudness-matched.
+# Only CC0 and CC-BY from Freesound.org. Credit lines are shown in the app (red.sounds.credits).
+
+[[source]]
+id = "fs19260"
+page = "https://freesound.org/people/martian/sounds/19260/"
+url = "https://cdn.freesound.org/previews/19/19260_84709-hq.mp3"
+sha256 = "8e883111221aa7a30788255b245e8c55b05fdb17acbd3b53f7ca191294acdc25"
+author = "martian"
+title = "cute giggles.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs26287"
+page = "https://freesound.org/people/Walter_Odington/sounds/26287/"
+url = "https://cdn.freesound.org/previews/26/26287_48671-hq.mp3"
+sha256 = "716d1ec57a1122e140519fbf6bf5c0018fd69e818a3c219777809cdef142bb59"
+author = "Walter_Odington"
+title = "zipper 1.aif"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs27897"
+page = "https://freesound.org/people/lsprice/sounds/27897/"
+url = "https://cdn.freesound.org/previews/27/27897_193132-hq.mp3"
+sha256 = "eb7661b72a93e80a8ffa7cbfba1e0b82e114d8aec7c788781e8b4c5e1d804fd5"
+author = "lsprice"
+title = "Gasp.aif"
+license = "CC BY 3.0"
+license_url = "http://creativecommons.org/licenses/by/3.0/"
+
+[[source]]
+id = "fs30989"
+page = "https://freesound.org/people/UncleSigmund/sounds/30989/"
+url = "https://cdn.freesound.org/previews/30/30989_95609-hq.mp3"
+sha256 = "ca8d8996e4278a22277c01d10c35fe6ddc461d669cceeaf08e9b725f799c0b4d"
+author = "UncleSigmund"
+title = "hey.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs51176"
+page = "https://freesound.org/people/RutgerMuller/sounds/51176/"
+url = "https://cdn.freesound.org/previews/51/51176_179538-hq.mp3"
+sha256 = "03de045ebce12c9452a5a4f21712e9d0e4de76255fb7018022735a960efd2c1c"
+author = "RutgerMuller"
+title = "Zipper Unzip 3 (Slow) .wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs54922"
+page = "https://freesound.org/people/digifishmusic/sounds/54922/"
+url = "https://cdn.freesound.org/previews/54/54922_29541-hq.mp3"
+sha256 = "bb742d50543a2e9fcf7d97001f91a6ff24eac2e509d271f5fabc14151008a7bb"
+author = "digifishmusic"
+title = "Female Hello.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs88401"
+page = "https://freesound.org/people/justincase1021/sounds/88401/"
+url = "https://cdn.freesound.org/previews/88/88401_950462-hq.mp3"
+sha256 = "9fec4e7ef0232ec4bdc73e2a6d3da7f5d041bea0747b37152f924b6fef5b87fb"
+author = "justincase1021"
+title = "-HEY-HEY A.wav"
+license = "CC BY 3.0"
+license_url = "http://creativecommons.org/licenses/by/3.0/"
+
+[[source]]
+id = "fs119102"
+page = "https://freesound.org/people/domrodrig/sounds/119102/"
+url = "https://cdn.freesound.org/previews/119/119102_1550701-hq.mp3"
+sha256 = "fae5a07ccad7f91da199c8f88d74d5ec2bc3330be1a28326f35a468af241846c"
+author = "domrodrig"
+title = "Sneeze; male_1-2.aif"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs119450"
+page = "https://freesound.org/people/lmbubec/sounds/119450/"
+url = "https://cdn.freesound.org/previews/119/119450_1990688-hq.mp3"
+sha256 = "8166419dd5bc52878c7bea177f24712f51c7c0cdab4f92257acc8fec339371a0"
+author = "lmbubec"
+title = "Girl Laugh.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs144257"
+page = "https://freesound.org/people/DWOBoyle/sounds/144257/"
+url = "https://cdn.freesound.org/previews/144/144257_2289019-hq.mp3"
+sha256 = "0b342a1c4b7370807a5e4f66c7837b9fa9b124001e7654c3a6c593dd5dc64cfb"
+author = "DWOBoyle"
+title = "Human-Man-Voice-Huh.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs144258"
+page = "https://freesound.org/people/DWOBoyle/sounds/144258/"
+url = "https://cdn.freesound.org/previews/144/144258_2289019-hq.mp3"
+sha256 = "be62af8eefb63002f563d12fd41f5021a5d6282aa81d835c239099171cace391"
+author = "DWOBoyle"
+title = "Human-Man-Uh_Oh.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs150231"
+page = "https://freesound.org/people/domvoice/sounds/150231/"
+url = "https://cdn.freesound.org/previews/150/150231_2564020-hq.mp3"
+sha256 = "6b5289fe46b2ccc62ff8f7291844197097e90036bc93e5ae64d765278780bbb7"
+author = "domvoice"
+title = "Female Sneeze"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs150505"
+page = "https://freesound.org/people/davdud101/sounds/150505/"
+url = "https://cdn.freesound.org/previews/150/150505_1883289-hq.mp3"
+sha256 = "02e54c81aade5544ba953dd3dc35d355b2c546c8cf1d9bd7a2b27d6a0fe4d477"
+author = "davdud101"
+title = "Huh? - Vocal"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs165011"
+page = "https://freesound.org/people/DAN2008/sounds/165011/"
+url = "https://cdn.freesound.org/previews/165/165011_2992529-hq.mp3"
+sha256 = "396ad3b410c95f22ac15152efbffeaaeaf68c4857ed62d403eebffaa81c9f6af"
+author = "DAN2008"
+title = "hmmmm"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs170768"
+page = "https://freesound.org/people/esperar/sounds/170768/"
+url = "https://cdn.freesound.org/previews/170/170768_377731-hq.mp3"
+sha256 = "2a49243f228d192d59c1593d10b405dc6fcc77f472ede0ecc99fc6fffbc27a0b"
+author = "esperar"
+title = "Hmm question.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs170779"
+page = "https://freesound.org/people/esperar/sounds/170779/"
+url = "https://cdn.freesound.org/previews/170/170779_377731-hq.mp3"
+sha256 = "6063f6181e4a12f40700dbd69198249b47072b6fd1964743fbe1afceddbd42a1"
+author = "esperar"
+title = "OneHmm-question.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs184570"
+page = "https://freesound.org/people/MrAuralization/sounds/184570/"
+url = "https://cdn.freesound.org/previews/184/184570_2843367-hq.mp3"
+sha256 = "4b168bd4ea4c035465ea4711f111b98ac63eebfecaa72188ada791a2de8472e0"
+author = "MrAuralization"
+title = "Zipper 3"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs204497"
+page = "https://freesound.org/people/holadios/sounds/204497/"
+url = "https://cdn.freesound.org/previews/204/204497_3560330-hq.mp3"
+sha256 = "90b17382b2d9c2bd05394d8e5b302cd9ad449f51f5a1a1a27f8ef8aa6ca06e35"
+author = "holadios"
+title = "short giggle"
+license = "CC BY 3.0"
+license_url = "http://creativecommons.org/licenses/by/3.0/"
+
+[[source]]
+id = "fs213291"
+page = "https://freesound.org/people/AderuMoro/sounds/213291/"
+url = "https://cdn.freesound.org/previews/213/213291_1118942-hq.mp3"
+sha256 = "07cd13c83e66170a37adbfb8f169f1729bb262b53a81772471d64fe572de27ed"
+author = "AderuMoro"
+title = "Giggle closed mouth young lady teenage girl.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs215380"
+page = "https://freesound.org/people/Reitanna/sounds/215380/"
+url = "https://cdn.freesound.org/previews/215/215380_950925-hq.mp3"
+sha256 = "ec24410a29267115bbf7bdb0deb44fd78cc541eaae5e41ebd4289e3c237b373d"
+author = "Reitanna"
+title = "male sigh.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs219900"
+page = "https://freesound.org/people/Otakua/sounds/219900/"
+url = "https://cdn.freesound.org/previews/219/219900_2157839-hq.mp3"
+sha256 = "94a8cf8d7c1f793af851b1d26ddf61ce48dbff85f0a5f61a0dbb34c04e5afa54"
+author = "Otakua"
+title = "GirlSigh03.wav"
+license = "CC BY 3.0"
+license_url = "http://creativecommons.org/licenses/by/3.0/"
+
+[[source]]
+id = "fs219904"
+page = "https://freesound.org/people/Otakua/sounds/219904/"
+url = "https://cdn.freesound.org/previews/219/219904_2157839-hq.mp3"
+sha256 = "655a22ba86751d3da741e5c39bf7d7c09e815d2057f8764d6c1d229f2e274a2c"
+author = "Otakua"
+title = "GuyShock04.wav"
+license = "CC BY 3.0"
+license_url = "http://creativecommons.org/licenses/by/3.0/"
+
+[[source]]
+id = "fs235020"
+page = "https://freesound.org/people/Reitanna/sounds/235020/"
+url = "https://cdn.freesound.org/previews/235/235020_950925-hq.mp3"
+sha256 = "23a69274651a1d43c65473f5a05f78a900f610d714e0b20c2041f08913a41243"
+author = "Reitanna"
+title = "japanese - hey2.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs235037"
+page = "https://freesound.org/people/Reitanna/sounds/235037/"
+url = "https://cdn.freesound.org/previews/235/235037_950925-hq.mp3"
+sha256 = "d700df848d46172e6d7fa0e41bba5da1815edd7e9a7d970dda6a2f5b0e70778f"
+author = "Reitanna"
+title = "japanese - huh?2.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs235038"
+page = "https://freesound.org/people/Reitanna/sounds/235038/"
+url = "https://cdn.freesound.org/previews/235/235038_950925-hq.mp3"
+sha256 = "72235d1d5340f14eba5dcc10760be552cfcd106704953611e706962c278001ed"
+author = "Reitanna"
+title = "japanese - huh?.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs235054"
+page = "https://freesound.org/people/Reitanna/sounds/235054/"
+url = "https://cdn.freesound.org/previews/235/235054_950925-hq.mp3"
+sha256 = "43c75ec4ac584f1b704b5517bd7b14f0d233ef3f60a72677937e40cd5d192961"
+author = "Reitanna"
+title = "japanese - yay!2.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs235080"
+page = "https://freesound.org/people/Reitanna/sounds/235080/"
+url = "https://cdn.freesound.org/previews/235/235080_950925-hq.mp3"
+sha256 = "7ee30c605758088a9020be3b16002813efa1433b9894525b836a91aecb6e0d8b"
+author = "Reitanna"
+title = "pinkie pie 'ooh pretty!'.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs241485"
+page = "https://freesound.org/people/Reitanna/sounds/241485/"
+url = "https://cdn.freesound.org/previews/241/241485_950925-hq.mp3"
+sha256 = "0bb50998e6ec25f252a0bcac4660ef0d87e1b7e147fd218b979baf3586799f99"
+author = "Reitanna"
+title = "small sad giggle.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs242606"
+page = "https://freesound.org/people/Reitanna/sounds/242606/"
+url = "https://cdn.freesound.org/previews/242/242606_950925-hq.mp3"
+sha256 = "396e4ce8cbe30d2f1a4e17b2346d01d5e433d933b311e06cea6f2b10f012659d"
+author = "Reitanna"
+title = "gasp HOH!.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs242618"
+page = "https://freesound.org/people/Reitanna/sounds/242618/"
+url = "https://cdn.freesound.org/previews/242/242618_950925-hq.mp3"
+sha256 = "eb96acf150e31bb8a54e76954712964828f7d280daedd83cc0abcfa027be3fc8"
+author = "Reitanna"
+title = "gasp.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs242625"
+page = "https://freesound.org/people/Reitanna/sounds/242625/"
+url = "https://cdn.freesound.org/previews/242/242625_950925-hq.mp3"
+sha256 = "621c462f1e69d25e2324d5e3508ea5a66c0443f6cb5dbe622cf0faf92c1bdd63"
+author = "Reitanna"
+title = "heavy sigh.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs242690"
+page = "https://freesound.org/people/Reitanna/sounds/242690/"
+url = "https://cdn.freesound.org/previews/242/242690_950925-hq.mp3"
+sha256 = "a7d34e484e371d6a9cd1b1a0eff8668ab8e9b6691440cc4e129bd312cc86f96f"
+author = "Reitanna"
+title = "long sigh.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs246304"
+page = "https://freesound.org/people/vikuserro/sounds/246304/"
+url = "https://cdn.freesound.org/previews/246/246304_2833408-hq.mp3"
+sha256 = "10e08fc9a2113f1ec465694f3f5d564f797a731d3b09938fe68b851a0fca1057"
+author = "vikuserro"
+title = "Ey - shouting"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs246312"
+page = "https://freesound.org/people/goingnowhereeatingthings/sounds/246312/"
+url = "https://cdn.freesound.org/previews/246/246312_4490427-hq.mp3"
+sha256 = "e0a861748ecb97deb282bfc091347b0bbbadc37a9990f2c6e67759508cf20fd0"
+author = "goingnowhereeatingthings"
+title = "Silly Laugh"
+license = "CC BY 3.0"
+license_url = "http://creativecommons.org/licenses/by/3.0/"
+
+[[source]]
+id = "fs250140"
+page = "https://freesound.org/people/Hephaestus/sounds/250140/"
+url = "https://cdn.freesound.org/previews/250/250140_3258707-hq.mp3"
+sha256 = "4d07494e3adda55b6b5cc5e80ccf6ea7b19caf6f3c2f1e4ff89ec5cd5d075105"
+author = "Hephaestus"
+title = "Adult Male Hiccup"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs250716"
+page = "https://freesound.org/people/Aiwha/sounds/250716/"
+url = "https://cdn.freesound.org/previews/250/250716_2271450-hq.mp3"
+sha256 = "1682257b4be16a4db2ba21e5845c90cda9964d8f089a614785d1351c672f5b1a"
+author = "Aiwha"
+title = "Zipper 2"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs252218"
+page = "https://freesound.org/people/Reitanna/sounds/252218/"
+url = "https://cdn.freesound.org/previews/252/252218_950925-hq.mp3"
+sha256 = "0629c042c12a2936fe5e6e5165efac9ebfa9527578c95941b6aadfd4e8c53c52"
+author = "Reitanna"
+title = "cute giggle.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs257825"
+page = "https://freesound.org/people/Piink_Aces/sounds/257825/"
+url = "https://cdn.freesound.org/previews/257/257825_3509524-hq.mp3"
+sha256 = "68c9db73ac4565b7cc497bed1da841191646ba4ea728f9b9edec1306af9f7e7d"
+author = "Piink_Aces"
+title = "Girl saying 'Oh my god'"
+license = "CC BY 3.0"
+license_url = "http://creativecommons.org/licenses/by/3.0/"
+
+[[source]]
+id = "fs271245"
+page = "https://freesound.org/people/bertiehs/sounds/271245/"
+url = "https://cdn.freesound.org/previews/271/271245_1621583-hq.mp3"
+sha256 = "73bb0eb2bb06afdcb548116060277dab8ae5577a862e83557bcc7ac08d7174e3"
+author = "bertiehs"
+title = "Gasp Male"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs272030"
+page = "https://freesound.org/people/aldenroth2/sounds/272030/"
+url = "https://cdn.freesound.org/previews/272/272030_5165013-hq.mp3"
+sha256 = "0381832c1921f71dceb95d169e76f4683ff39c1b65c82841f4a842a77a97eb91"
+author = "aldenroth2"
+title = "Male Yawn"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs273926"
+page = "https://freesound.org/people/lemonjolly/sounds/273926/"
+url = "https://cdn.freesound.org/previews/273/273926_3173139-hq.mp3"
+sha256 = "e52a12ccdbf1ee91b9b8ee6d86d45dc72c2a951aec1573a107a0f58ce96df6b0"
+author = "lemonjolly"
+title = "Cute girl - laugh2"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs275055"
+page = "https://freesound.org/people/Ashtalon/sounds/275055/"
+url = "https://cdn.freesound.org/previews/275/275055_3943924-hq.mp3"
+sha256 = "a346b5af667c10acbd21b09599dec203f33d8d3259263bca456cac45d880eb88"
+author = "Ashtalon"
+title = "sigh.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs318077"
+page = "https://freesound.org/people/Drkvixn91/sounds/318077/"
+url = "https://cdn.freesound.org/previews/318/318077_5057106-hq.mp3"
+sha256 = "9148ed58562b0ce640efd3f88bfa368417226f64288bbf97f8e9ac98b4e57fad"
+author = "Drkvixn91"
+title = "Whimper_Gasp_1_Male"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs318078"
+page = "https://freesound.org/people/Drkvixn91/sounds/318078/"
+url = "https://cdn.freesound.org/previews/318/318078_5057106-hq.mp3"
+sha256 = "a4e7c8d41a9c99fd6cbf48843c1d4cdb2f5630c0629b7ecf3fbdc5a3a70b1630"
+author = "Drkvixn91"
+title = "Whimper_Gasp_1_Female"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs318085"
+page = "https://freesound.org/people/Drkvixn91/sounds/318085/"
+url = "https://cdn.freesound.org/previews/318/318085_5057106-hq.mp3"
+sha256 = "b4f441e875d1b1ff277d39c366295ee92d5f0f699c652eb2ca1cc274ecf4e186"
+author = "Drkvixn91"
+title = "Sigh_4_Female"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs319335"
+page = "https://freesound.org/people/Kurck/sounds/319335/"
+url = "https://cdn.freesound.org/previews/319/319335_1856922-hq.mp3"
+sha256 = "c9ec863c2c4cc114909263b9628171c58db19200b506b88e856f4ae38e790224"
+author = "Kurck"
+title = "jeej.ogg"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs323703"
+page = "https://freesound.org/people/Reitanna/sounds/323703/"
+url = "https://cdn.freesound.org/previews/323/323703_950925-hq.mp3"
+sha256 = "089379bcdaef805055537743461052a0c43fe6776714b5004f5fd33b893f15fb"
+author = "Reitanna"
+title = "funny yay.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs323704"
+page = "https://freesound.org/people/Reitanna/sounds/323704/"
+url = "https://cdn.freesound.org/previews/323/323704_950925-hq.mp3"
+sha256 = "5ccb2ca88d1bd763dbd350ccfd61de3cb4d08bfe38d2535a9024bfb551d21366"
+author = "Reitanna"
+title = "cutie laugh.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs333267"
+page = "https://freesound.org/people/silversatyr/sounds/333267/"
+url = "https://cdn.freesound.org/previews/333/333267_995865-hq.mp3"
+sha256 = "338c81ec996c901a26164c644d4d820769d67dae5c261d365ec2ff35f5b3af44"
+author = "silversatyr"
+title = "Surprised Woman ogg"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs333275"
+page = "https://freesound.org/people/silversatyr/sounds/333275/"
+url = "https://cdn.freesound.org/previews/333/333275_995865-hq.mp3"
+sha256 = "0e133b2df6f0bc6480688cc1bbd4ccd034179fa4c434150c7382734609518494"
+author = "silversatyr"
+title = "Giggle 4.ogg"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs333277"
+page = "https://freesound.org/people/silversatyr/sounds/333277/"
+url = "https://cdn.freesound.org/previews/333/333277_995865-hq.mp3"
+sha256 = "20359554b11e82d223903d888e10184155b5c9f5f447cadef8dbeac493286791"
+author = "silversatyr"
+title = "Girl laugh.ogg"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs334049"
+page = "https://freesound.org/people/LittleRainySeasons/sounds/334049/"
+url = "https://cdn.freesound.org/previews/334/334049_5865517-hq.mp3"
+sha256 = "9eff7bd654d5f335e34bb0b5979b27ef2df1fa3668e025c9134b4c7179679660"
+author = "LittleRainySeasons"
+title = "Huh.mp3"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs335355"
+page = "https://freesound.org/people/LittleRainySeasons/sounds/335355/"
+url = "https://cdn.freesound.org/previews/335/335355_5865517-hq.mp3"
+sha256 = "537f785c6452e56d037de18adf6aa049fe4417ddc69855b31be486d99f9b2e60"
+author = "LittleRainySeasons"
+title = "Groan.mp3"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs339414"
+page = "https://freesound.org/people/robiso32/sounds/339414/"
+url = "https://cdn.freesound.org/previews/339/339414_502562-hq.mp3"
+sha256 = "514f6d7d66b6f4cbc8930a9a2d64c11e85f9a4b6ef0edb0c6feb6f467b6576dd"
+author = "robiso32"
+title = "Sneeze01.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs343878"
+page = "https://freesound.org/people/Reitanna/sounds/343878/"
+url = "https://cdn.freesound.org/previews/343/343878_950925-hq.mp3"
+sha256 = "940f4f50cf99167debea86fb74b687d53c567e6de9c6f08523e67e7a8a504c90"
+author = "Reitanna"
+title = "big gasp.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs343971"
+page = "https://freesound.org/people/Reitanna/sounds/343971/"
+url = "https://cdn.freesound.org/previews/343/343971_950925-hq.mp3"
+sha256 = "4237b2979cf901dfe62045212609570c141624c66079d0841ba928d4b392ba65"
+author = "Reitanna"
+title = "squeak.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs343973"
+page = "https://freesound.org/people/Reitanna/sounds/343973/"
+url = "https://cdn.freesound.org/previews/343/343973_950925-hq.mp3"
+sha256 = "2c75cd562fe0d317449a909fa0567ec9552b07fdbda89c13c9eca5b535bce685"
+author = "Reitanna"
+title = "squeaky hiccup.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs343992"
+page = "https://freesound.org/people/Reitanna/sounds/343992/"
+url = "https://cdn.freesound.org/previews/343/343992_950925-hq.mp3"
+sha256 = "ead5abe327fbc1fcfffcfdebbb6f33266f9ce7511ac524f5dd152c2fc2f61370"
+author = "Reitanna"
+title = "giggle9.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs344052"
+page = "https://freesound.org/people/Reitanna/sounds/344052/"
+url = "https://cdn.freesound.org/previews/344/344052_950925-hq.mp3"
+sha256 = "6339e1bb031f240554e786c7f9a9b9e11e45b076b8effe6cf2e482ca3a6fde55"
+author = "Reitanna"
+title = "weird hiccup.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs344407"
+page = "https://freesound.org/people/jawbutch/sounds/344407/"
+url = "https://cdn.freesound.org/previews/344/344407_4986214-hq.mp3"
+sha256 = "5d6b4cf6c9eafebd4ec7d33159629e4895ff0b7ba6ee27f2df9a8fb75223ed87"
+author = "jawbutch"
+title = "Male Gasp 1.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs346520"
+page = "https://freesound.org/people/_def/sounds/346520/"
+url = "https://cdn.freesound.org/previews/346/346520_909262-hq.mp3"
+sha256 = "66075ccdebfeed7741a5a6906f46647076d2a2219124e5b40cf804181b3c9963"
+author = "_def"
+title = "sniff-sigh.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs364695"
+page = "https://freesound.org/people/alegemaate/sounds/364695/"
+url = "https://cdn.freesound.org/previews/364/364695_2531187-hq.mp3"
+sha256 = "f319007a343f03726a59d281e5f703b7318e84887fa8923f8b62641177eebacd"
+author = "alegemaate"
+title = "Yawn Male"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs382301"
+page = "https://freesound.org/people/goingnowhereeatingthings/sounds/382301/"
+url = "https://cdn.freesound.org/previews/382/382301_4490427-hq.mp3"
+sha256 = "2fa68b683938c985e0ba79814eda03a15b6422051fd368758e6257a5ba24a288"
+author = "goingnowhereeatingthings"
+title = "Sneeze"
+license = "CC BY 3.0"
+license_url = "http://creativecommons.org/licenses/by/3.0/"
+
+[[source]]
+id = "fs391896"
+page = "https://freesound.org/people/EdinaldoApSantos/sounds/391896/"
+url = "https://cdn.freesound.org/previews/391/391896_7247081-hq.mp3"
+sha256 = "16ab0795220fed3c014aadbcfc8d75e04938ac7ca3e739cc6f0aa03bc7d3ce8a"
+author = "EdinaldoApSantos"
+title = "Bocejo_Feminino.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs395828"
+page = "https://freesound.org/people/jackieAZ/sounds/395828/"
+url = "https://cdn.freesound.org/previews/395/395828_4385633-hq.mp3"
+sha256 = "3ee9a4d3cae257454777ded10539fdff29985def4b5f9d4ae892c23f36b0bd12"
+author = "jackieAZ"
+title = "Oh Shit - Teen Male Voice Shouting"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs397673"
+page = "https://freesound.org/people/amoyssiadis/sounds/397673/"
+url = "https://cdn.freesound.org/previews/397/397673_997090-hq.mp3"
+sha256 = "f845008bc44220317a738d4afe5aac30aafb7c67896e04168fcb90fc6b34c825"
+author = "amoyssiadis"
+title = "short - female - laugh - chuckle - giggle - AIFF 24 bits"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs399799"
+page = "https://freesound.org/people/TheBuilder15/sounds/399799/"
+url = "https://cdn.freesound.org/previews/399/399799_6090639-hq.mp3"
+sha256 = "57d8bdf45e471c1d2b78da4b50d12399a7290825507704d1b3d9b6198a09ceea"
+author = "TheBuilder15"
+title = "Male Gasp Short"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs415363"
+page = "https://freesound.org/people/owly-bee/sounds/415363/"
+url = "https://cdn.freesound.org/previews/415/415363_6044691-hq.mp3"
+sha256 = "c2238dd791c779d631d9380d59a27453e7825b749c7c3f851547debcac13a610"
+author = "owly-bee"
+title = "Eh surprised.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs415365"
+page = "https://freesound.org/people/owly-bee/sounds/415365/"
+url = "https://cdn.freesound.org/previews/415/415365_6044691-hq.mp3"
+sha256 = "323ff54fa3bc9360e12fcb6fcda2da353b86e503fcd9bbd433d21e753af6afcd"
+author = "owly-bee"
+title = "Hmm.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs417228"
+page = "https://freesound.org/people/LHermanns/sounds/417228/"
+url = "https://cdn.freesound.org/previews/417/417228_8271782-hq.mp3"
+sha256 = "76a09fb26a6d8212bcc99ac1b81fffa253c35e3c4b56dcf56d121855228947c3"
+author = "LHermanns"
+title = "Zipper 2.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs428779"
+page = "https://freesound.org/people/pauliperez1999/sounds/428779/"
+url = "https://cdn.freesound.org/previews/428/428779_8328806-hq.mp3"
+sha256 = "46e0ed90c0a3930e56373ed88f366f4f20b21d28327b1a4ada519ef54a80f3eb"
+author = "pauliperez1999"
+title = "girl laugh"
+license = "CC BY 3.0"
+license_url = "http://creativecommons.org/licenses/by/3.0/"
+
+[[source]]
+id = "fs431607"
+page = "https://freesound.org/people/owly-bee/sounds/431607/"
+url = "https://cdn.freesound.org/previews/431/431607_6044691-hq.mp3"
+sha256 = "6c08d1eabb927612f5a087e0e12b44a87f211081a322532816e8963ad9171626"
+author = "owly-bee"
+title = "Hey Come Closer.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs434463"
+page = "https://freesound.org/people/dersuperanton/sounds/434463/"
+url = "https://cdn.freesound.org/previews/434/434463_1992856-hq.mp3"
+sha256 = "eee2de0eb0a5fc70b672dfa2c57f44267869761bd2d12ab5648b8a62f6c625fc"
+author = "dersuperanton"
+title = "Hey voice"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs437649"
+page = "https://freesound.org/people/dersuperanton/sounds/437649/"
+url = "https://cdn.freesound.org/previews/437/437649_1992856-hq.mp3"
+sha256 = "127f451b32e9e4bc4abb7ccee75d4997a2364722608535837133e336e4099f0c"
+author = "dersuperanton"
+title = "Huh Eh Man"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs439087"
+page = "https://freesound.org/people/FourthWoods/sounds/439087/"
+url = "https://cdn.freesound.org/previews/439/439087_7268008-hq.mp3"
+sha256 = "eae555f3a0a1adf44a7526bda9f2a97ce1190e0f78e9a59027b9851197108246"
+author = "FourthWoods"
+title = "Lexie - Laugh 3.ogg"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs439144"
+page = "https://freesound.org/people/FourthWoods/sounds/439144/"
+url = "https://cdn.freesound.org/previews/439/439144_7268008-hq.mp3"
+sha256 = "23b72b4ba6502b37f52bf08c82a0210b78964a6d654e1668be49e2894351a51e"
+author = "FourthWoods"
+title = "Lexie - Woo Hoo.ogg"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs445872"
+page = "https://freesound.org/people/lauracarolina09/sounds/445872/"
+url = "https://cdn.freesound.org/previews/445/445872_9244716-hq.mp3"
+sha256 = "f113448ee5c9a203bb61ecdd07c8c37a2ca058c62c9d9d7c5abd795561f2491c"
+author = "lauracarolina09"
+title = "05-Hmm1.mp3"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs449449"
+page = "https://freesound.org/people/12064988/sounds/449449/"
+url = "https://cdn.freesound.org/previews/449/449449_9288533-hq.mp3"
+sha256 = "8cdb2857acbb87b5721f3fef3835bb9cf2877b67879bfc325256f4f5499b1ca9"
+author = "12064988"
+title = "Guy Sighing"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs451736"
+page = "https://freesound.org/people/starplatinums/sounds/451736/"
+url = "https://cdn.freesound.org/previews/451/451736_9392784-hq.mp3"
+sha256 = "a31f1c953d6b502a89e232ccb5284c9046ff55579ce48a73e29ef619eeef8d47"
+author = "starplatinums"
+title = "sneeze.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs457280"
+page = "https://freesound.org/people/Xcallono/sounds/457280/"
+url = "https://cdn.freesound.org/previews/457/457280_9546377-hq.mp3"
+sha256 = "739f7b0defe1b20e6088463b7d499e837d02f500bb4d06ff19440057198b54c5"
+author = "Xcallono"
+title = "Short Oww"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs467348"
+page = "https://freesound.org/people/nicklas3799/sounds/467348/"
+url = "https://cdn.freesound.org/previews/467/467348_8477872-hq.mp3"
+sha256 = "4d33f5ec27ae52b91d89580acafaec19d5a2a939b5e9643ad6a751cd5b81c9fb"
+author = "nicklas3799"
+title = "Female Gasp.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs467363"
+page = "https://freesound.org/people/nicklas3799/sounds/467363/"
+url = "https://cdn.freesound.org/previews/467/467363_8477872-hq.mp3"
+sha256 = "d9fbf299256afce5615591463cb839207805a1b685c2fcfb4f528bf18df6057a"
+author = "nicklas3799"
+title = "Male Gasp.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs469074"
+page = "https://freesound.org/people/Hawkeye_Sprout/sounds/469074/"
+url = "https://cdn.freesound.org/previews/469/469074_9634718-hq.mp3"
+sha256 = "f44143adc7d2a01723bd33038d8315954248536c20892fbdb761ae7ed4852301"
+author = "Hawkeye_Sprout"
+title = "Girl laughing.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs469083"
+page = "https://freesound.org/people/Hawkeye_Sprout/sounds/469083/"
+url = "https://cdn.freesound.org/previews/469/469083_9634718-hq.mp3"
+sha256 = "e82e9a031319c4714eb438da668a84eaa5c60464c39e872f6ccff17f221fbd4d"
+author = "Hawkeye_Sprout"
+title = "Girl hugging 02.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs469090"
+page = "https://freesound.org/people/Hawkeye_Sprout/sounds/469090/"
+url = "https://cdn.freesound.org/previews/469/469090_9634718-hq.mp3"
+sha256 = "5f65d55c5df7d8a994c0f27c3b1144d7afcb92879891c6f45567084be8838d65"
+author = "Hawkeye_Sprout"
+title = "Girl laughing 02.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs469097"
+page = "https://freesound.org/people/Hawkeye_Sprout/sounds/469097/"
+url = "https://cdn.freesound.org/previews/469/469097_9634718-hq.mp3"
+sha256 = "4e83d8ad52189c45fe05d75a5dd1c8ee311309b4c6180a6ec78b548b3eee0e85"
+author = "Hawkeye_Sprout"
+title = "Girl sigh of surprise 03.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs469161"
+page = "https://freesound.org/people/Hawkeye_Sprout/sounds/469161/"
+url = "https://cdn.freesound.org/previews/469/469161_9634718-hq.mp3"
+sha256 = "41d7cb3d4c6117f2aec96dab456e371e9269e2c2a37827130282d1e7dd9f322e"
+author = "Hawkeye_Sprout"
+title = "Cute bugs having fun.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs472803"
+page = "https://freesound.org/people/stepperboy/sounds/472803/"
+url = "https://cdn.freesound.org/previews/472/472803_3830283-hq.mp3"
+sha256 = "1e942705e5bdc8624c0dbc79307fe711e12b66c5372135e58b670ff42759778c"
+author = "stepperboy"
+title = "\"Yop\" hiccup"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs494691"
+page = "https://freesound.org/people/Illud/sounds/494691/"
+url = "https://cdn.freesound.org/previews/494/494691_4866310-hq.mp3"
+sha256 = "eda73f731c783bf383ce21f3b9c6e30f6608608f6a462af54801d306fde700fd"
+author = "Illud"
+title = "yawn.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs507730"
+page = "https://freesound.org/people/Keskaowl/sounds/507730/"
+url = "https://cdn.freesound.org/previews/507/507730_9875501-hq.mp3"
+sha256 = "1a5f48c5070cf6c62590d006073adec4b282f88a6d3e7fa7bb2632daaf9fa375"
+author = "Keskaowl"
+title = "EffortNoise.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs508900"
+page = "https://freesound.org/people/NicknameLarry/sounds/508900/"
+url = "https://cdn.freesound.org/previews/508/508900_10418401-hq.mp3"
+sha256 = "87b466a4bc5174eeb256a7cd6fc82b15da76b584df6776b879ff58eb08787dcb"
+author = "NicknameLarry"
+title = "Cartoon Hiccup"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs509883"
+page = "https://freesound.org/people/slamaxu/sounds/509883/"
+url = "https://cdn.freesound.org/previews/509/509883_9238038-hq.mp3"
+sha256 = "d49bfabb3789caf19a08fad8bc6df5bce55d5f967d3212e6613f2f4d40654709"
+author = "slamaxu"
+title = "female_gasp.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs519112"
+page = "https://freesound.org/people/trimono/sounds/519112/"
+url = "https://cdn.freesound.org/previews/519/519112_8351379-hq.mp3"
+sha256 = "9755249c0052996c39ac5fcd8d58bf0d29167211ffbb65dae476b79ecd8c8ba5"
+author = "trimono"
+title = "approving hm.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs536756"
+page = "https://freesound.org/people/egomassive/sounds/536756/"
+url = "https://cdn.freesound.org/previews/536/536756_1415754-hq.mp3"
+sha256 = "16e0b98b17f6b2daca422a6c6b41a298c4f23375704d3df91f0b7f264c227b23"
+author = "egomassive"
+title = "GaspF.ogg"
+license = "CC BY 3.0"
+license_url = "http://creativecommons.org/licenses/by/3.0/"
+
+[[source]]
+id = "fs536757"
+page = "https://freesound.org/people/egomassive/sounds/536757/"
+url = "https://cdn.freesound.org/previews/536/536757_1415754-hq.mp3"
+sha256 = "81d24d759f5278113e5014536aa9f2ad61649e888e4bcb26b45a012db0b1b3aa"
+author = "egomassive"
+title = "GaspM.ogg"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs536762"
+page = "https://freesound.org/people/egomassive/sounds/536762/"
+url = "https://cdn.freesound.org/previews/536/536762_1415754-hq.mp3"
+sha256 = "01fe0a95c24893803f2eb16906c294581ff7d8bbe4c96f54678d7d2e363d3b2e"
+author = "egomassive"
+title = "Giggle.ogg"
+license = "CC BY 3.0"
+license_url = "http://creativecommons.org/licenses/by/3.0/"
+
+[[source]]
+id = "fs539224"
+page = "https://freesound.org/people/macohibs/sounds/539224/"
+url = "https://cdn.freesound.org/previews/539/539224_1889150-hq.mp3"
+sha256 = "99a6cc49b757bc6a9436e9c35bac04d04ef1b4f2ac3b54d72c9df3ee07648da2"
+author = "macohibs"
+title = "sneezes.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs545948"
+page = "https://freesound.org/people/waveletaudio/sounds/545948/"
+url = "https://cdn.freesound.org/previews/545/545948_12149323-hq.mp3"
+sha256 = "9fb8bd731aaeaef8aceb686dc4d1beb218ce47803b479ae006dbc1c2b2c39a91"
+author = "waveletaudio"
+title = "Game Character HEY Soft"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs545949"
+page = "https://freesound.org/people/waveletaudio/sounds/545949/"
+url = "https://cdn.freesound.org/previews/545/545949_12149323-hq.mp3"
+sha256 = "a64dcd32e7396cb72064543da25e99d6d2c1d25b1d6c24f382375e2897f4ac94"
+author = "waveletaudio"
+title = "Game Character HEY Loud"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs557125"
+page = "https://freesound.org/people/melisandepope/sounds/557125/"
+url = "https://cdn.freesound.org/previews/557/557125_11472815-hq.mp3"
+sha256 = "d67e902d3cf4d7cfddd6a6ffe0e4938f653dece73bfbf1da72513a4d5af180c6"
+author = "melisandepope"
+title = "MaleVoiceWoohoo.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs563033"
+page = "https://freesound.org/people/Adrian_GenialSoundStudios/sounds/563033/"
+url = "https://cdn.freesound.org/previews/563/563033_1377703-hq.mp3"
+sha256 = "26aef7a2aee6800eaf0d323ac26bf29d99cf3cacb4420d7412489527d98927f1"
+author = "Adrian_GenialSoundStudios"
+title = "Laugh Man_2 20 years old.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs563034"
+page = "https://freesound.org/people/Adrian_GenialSoundStudios/sounds/563034/"
+url = "https://cdn.freesound.org/previews/563/563034_1377703-hq.mp3"
+sha256 = "32b4be99000a5f8aa266be157d1306cb5101f695670ede8c631f9c8b5d6d867b"
+author = "Adrian_GenialSoundStudios"
+title = "Laugh Man_1 20 years old.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs572603"
+page = "https://freesound.org/people/melisandepope/sounds/572603/"
+url = "https://cdn.freesound.org/previews/572/572603_11472815-hq.mp3"
+sha256 = "f8ac5703dd039b0d5c190c6a5f0a95586b224f3385dd720b9c1d9a8f7fdf2e23"
+author = "melisandepope"
+title = "VOXWoo01.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs577968"
+page = "https://freesound.org/people/birdOfTheNorth/sounds/577968/"
+url = "https://cdn.freesound.org/previews/577/577968_12923717-hq.mp3"
+sha256 = "1b5a4a787ea44b18dcb5b1b26b83be7ac293aa2b9f461f0849e6ec9c96c48a14"
+author = "birdOfTheNorth"
+title = "female-hurt.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs578528"
+page = "https://freesound.org/people/nomiqbomi/sounds/578528/"
+url = "https://cdn.freesound.org/previews/578/578528_10522382-hq.mp3"
+sha256 = "72f56c034eaa8669ae50f617606b416b8ff7abf014aa08fd20ff4339f8418cec"
+author = "nomiqbomi"
+title = "UEGH 2.mp3"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs580831"
+page = "https://freesound.org/people/Vanalosswen/sounds/580831/"
+url = "https://cdn.freesound.org/previews/580/580831_11954823-hq.mp3"
+sha256 = "d928e4b26a2d33015b1fba99607e76abb328aba63ddf6783ed19d009cdebf449"
+author = "Vanalosswen"
+title = "Sneeze - Female.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs585605"
+page = "https://freesound.org/people/alex36917/sounds/585605/"
+url = "https://cdn.freesound.org/previews/585/585605_5838112-hq.mp3"
+sha256 = "1bbbc66afbb829b8aeee6b5a7e2333ff9aa31d914840e9f1b7a06acf84f46fb7"
+author = "alex36917"
+title = "ow voice 1"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs632496"
+page = "https://freesound.org/people/ep00/sounds/632496/"
+url = "https://cdn.freesound.org/previews/632/632496_1483280-hq.mp3"
+sha256 = "c2c05630c0d2d4710cfc2a322a20c8d0c049bd096a1809259cb9c6a341c71d50"
+author = "ep00"
+title = "asmr-girl-hey.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs649366"
+page = "https://freesound.org/people/quavosh/sounds/649366/"
+url = "https://cdn.freesound.org/previews/649/649366_12717327-hq.mp3"
+sha256 = "858f384b0874ea2e62a30e62afa689905fc2bcd869e0741f9ed140420770bf27"
+author = "quavosh"
+title = "Sneeze man"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs650219"
+page = "https://freesound.org/people/Alba_Mac/sounds/650219/"
+url = "https://cdn.freesound.org/previews/650/650219_13948524-hq.mp3"
+sha256 = "d3afd1878f1457fd8f6b7e5fad7620686a7d5de33bfc262372b760c23684279f"
+author = "Alba_Mac"
+title = "\"Hmm\" 07"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs650224"
+page = "https://freesound.org/people/Alba_Mac/sounds/650224/"
+url = "https://cdn.freesound.org/previews/650/650224_13948524-hq.mp3"
+sha256 = "967d3ec12cc55856a40cf4ebe834bb83b64834bfa9c0fafcac82b40821620cb7"
+author = "Alba_Mac"
+title = "\"Hmph\" 05"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs650273"
+page = "https://freesound.org/people/Alba_Mac/sounds/650273/"
+url = "https://cdn.freesound.org/previews/650/650273_13948524-hq.mp3"
+sha256 = "83b5fbc36662475245712001e8f3d6df4f8625c65415cc4dd5a17cff1936ab06"
+author = "Alba_Mac"
+title = "\"Yay\""
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs655952"
+page = "https://freesound.org/people/YevashenPillay/sounds/655952/"
+url = "https://cdn.freesound.org/previews/655/655952_11016162-hq.mp3"
+sha256 = "476fa467b8354dbdc3d2978f39144529cfddf5376218aaf929a6feb40281278d"
+author = "YevashenPillay"
+title = "Sneeze.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs658569"
+page = "https://freesound.org/people/DarkNightPrincess/sounds/658569/"
+url = "https://cdn.freesound.org/previews/658/658569_13567167-hq.mp3"
+sha256 = "d536bcc5eec3ad259da8fddf5dc606f52612d1f37c589ac29b000978e3955578"
+author = "DarkNightPrincess"
+title = "Cute Anime Girl \"Wow\" Sound Effect"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs661842"
+page = "https://freesound.org/people/Rslebs/sounds/661842/"
+url = "https://cdn.freesound.org/previews/661/661842_14517662-hq.mp3"
+sha256 = "c4c8737bc3514e361545563f86b658d1a1da48cbe65ae391ecd49cf938384c10"
+author = "Rslebs"
+title = "Zipper; Quick.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs670839"
+page = "https://freesound.org/people/quavosh/sounds/670839/"
+url = "https://cdn.freesound.org/previews/670/670839_12717327-hq.mp3"
+sha256 = "81b507065a7367e56105c8720cccc2dd9cb7722c64388f7507f0cff7bed2c7a6"
+author = "quavosh"
+title = "Man's laugh"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs670840"
+page = "https://freesound.org/people/quavosh/sounds/670840/"
+url = "https://cdn.freesound.org/previews/670/670840_12717327-hq.mp3"
+sha256 = "20cbf4ce206a53c74b54811310534aeac080add287a43675f713a42ba7a70e88"
+author = "quavosh"
+title = "Crazy man's laugh"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs673671"
+page = "https://freesound.org/people/davidnagel/sounds/673671/"
+url = "https://cdn.freesound.org/previews/673/673671_1141663-hq.mp3"
+sha256 = "764bbb0d3dc71ed81d43ab79123be14afec801c43ef4f41729a98dad01052e1a"
+author = "davidnagel"
+title = "sigh.wav"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs677888"
+page = "https://freesound.org/people/ranman22/sounds/677888/"
+url = "https://cdn.freesound.org/previews/677/677888_2507671-hq.mp3"
+sha256 = "db8c0d115c5ea11a976fee97f8a9b3ef4d3774c5c436387500464fdd8ff07fac"
+author = "ranman22"
+title = "Man Gasping"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs686480"
+page = "https://freesound.org/people/DarkNightPrincess/sounds/686480/"
+url = "https://cdn.freesound.org/previews/686/686480_13567167-hq.mp3"
+sha256 = "74b91f358289ecca31e677f65883159499b4e07f48a6fc8b9d8ea177ef7b4dbd"
+author = "DarkNightPrincess"
+title = "Cute Anime Girl Sneeze Sound Effect"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs688589"
+page = "https://freesound.org/people/Sadiquecat/sounds/688589/"
+url = "https://cdn.freesound.org/previews/688/688589_5287430-hq.mp3"
+sha256 = "ae8184602439b42a75e99f3479024f5cab2f395caad12ef8ec00775ba80a60fc"
+author = "Sadiquecat"
+title = "Zipper 3 close.flac"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs695390"
+page = "https://freesound.org/people/F.M.Audio/sounds/695390/"
+url = "https://cdn.freesound.org/previews/695/695390_7805242-hq.mp3"
+sha256 = "89138288e0021b9cac8217f3ddb4fdd402a3f45c2f61fb632d2ca564f1936c53"
+author = "F.M.Audio"
+title = "Male Laughing 1.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs695391"
+page = "https://freesound.org/people/F.M.Audio/sounds/695391/"
+url = "https://cdn.freesound.org/previews/695/695391_7805242-hq.mp3"
+sha256 = "21ec3f0f7bd3978daef59b291544ed55a4be761a3dd4410ed8b92212e146e228"
+author = "F.M.Audio"
+title = "Male Laughing 2.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs713081"
+page = "https://freesound.org/people/EddieJr_DigiArts/sounds/713081/"
+url = "https://cdn.freesound.org/previews/713/713081_13009615-hq.mp3"
+sha256 = "3bf444fb2220a83927d074bb8fc19b8cc9329cf3d266b28dc7ea2d86dce64379"
+author = "EddieJr_DigiArts"
+title = "Yes | Hai"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs719053"
+page = "https://freesound.org/people/unfa/sounds/719053/"
+url = "https://cdn.freesound.org/previews/719/719053_1038806-hq.mp3"
+sha256 = "c7c6a093f0a8fe10729ad3b565baea77b67621df2a79224462336aad30e008a9"
+author = "unfa"
+title = "Oof (original)"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs736452"
+page = "https://freesound.org/people/9voltfan/sounds/736452/"
+url = "https://cdn.freesound.org/previews/736/736452_13922306-hq.mp3"
+sha256 = "3253f2f205355c692b0593299afd14b7598e9bf586cf240ecd6dc03ecb6af554"
+author = "9voltfan"
+title = "Yawning"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs740310"
+page = "https://freesound.org/people/kanyonwyvern/sounds/740310/"
+url = "https://cdn.freesound.org/previews/740/740310_15125504-hq.mp3"
+sha256 = "30f47bc3ed22edff0d91812983cd65e702b217e38288d835504e3070ce1d11b6"
+author = "kanyonwyvern"
+title = "Female Gasp"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs743351"
+page = "https://freesound.org/people/qubodup/sounds/743351/"
+url = "https://cdn.freesound.org/previews/743/743351_71257-hq.mp3"
+sha256 = "d53e82c3d00abe3fafb0738f806fe3b8c5386654576f731e2ddd6a6d31312292"
+author = "qubodup"
+title = "Short Oww"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs784922"
+page = "https://freesound.org/people/9voltfan/sounds/784922/"
+url = "https://cdn.freesound.org/previews/784/784922_13922306-hq.mp3"
+sha256 = "c961ccd106a0e994a191f5b30fa2f26874a0b427e0e9428a74c011bf1e80a26c"
+author = "9voltfan"
+title = "No. Squeaky Low Voice"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs799579"
+page = "https://freesound.org/people/randbsoundbites/sounds/799579/"
+url = "https://cdn.freesound.org/previews/799/799579_16968183-hq.mp3"
+sha256 = "52dec88ef9958940fc5ff4c8162b8408b5b3f140bef1c56604549da20796d782"
+author = "randbsoundbites"
+title = "A male sigh"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs804621"
+page = "https://freesound.org/people/qubodup/sounds/804621/"
+url = "https://cdn.freesound.org/previews/804/804621_71257-hq.mp3"
+sha256 = "8d226a4db48efa195c75f9fa5b60738b3e42baadb04eb76786ba49679691d3d4"
+author = "qubodup"
+title = "Ugh Ouch Pain Male Voice"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs812418"
+page = "https://freesound.org/people/CuboRodante/sounds/812418/"
+url = "https://cdn.freesound.org/previews/812/812418_17517436-hq.mp3"
+sha256 = "632fa799ec7f0c285428dd02aaff850cf41521d8340ce83038dcbc12c5853e5c"
+author = "CuboRodante"
+title = "Exaggerated Surprised Gasp!"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs814732"
+page = "https://freesound.org/people/PonyStew/sounds/814732/"
+url = "https://cdn.freesound.org/previews/814/814732_2876601-hq.mp3"
+sha256 = "c75601e8221f104f2ff76dadb5ba6a66154e63056d01b6da2a969ab1bf3884b9"
+author = "PonyStew"
+title = "Zipper"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs817117"
+page = "https://freesound.org/people/ImATaco/sounds/817117/"
+url = "https://cdn.freesound.org/previews/817/817117_13478074-hq.mp3"
+sha256 = "e37ad3dbb0044866cc16ac7dabbf6df5e4556aa60536c852b49ddd55b6842e47"
+author = "ImATaco"
+title = "low-pitched laugh"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[source]]
+id = "fs827468"
+page = "https://freesound.org/people/jonahlpayne/sounds/827468/"
+url = "https://cdn.freesound.org/previews/827/827468_17908318-hq.mp3"
+sha256 = "f51fd46126e44566953a2745aae82c6c7140b81ccda2cde40e28ca431ce490d3"
+author = "jonahlpayne"
+title = "hiccup"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs838820"
+page = "https://freesound.org/people/Artistic_Dragonborn/sounds/838820/"
+url = "https://cdn.freesound.org/previews/838/838820_18047279-hq.mp3"
+sha256 = "00fc483ddd350d1c40dbebd403aaa836bf88440accb62dd985730e259e32ee55"
+author = "Artistic_Dragonborn"
+title = "Major Effort and Fear"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs848893"
+page = "https://freesound.org/people/_javier_rodas/sounds/848893/"
+url = "https://cdn.freesound.org/previews/848/848893_14702296-hq.mp3"
+sha256 = "589fec855e5f3fd81bea37aaac70319d45703c6b6f1afae90922f00c7457a031"
+author = "_javier_rodas"
+title = "Young_adult_male_sneezing"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[source]]
+id = "fs867879"
+page = "https://freesound.org/people/VSE00/sounds/867879/"
+url = "https://cdn.freesound.org/previews/867/867879_18606270-hq.mp3"
+sha256 = "f48a3e5631eed76e470d10f0627407da64b290c471ce01554f6d4e72842ba539"
+author = "VSE00"
+title = "Hmm RTS Select Male NPC"
+license = "CC0 1.0"
+license_url = "http://creativecommons.org/publicdomain/zero/1.0/"
+
+[[use]]
+source = "fs467348"
+pack = "en-female-1"
+kind = "pickup"
+
+[[use]]
+source = "fs27897"
+pack = "en-female-1"
+kind = "pickup"
+
+[[use]]
+source = "fs509883"
+pack = "en-female-1"
+kind = "pickup"
+
+[[use]]
+source = "fs585605"
+pack = "en-female-1"
+kind = "drop"
+
+[[use]]
+source = "fs577968"
+pack = "en-female-1"
+kind = "drop"
+
+[[use]]
+source = "fs334049"
+pack = "en-female-1"
+kind = "hover"
+
+[[use]]
+source = "fs235037"
+pack = "en-female-1"
+kind = "hover"
+
+[[use]]
+source = "fs54922"
+pack = "en-female-1"
+kind = "hover"
+
+[[use]]
+source = "fs333267"
+pack = "en-female-1"
+kind = "surprised"
+
+[[use]]
+source = "fs812418"
+pack = "en-female-1"
+kind = "surprised"
+
+[[use]]
+source = "fs318078"
+pack = "en-female-1"
+kind = "surprised"
+
+[[use]]
+source = "fs397673"
+pack = "en-female-1"
+kind = "laugh"
+
+[[use]]
+source = "fs469074"
+pack = "en-female-1"
+kind = "laugh"
+
+[[use]]
+source = "fs333277"
+pack = "en-female-1"
+kind = "laugh"
+
+[[use]]
+source = "fs213291"
+pack = "en-female-1"
+kind = "giggle"
+
+[[use]]
+source = "fs204497"
+pack = "en-female-1"
+kind = "giggle"
+
+[[use]]
+source = "fs536762"
+pack = "en-female-1"
+kind = "giggle"
+
+[[use]]
+source = "fs469097"
+pack = "en-female-1"
+kind = "sigh"
+
+[[use]]
+source = "fs219900"
+pack = "en-female-1"
+kind = "sigh"
+
+[[use]]
+source = "fs242690"
+pack = "en-female-1"
+kind = "sigh"
+
+[[use]]
+source = "fs736452"
+pack = "en-female-1"
+kind = "yawn"
+
+[[use]]
+source = "fs391896"
+pack = "en-female-1"
+kind = "yawn"
+
+[[use]]
+source = "fs494691"
+pack = "en-female-1"
+kind = "yawn"
+
+[[use]]
+source = "fs415365"
+pack = "en-female-1"
+kind = "hmm"
+
+[[use]]
+source = "fs445872"
+pack = "en-female-1"
+kind = "hmm"
+
+[[use]]
+source = "fs170768"
+pack = "en-female-1"
+kind = "hmm"
+
+[[use]]
+source = "fs578528"
+pack = "en-female-1"
+kind = "annoyed"
+
+[[use]]
+source = "fs507730"
+pack = "en-female-1"
+kind = "annoyed"
+
+[[use]]
+source = "fs323703"
+pack = "en-female-1"
+kind = "happy"
+
+[[use]]
+source = "fs572603"
+pack = "en-female-1"
+kind = "happy"
+
+[[use]]
+source = "fs439144"
+pack = "en-female-1"
+kind = "happy"
+
+[[use]]
+source = "fs494691"
+pack = "en-female-1"
+kind = "sleepy"
+
+[[use]]
+source = "fs736452"
+pack = "en-female-1"
+kind = "sleepy"
+
+[[use]]
+source = "fs391896"
+pack = "en-female-1"
+kind = "sleepy"
+
+[[use]]
+source = "fs343973"
+pack = "en-female-1"
+kind = "poke"
+
+[[use]]
+source = "fs784922"
+pack = "en-female-1"
+kind = "poke"
+
+[[use]]
+source = "fs343971"
+pack = "en-female-1"
+kind = "poke"
+
+[[use]]
+source = "fs545949"
+pack = "en-female-1"
+kind = "drag_fast"
+
+[[use]]
+source = "fs30989"
+pack = "en-female-1"
+kind = "drag_fast"
+
+[[use]]
+source = "fs632496"
+pack = "en-female-1"
+kind = "drag_fast"
+
+[[use]]
+source = "fs335355"
+pack = "en-female-1"
+kind = "dizzy"
+
+[[use]]
+source = "fs235080"
+pack = "en-female-1"
+kind = "dizzy"
+
+[[use]]
+source = "fs469083"
+pack = "en-female-1"
+kind = "pout"
+
+[[use]]
+source = "fs241485"
+pack = "en-female-1"
+kind = "pout"
+
+[[use]]
+source = "fs318085"
+pack = "en-female-1"
+kind = "pout"
+
+[[use]]
+source = "fs150231"
+pack = "en-female-1"
+kind = "sneeze"
+
+[[use]]
+source = "fs686480"
+pack = "en-female-1"
+kind = "sneeze"
+
+[[use]]
+source = "fs580831"
+pack = "en-female-1"
+kind = "sneeze"
+
+[[use]]
+source = "fs344052"
+pack = "en-female-1"
+kind = "hiccup"
+
+[[use]]
+source = "fs508900"
+pack = "en-female-1"
+kind = "hiccup"
+
+[[use]]
+source = "fs827468"
+pack = "en-female-1"
+kind = "hiccup"
+
+[[use]]
+source = "fs242618"
+pack = "en-female-1"
+kind = "climb"
+
+[[use]]
+source = "fs838820"
+pack = "en-female-1"
+kind = "climb"
+
+[[use]]
+source = "fs242606"
+pack = "en-female-1"
+kind = "climb"
+
+[[use]]
+source = "fs250716"
+pack = "en-female-1"
+kind = "zip"
+
+[[use]]
+source = "fs417228"
+pack = "en-female-1"
+kind = "zip"
+
+[[use]]
+source = "fs812418"
+pack = "en-female-2"
+kind = "pickup"
+
+[[use]]
+source = "fs536756"
+pack = "en-female-2"
+kind = "pickup"
+
+[[use]]
+source = "fs343878"
+pack = "en-female-2"
+kind = "pickup"
+
+[[use]]
+source = "fs577968"
+pack = "en-female-2"
+kind = "drop"
+
+[[use]]
+source = "fs585605"
+pack = "en-female-2"
+kind = "drop"
+
+[[use]]
+source = "fs257825"
+pack = "en-female-2"
+kind = "hover"
+
+[[use]]
+source = "fs235038"
+pack = "en-female-2"
+kind = "hover"
+
+[[use]]
+source = "fs415363"
+pack = "en-female-2"
+kind = "hover"
+
+[[use]]
+source = "fs740310"
+pack = "en-female-2"
+kind = "surprised"
+
+[[use]]
+source = "fs467348"
+pack = "en-female-2"
+kind = "surprised"
+
+[[use]]
+source = "fs27897"
+pack = "en-female-2"
+kind = "surprised"
+
+[[use]]
+source = "fs469090"
+pack = "en-female-2"
+kind = "laugh"
+
+[[use]]
+source = "fs119450"
+pack = "en-female-2"
+kind = "laugh"
+
+[[use]]
+source = "fs439087"
+pack = "en-female-2"
+kind = "laugh"
+
+[[use]]
+source = "fs397673"
+pack = "en-female-2"
+kind = "giggle"
+
+[[use]]
+source = "fs333277"
+pack = "en-female-2"
+kind = "giggle"
+
+[[use]]
+source = "fs343992"
+pack = "en-female-2"
+kind = "giggle"
+
+[[use]]
+source = "fs469083"
+pack = "en-female-2"
+kind = "sigh"
+
+[[use]]
+source = "fs318085"
+pack = "en-female-2"
+kind = "sigh"
+
+[[use]]
+source = "fs242625"
+pack = "en-female-2"
+kind = "sigh"
+
+[[use]]
+source = "fs494691"
+pack = "en-female-2"
+kind = "yawn"
+
+[[use]]
+source = "fs736452"
+pack = "en-female-2"
+kind = "yawn"
+
+[[use]]
+source = "fs391896"
+pack = "en-female-2"
+kind = "yawn"
+
+[[use]]
+source = "fs170768"
+pack = "en-female-2"
+kind = "hmm"
+
+[[use]]
+source = "fs415365"
+pack = "en-female-2"
+kind = "hmm"
+
+[[use]]
+source = "fs445872"
+pack = "en-female-2"
+kind = "hmm"
+
+[[use]]
+source = "fs507730"
+pack = "en-female-2"
+kind = "annoyed"
+
+[[use]]
+source = "fs578528"
+pack = "en-female-2"
+kind = "annoyed"
+
+[[use]]
+source = "fs235054"
+pack = "en-female-2"
+kind = "happy"
+
+[[use]]
+source = "fs469161"
+pack = "en-female-2"
+kind = "happy"
+
+[[use]]
+source = "fs713081"
+pack = "en-female-2"
+kind = "happy"
+
+[[use]]
+source = "fs391896"
+pack = "en-female-2"
+kind = "sleepy"
+
+[[use]]
+source = "fs494691"
+pack = "en-female-2"
+kind = "sleepy"
+
+[[use]]
+source = "fs736452"
+pack = "en-female-2"
+kind = "sleepy"
+
+[[use]]
+source = "fs343971"
+pack = "en-female-2"
+kind = "poke"
+
+[[use]]
+source = "fs343973"
+pack = "en-female-2"
+kind = "poke"
+
+[[use]]
+source = "fs784922"
+pack = "en-female-2"
+kind = "poke"
+
+[[use]]
+source = "fs545948"
+pack = "en-female-2"
+kind = "drag_fast"
+
+[[use]]
+source = "fs431607"
+pack = "en-female-2"
+kind = "drag_fast"
+
+[[use]]
+source = "fs235020"
+pack = "en-female-2"
+kind = "drag_fast"
+
+[[use]]
+source = "fs235080"
+pack = "en-female-2"
+kind = "dizzy"
+
+[[use]]
+source = "fs335355"
+pack = "en-female-2"
+kind = "dizzy"
+
+[[use]]
+source = "fs219900"
+pack = "en-female-2"
+kind = "pout"
+
+[[use]]
+source = "fs469097"
+pack = "en-female-2"
+kind = "pout"
+
+[[use]]
+source = "fs241485"
+pack = "en-female-2"
+kind = "pout"
+
+[[use]]
+source = "fs451736"
+pack = "en-female-2"
+kind = "sneeze"
+
+[[use]]
+source = "fs655952"
+pack = "en-female-2"
+kind = "sneeze"
+
+[[use]]
+source = "fs539224"
+pack = "en-female-2"
+kind = "sneeze"
+
+[[use]]
+source = "fs508900"
+pack = "en-female-2"
+kind = "hiccup"
+
+[[use]]
+source = "fs827468"
+pack = "en-female-2"
+kind = "hiccup"
+
+[[use]]
+source = "fs344052"
+pack = "en-female-2"
+kind = "hiccup"
+
+[[use]]
+source = "fs838820"
+pack = "en-female-2"
+kind = "climb"
+
+[[use]]
+source = "fs242606"
+pack = "en-female-2"
+kind = "climb"
+
+[[use]]
+source = "fs242618"
+pack = "en-female-2"
+kind = "climb"
+
+[[use]]
+source = "fs417228"
+pack = "en-female-2"
+kind = "zip"
+
+[[use]]
+source = "fs184570"
+pack = "en-female-2"
+kind = "zip"
+
+[[use]]
+source = "fs467363"
+pack = "en-male-1"
+kind = "pickup"
+
+[[use]]
+source = "fs318077"
+pack = "en-male-1"
+kind = "pickup"
+
+[[use]]
+source = "fs399799"
+pack = "en-male-1"
+kind = "pickup"
+
+[[use]]
+source = "fs457280"
+pack = "en-male-1"
+kind = "drop"
+
+[[use]]
+source = "fs743351"
+pack = "en-male-1"
+kind = "drop"
+
+[[use]]
+source = "fs804621"
+pack = "en-male-1"
+kind = "drop"
+
+[[use]]
+source = "fs437649"
+pack = "en-male-1"
+kind = "hover"
+
+[[use]]
+source = "fs519112"
+pack = "en-male-1"
+kind = "hover"
+
+[[use]]
+source = "fs395828"
+pack = "en-male-1"
+kind = "hover"
+
+[[use]]
+source = "fs144257"
+pack = "en-male-1"
+kind = "surprised"
+
+[[use]]
+source = "fs219904"
+pack = "en-male-1"
+kind = "surprised"
+
+[[use]]
+source = "fs677888"
+pack = "en-male-1"
+kind = "surprised"
+
+[[use]]
+source = "fs246312"
+pack = "en-male-1"
+kind = "laugh"
+
+[[use]]
+source = "fs563033"
+pack = "en-male-1"
+kind = "laugh"
+
+[[use]]
+source = "fs563034"
+pack = "en-male-1"
+kind = "laugh"
+
+[[use]]
+source = "fs695391"
+pack = "en-male-1"
+kind = "giggle"
+
+[[use]]
+source = "fs695390"
+pack = "en-male-1"
+kind = "giggle"
+
+[[use]]
+source = "fs275055"
+pack = "en-male-1"
+kind = "sigh"
+
+[[use]]
+source = "fs673671"
+pack = "en-male-1"
+kind = "sigh"
+
+[[use]]
+source = "fs346520"
+pack = "en-male-1"
+kind = "sigh"
+
+[[use]]
+source = "fs272030"
+pack = "en-male-1"
+kind = "yawn"
+
+[[use]]
+source = "fs364695"
+pack = "en-male-1"
+kind = "yawn"
+
+[[use]]
+source = "fs165011"
+pack = "en-male-1"
+kind = "hmm"
+
+[[use]]
+source = "fs170779"
+pack = "en-male-1"
+kind = "hmm"
+
+[[use]]
+source = "fs650219"
+pack = "en-male-1"
+kind = "hmm"
+
+[[use]]
+source = "fs650224"
+pack = "en-male-1"
+kind = "annoyed"
+
+[[use]]
+source = "fs557125"
+pack = "en-male-1"
+kind = "happy"
+
+[[use]]
+source = "fs650273"
+pack = "en-male-1"
+kind = "happy"
+
+[[use]]
+source = "fs319335"
+pack = "en-male-1"
+kind = "happy"
+
+[[use]]
+source = "fs364695"
+pack = "en-male-1"
+kind = "sleepy"
+
+[[use]]
+source = "fs272030"
+pack = "en-male-1"
+kind = "sleepy"
+
+[[use]]
+source = "fs434463"
+pack = "en-male-1"
+kind = "drag_fast"
+
+[[use]]
+source = "fs88401"
+pack = "en-male-1"
+kind = "drag_fast"
+
+[[use]]
+source = "fs246304"
+pack = "en-male-1"
+kind = "drag_fast"
+
+[[use]]
+source = "fs150505"
+pack = "en-male-1"
+kind = "dizzy"
+
+[[use]]
+source = "fs799579"
+pack = "en-male-1"
+kind = "pout"
+
+[[use]]
+source = "fs449449"
+pack = "en-male-1"
+kind = "pout"
+
+[[use]]
+source = "fs119102"
+pack = "en-male-1"
+kind = "sneeze"
+
+[[use]]
+source = "fs848893"
+pack = "en-male-1"
+kind = "sneeze"
+
+[[use]]
+source = "fs339414"
+pack = "en-male-1"
+kind = "sneeze"
+
+[[use]]
+source = "fs344052"
+pack = "en-male-1"
+kind = "hiccup"
+
+[[use]]
+source = "fs250140"
+pack = "en-male-1"
+kind = "hiccup"
+
+[[use]]
+source = "fs472803"
+pack = "en-male-1"
+kind = "hiccup"
+
+[[use]]
+source = "fs719053"
+pack = "en-male-1"
+kind = "climb"
+
+[[use]]
+source = "fs661842"
+pack = "en-male-1"
+kind = "zip"
+
+[[use]]
+source = "fs814732"
+pack = "en-male-1"
+kind = "zip"
+
+[[use]]
+source = "fs812418"
+pack = "jp-female-1"
+kind = "pickup"
+
+[[use]]
+source = "fs467348"
+pack = "jp-female-1"
+kind = "pickup"
+
+[[use]]
+source = "fs740310"
+pack = "jp-female-1"
+kind = "pickup"
+
+[[use]]
+source = "fs334049"
+pack = "jp-female-1"
+kind = "surprised"
+
+[[use]]
+source = "fs658569"
+pack = "jp-female-1"
+kind = "surprised"
+
+[[use]]
+source = "fs333267"
+pack = "jp-female-1"
+kind = "surprised"
+
+[[use]]
+source = "fs19260"
+pack = "jp-female-1"
+kind = "laugh"
+
+[[use]]
+source = "fs252218"
+pack = "jp-female-1"
+kind = "laugh"
+
+[[use]]
+source = "fs273926"
+pack = "jp-female-1"
+kind = "laugh"
+
+[[use]]
+source = "fs343992"
+pack = "jp-female-1"
+kind = "giggle"
+
+[[use]]
+source = "fs323704"
+pack = "jp-female-1"
+kind = "giggle"
+
+[[use]]
+source = "fs333275"
+pack = "jp-female-1"
+kind = "giggle"
+
+[[use]]
+source = "fs469097"
+pack = "jp-female-1"
+kind = "sigh"
+
+[[use]]
+source = "fs469083"
+pack = "jp-female-1"
+kind = "sigh"
+
+[[use]]
+source = "fs219900"
+pack = "jp-female-1"
+kind = "sigh"
+
+[[use]]
+source = "fs736452"
+pack = "jp-female-1"
+kind = "yawn"
+
+[[use]]
+source = "fs494691"
+pack = "jp-female-1"
+kind = "yawn"
+
+[[use]]
+source = "fs391896"
+pack = "jp-female-1"
+kind = "yawn"
+
+[[use]]
+source = "fs415365"
+pack = "jp-female-1"
+kind = "hmm"
+
+[[use]]
+source = "fs170768"
+pack = "jp-female-1"
+kind = "hmm"
+
+[[use]]
+source = "fs445872"
+pack = "jp-female-1"
+kind = "hmm"
+
+[[use]]
+source = "fs507730"
+pack = "jp-female-1"
+kind = "annoyed"
+
+[[use]]
+source = "fs578528"
+pack = "jp-female-1"
+kind = "annoyed"
+
+[[use]]
+source = "fs494691"
+pack = "jp-female-1"
+kind = "sleepy"
+
+[[use]]
+source = "fs391896"
+pack = "jp-female-1"
+kind = "sleepy"
+
+[[use]]
+source = "fs736452"
+pack = "jp-female-1"
+kind = "sleepy"
+
+[[use]]
+source = "fs784922"
+pack = "jp-female-1"
+kind = "poke"
+
+[[use]]
+source = "fs343973"
+pack = "jp-female-1"
+kind = "poke"
+
+[[use]]
+source = "fs343971"
+pack = "jp-female-1"
+kind = "poke"
+
+[[use]]
+source = "fs335355"
+pack = "jp-female-1"
+kind = "dizzy"
+
+[[use]]
+source = "fs235080"
+pack = "jp-female-1"
+kind = "dizzy"
+
+[[use]]
+source = "fs241485"
+pack = "jp-female-1"
+kind = "pout"
+
+[[use]]
+source = "fs318085"
+pack = "jp-female-1"
+kind = "pout"
+
+[[use]]
+source = "fs242690"
+pack = "jp-female-1"
+kind = "pout"
+
+[[use]]
+source = "fs686480"
+pack = "jp-female-1"
+kind = "sneeze"
+
+[[use]]
+source = "fs539224"
+pack = "jp-female-1"
+kind = "sneeze"
+
+[[use]]
+source = "fs150231"
+pack = "jp-female-1"
+kind = "sneeze"
+
+[[use]]
+source = "fs508900"
+pack = "jp-female-1"
+kind = "hiccup"
+
+[[use]]
+source = "fs344052"
+pack = "jp-female-1"
+kind = "hiccup"
+
+[[use]]
+source = "fs827468"
+pack = "jp-female-1"
+kind = "hiccup"
+
+[[use]]
+source = "fs184570"
+pack = "jp-female-1"
+kind = "zip"
+
+[[use]]
+source = "fs26287"
+pack = "jp-female-1"
+kind = "zip"
+
+[[use]]
+source = "fs318078"
+pack = "jp-female-2"
+kind = "pickup"
+
+[[use]]
+source = "fs415363"
+pack = "jp-female-2"
+kind = "pickup"
+
+[[use]]
+source = "fs27897"
+pack = "jp-female-2"
+kind = "pickup"
+
+[[use]]
+source = "fs740310"
+pack = "jp-female-2"
+kind = "surprised"
+
+[[use]]
+source = "fs812418"
+pack = "jp-female-2"
+kind = "surprised"
+
+[[use]]
+source = "fs467348"
+pack = "jp-female-2"
+kind = "surprised"
+
+[[use]]
+source = "fs252218"
+pack = "jp-female-2"
+kind = "laugh"
+
+[[use]]
+source = "fs273926"
+pack = "jp-female-2"
+kind = "laugh"
+
+[[use]]
+source = "fs428779"
+pack = "jp-female-2"
+kind = "laugh"
+
+[[use]]
+source = "fs19260"
+pack = "jp-female-2"
+kind = "giggle"
+
+[[use]]
+source = "fs213291"
+pack = "jp-female-2"
+kind = "giggle"
+
+[[use]]
+source = "fs397673"
+pack = "jp-female-2"
+kind = "giggle"
+
+[[use]]
+source = "fs318085"
+pack = "jp-female-2"
+kind = "sigh"
+
+[[use]]
+source = "fs242690"
+pack = "jp-female-2"
+kind = "sigh"
+
+[[use]]
+source = "fs242625"
+pack = "jp-female-2"
+kind = "sigh"
+
+[[use]]
+source = "fs736452"
+pack = "jp-female-2"
+kind = "yawn"
+
+[[use]]
+source = "fs494691"
+pack = "jp-female-2"
+kind = "yawn"
+
+[[use]]
+source = "fs391896"
+pack = "jp-female-2"
+kind = "yawn"
+
+[[use]]
+source = "fs415365"
+pack = "jp-female-2"
+kind = "hmm"
+
+[[use]]
+source = "fs170768"
+pack = "jp-female-2"
+kind = "hmm"
+
+[[use]]
+source = "fs445872"
+pack = "jp-female-2"
+kind = "hmm"
+
+[[use]]
+source = "fs507730"
+pack = "jp-female-2"
+kind = "annoyed"
+
+[[use]]
+source = "fs578528"
+pack = "jp-female-2"
+kind = "annoyed"
+
+[[use]]
+source = "fs494691"
+pack = "jp-female-2"
+kind = "sleepy"
+
+[[use]]
+source = "fs391896"
+pack = "jp-female-2"
+kind = "sleepy"
+
+[[use]]
+source = "fs736452"
+pack = "jp-female-2"
+kind = "sleepy"
+
+[[use]]
+source = "fs784922"
+pack = "jp-female-2"
+kind = "poke"
+
+[[use]]
+source = "fs343973"
+pack = "jp-female-2"
+kind = "poke"
+
+[[use]]
+source = "fs343971"
+pack = "jp-female-2"
+kind = "poke"
+
+[[use]]
+source = "fs335355"
+pack = "jp-female-2"
+kind = "dizzy"
+
+[[use]]
+source = "fs235080"
+pack = "jp-female-2"
+kind = "dizzy"
+
+[[use]]
+source = "fs219900"
+pack = "jp-female-2"
+kind = "pout"
+
+[[use]]
+source = "fs241485"
+pack = "jp-female-2"
+kind = "pout"
+
+[[use]]
+source = "fs469097"
+pack = "jp-female-2"
+kind = "pout"
+
+[[use]]
+source = "fs451736"
+pack = "jp-female-2"
+kind = "sneeze"
+
+[[use]]
+source = "fs655952"
+pack = "jp-female-2"
+kind = "sneeze"
+
+[[use]]
+source = "fs580831"
+pack = "jp-female-2"
+kind = "sneeze"
+
+[[use]]
+source = "fs827468"
+pack = "jp-female-2"
+kind = "hiccup"
+
+[[use]]
+source = "fs508900"
+pack = "jp-female-2"
+kind = "hiccup"
+
+[[use]]
+source = "fs344052"
+pack = "jp-female-2"
+kind = "hiccup"
+
+[[use]]
+source = "fs26287"
+pack = "jp-female-2"
+kind = "zip"
+
+[[use]]
+source = "fs661842"
+pack = "jp-female-2"
+kind = "zip"
+
+[[use]]
+source = "fs467363"
+pack = "jp-male-1"
+kind = "pickup"
+
+[[use]]
+source = "fs318077"
+pack = "jp-male-1"
+kind = "pickup"
+
+[[use]]
+source = "fs399799"
+pack = "jp-male-1"
+kind = "pickup"
+
+[[use]]
+source = "fs144257"
+pack = "jp-male-1"
+kind = "surprised"
+
+[[use]]
+source = "fs219904"
+pack = "jp-male-1"
+kind = "surprised"
+
+[[use]]
+source = "fs677888"
+pack = "jp-male-1"
+kind = "surprised"
+
+[[use]]
+source = "fs246312"
+pack = "jp-male-1"
+kind = "laugh"
+
+[[use]]
+source = "fs563033"
+pack = "jp-male-1"
+kind = "laugh"
+
+[[use]]
+source = "fs563034"
+pack = "jp-male-1"
+kind = "laugh"
+
+[[use]]
+source = "fs695391"
+pack = "jp-male-1"
+kind = "giggle"
+
+[[use]]
+source = "fs695390"
+pack = "jp-male-1"
+kind = "giggle"
+
+[[use]]
+source = "fs275055"
+pack = "jp-male-1"
+kind = "sigh"
+
+[[use]]
+source = "fs673671"
+pack = "jp-male-1"
+kind = "sigh"
+
+[[use]]
+source = "fs346520"
+pack = "jp-male-1"
+kind = "sigh"
+
+[[use]]
+source = "fs272030"
+pack = "jp-male-1"
+kind = "yawn"
+
+[[use]]
+source = "fs364695"
+pack = "jp-male-1"
+kind = "yawn"
+
+[[use]]
+source = "fs165011"
+pack = "jp-male-1"
+kind = "hmm"
+
+[[use]]
+source = "fs170779"
+pack = "jp-male-1"
+kind = "hmm"
+
+[[use]]
+source = "fs650219"
+pack = "jp-male-1"
+kind = "hmm"
+
+[[use]]
+source = "fs650224"
+pack = "jp-male-1"
+kind = "annoyed"
+
+[[use]]
+source = "fs719053"
+pack = "jp-male-1"
+kind = "annoyed"
+
+[[use]]
+source = "fs364695"
+pack = "jp-male-1"
+kind = "sleepy"
+
+[[use]]
+source = "fs272030"
+pack = "jp-male-1"
+kind = "sleepy"
+
+[[use]]
+source = "fs150505"
+pack = "jp-male-1"
+kind = "dizzy"
+
+[[use]]
+source = "fs799579"
+pack = "jp-male-1"
+kind = "pout"
+
+[[use]]
+source = "fs449449"
+pack = "jp-male-1"
+kind = "pout"
+
+[[use]]
+source = "fs119102"
+pack = "jp-male-1"
+kind = "sneeze"
+
+[[use]]
+source = "fs848893"
+pack = "jp-male-1"
+kind = "sneeze"
+
+[[use]]
+source = "fs339414"
+pack = "jp-male-1"
+kind = "sneeze"
+
+[[use]]
+source = "fs344052"
+pack = "jp-male-1"
+kind = "hiccup"
+
+[[use]]
+source = "fs250140"
+pack = "jp-male-1"
+kind = "hiccup"
+
+[[use]]
+source = "fs472803"
+pack = "jp-male-1"
+kind = "hiccup"
+
+[[use]]
+source = "fs814732"
+pack = "jp-male-1"
+kind = "zip"
+
+[[use]]
+source = "fs51176"
+pack = "jp-male-1"
+kind = "zip"
+
+[[use]]
+source = "fs536757"
+pack = "jp-male-2"
+kind = "pickup"
+
+[[use]]
+source = "fs271245"
+pack = "jp-male-2"
+kind = "pickup"
+
+[[use]]
+source = "fs344407"
+pack = "jp-male-2"
+kind = "pickup"
+
+[[use]]
+source = "fs677888"
+pack = "jp-male-2"
+kind = "surprised"
+
+[[use]]
+source = "fs399799"
+pack = "jp-male-2"
+kind = "surprised"
+
+[[use]]
+source = "fs144258"
+pack = "jp-male-2"
+kind = "surprised"
+
+[[use]]
+source = "fs670839"
+pack = "jp-male-2"
+kind = "laugh"
+
+[[use]]
+source = "fs817117"
+pack = "jp-male-2"
+kind = "laugh"
+
+[[use]]
+source = "fs670840"
+pack = "jp-male-2"
+kind = "laugh"
+
+[[use]]
+source = "fs695391"
+pack = "jp-male-2"
+kind = "giggle"
+
+[[use]]
+source = "fs695390"
+pack = "jp-male-2"
+kind = "giggle"
+
+[[use]]
+source = "fs799579"
+pack = "jp-male-2"
+kind = "sigh"
+
+[[use]]
+source = "fs449449"
+pack = "jp-male-2"
+kind = "sigh"
+
+[[use]]
+source = "fs215380"
+pack = "jp-male-2"
+kind = "sigh"
+
+[[use]]
+source = "fs272030"
+pack = "jp-male-2"
+kind = "yawn"
+
+[[use]]
+source = "fs364695"
+pack = "jp-male-2"
+kind = "yawn"
+
+[[use]]
+source = "fs867879"
+pack = "jp-male-2"
+kind = "hmm"
+
+[[use]]
+source = "fs519112"
+pack = "jp-male-2"
+kind = "hmm"
+
+[[use]]
+source = "fs165011"
+pack = "jp-male-2"
+kind = "hmm"
+
+[[use]]
+source = "fs650224"
+pack = "jp-male-2"
+kind = "annoyed"
+
+[[use]]
+source = "fs719053"
+pack = "jp-male-2"
+kind = "annoyed"
+
+[[use]]
+source = "fs364695"
+pack = "jp-male-2"
+kind = "sleepy"
+
+[[use]]
+source = "fs272030"
+pack = "jp-male-2"
+kind = "sleepy"
+
+[[use]]
+source = "fs150505"
+pack = "jp-male-2"
+kind = "dizzy"
+
+[[use]]
+source = "fs346520"
+pack = "jp-male-2"
+kind = "pout"
+
+[[use]]
+source = "fs275055"
+pack = "jp-male-2"
+kind = "pout"
+
+[[use]]
+source = "fs673671"
+pack = "jp-male-2"
+kind = "pout"
+
+[[use]]
+source = "fs655952"
+pack = "jp-male-2"
+kind = "sneeze"
+
+[[use]]
+source = "fs382301"
+pack = "jp-male-2"
+kind = "sneeze"
+
+[[use]]
+source = "fs649366"
+pack = "jp-male-2"
+kind = "sneeze"
+
+[[use]]
+source = "fs827468"
+pack = "jp-male-2"
+kind = "hiccup"
+
+[[use]]
+source = "fs344052"
+pack = "jp-male-2"
+kind = "hiccup"
+
+[[use]]
+source = "fs250140"
+pack = "jp-male-2"
+kind = "hiccup"
+
+[[use]]
+source = "fs51176"
+pack = "jp-male-2"
+kind = "zip"
+
+[[use]]
+source = "fs688589"
+pack = "jp-male-2"
+kind = "zip"

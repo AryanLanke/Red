@@ -29,8 +29,12 @@ from typing import Callable
 log = logging.getLogger(__name__)
 
 KINDS = ("pickup", "drop", "hover", "surprised", "laugh", "giggle", "sigh", "yawn", "hmm",
-         "annoyed", "happy", "sleepy")
+         "annoyed", "happy", "sleepy",
+         # the funny ones the motion code asks for (window.react): a poke, a fast drag, after a shake,
+         # after a drop, a sneeze, a hiccup, a small effort, and the zipped mouth
+         "poke", "drag_fast", "dizzy", "pout", "sneeze", "hiccup", "climb", "zip")
 MAX_SECONDS = 1.5
+MIN_GAP = 1.0               # seconds between two reaction sounds (the window keeps to it)
 
 _voice_busy: Callable[[], bool] | None = None
 
@@ -63,6 +67,8 @@ class Pack:
     source: str
     path: Path
     kinds: dict[str, tuple[Path, ...]] = field(default_factory=dict)
+    lang: str = ""                  # ja | en
+    clips: tuple[dict, ...] = ()    # one table per file: file, kind, origin, credit, page, license
 
     def variants(self, kind: str) -> tuple[Path, ...]:
         return self.kinds.get(kind, ())
@@ -90,7 +96,9 @@ def _read_pack(folder: Path) -> Pack | None:
     gender = str(data.get("gender", "")).lower()
     return Pack(id=folder.name, name=str(data.get("name", folder.name)),
                 gender=gender if gender in ("male", "female") else "", style=str(data.get("style", "")),
-                license=license_text, source=source, path=folder, kinds=kinds)
+                license=license_text, source=source, path=folder, kinds=kinds,
+                lang=str(data.get("lang", "")).lower(),
+                clips=tuple(c for c in data.get("clip", []) if isinstance(c, dict)))
 
 
 def packs(home: Path | str | None = None) -> dict[str, Pack]:
@@ -146,6 +154,17 @@ def play(path: Path | str | None, *, player: Callable[[Path], None] = _winsound_
     return True
 
 
+def credits(home: Path | str | None = None) -> list[str]:
+    """The credit lines the licences ask for, one per recorded clip in the installed packs (CC-BY
+    needs them shown in the app; CC0 clips are listed too, as thanks). Sorted, no duplicates."""
+    lines: set[str] = set()
+    for pack in packs(home).values():
+        for clip in pack.clips:
+            if clip.get("origin") == "freesound" and clip.get("credit"):
+                lines.add(str(clip["credit"]))
+    return sorted(lines)
+
+
 # --- voice previews, for the app -------------------------------------------------------------------
 
 _engines: dict[str, object] = {}
@@ -174,9 +193,9 @@ def preview_voice(voice_id: str, text: str, home: Path | str | None = None, *,
     """
     import numpy as np
     from .config import red_home
-    from .tts_kokoro import SAMPLE_RATE, VOICES, speakable
+    from .tts_kokoro import SAMPLE_RATE, is_voice, speakable
 
-    if voice_id not in VOICES:
+    if not is_voice(voice_id):
         raise ValueError(f"{voice_id!r} isn't a Kokoro voice")
     text = " ".join((text or "").split())
     if not text:
@@ -198,4 +217,4 @@ def preview_voice(voice_id: str, text: str, home: Path | str | None = None, *,
     return out
 
 
-__all__ = ["KINDS", "Pack", "packs", "pick", "play", "preview_voice", "red_speaking", "sounds_dir", "watch_voice"]
+__all__ = ["KINDS", "MIN_GAP", "Pack", "credits", "packs", "pick", "play", "preview_voice", "red_speaking", "sounds_dir", "watch_voice"]
