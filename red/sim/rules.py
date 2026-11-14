@@ -21,7 +21,8 @@ from ..chat import invented_life, written_laughter
 
 STOCK = re.compile(r"\b(?:how can i (?:help|assist)|i'?m here to help|as an ai|language model|"
                    r"is there anything else|let me know if|you'?re the boss|feel free to|"
-                   r"i'?m just an? (?:ai|program|assistant)|what can i do for you)\b", re.I)
+                   r"i'?m just an? (?:ai|program|assistant)|what can i do for you|"
+                   r"i'?m searching|searching (?:on )?the web|let me (?:search|look that up|look it up))\b", re.I)
 DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 PLACEHOLDER = re.compile(r"lost my train of thought|i didn'?t understand that|something went wrong", re.I)
 # Words that must never become a search: "play whatever you like" searched "whatever song" on 2026-11-13.

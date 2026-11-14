@@ -1419,6 +1419,10 @@ def _check_allowlist(settings: Settings) -> None:
 # --------------------------------------------------------------------------
 
 def main(argv: list[str] | None = None) -> int:
+    given = sys.argv[1:] if argv is None else list(argv)
+    if given[:1] == ["score"]:                 # the Red Score has options of its own (red/score.py)
+        from .score import main as score_main
+        return score_main(given[1:])
     parser = argparse.ArgumentParser(prog="red")
     parser.add_argument("--home", metavar="FOLDER",
                         help="use this RED_HOME for this run (the sign-in shortcut uses it)")
@@ -1456,6 +1460,7 @@ def main(argv: list[str] | None = None) -> int:
     p_route.add_argument("text", nargs="+")
     p_run = sub.add_parser("run", help="run one typed command")
     p_run.add_argument("text", nargs="+")
+    sub.add_parser("score", help="the Red Score: replay the real sentences and measure (--offline, --big, --persona)")
     args = parser.parse_args(argv)
     if args.home:
         os.environ["RED_HOME"] = args.home   # this process only
