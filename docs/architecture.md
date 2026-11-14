@@ -78,7 +78,8 @@ get the event delivered on the Qt thread.
 | `state(name)`: idle, listening, thinking, speaking, confirm, error | voice loop | glow, avatar, tray |
 | `mouth(level 0–1)` 30×/s | speech player | avatar lip sync |
 | `emotion(name, strength)`: happy, laugh, angry, sad, surprised, thinking, shy | speech (from tags) | avatar face |
-| `said(text)` / `heard(text)` | voice loop | chat window, history |
+| `said(text)` / `heard(text)` | voice loop | chat window, history, the companion's bubble (`heard`: grey italic "you: ..."; `said`: a piece of Red's reply, shown when its audio starts) |
+| `mic(muted)` | `Listener.mute` (or `avatar.mic_control`) | the companion's crossed-mic badge |
 | `companion(id)` | companion runtime | everything (voice, avatar, prompt, wake names) |
 | `memory_saved(fact)` | memory | chat window ("Memory updated") |
 | `notice(text)` | anything | tray balloon |

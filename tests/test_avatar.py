@@ -346,19 +346,177 @@ def test_corners_and_the_edge(window, tmp_path):
     assert json.loads((tmp_path / "spot.json").read_text())["side"] == "edge"
 
 
-def test_speaking_types_into_a_bubble(app, window):
+def test_the_reply_waits_for_the_voice(app, window):
+    """The "speaking" state comes before the audio: no text yet. A `said` shows its piece."""
     w = window.window
     w._apply("speaking", "Done. The build is green.\nred: main, 2 to push")
-    assert w.bubble_text == "Done. The build is green."      # only the first line
-    assert w.turn_emotion == "happy"
-    window.clock.t += 0.2
-    w.tick()
-    assert w._typing(window.clock.t)
+    assert w.bubble_text == "" and w.turn_emotion == "happy"       # the emotion is guessed, the text waits
     window.clock.t += 5
     w.tick()
+    assert w.bubble_text == ""                                     # still no audio: still nothing shown
+    w._on_said("Done.")
+    assert w.bubble_text == "Done."
+    window.clock.t += 0.2
+    w.tick()
+    w._on_said("The build is green.")                              # the next piece, when it starts
+    assert w.bubble_text == "Done. The build is green."
+    assert w._typed(window.clock.t) == len("Done. ")               # the old piece stays, the new types in
+    assert w._typing(window.clock.t)
+    window.clock.t += 3
+    w.tick()
     assert not w._typing(window.clock.t)
-    image = w.grab()
-    assert not image.isNull()
+    assert not w.grab().isNull()
+
+
+def test_a_reply_without_said_events_shows_once_the_voice_sounds(window):
+    from red.avatar import MouthMeter
+    w = window.window
+    w.meter = MouthMeter(clock=window.clock)
+    w._apply("speaking", "Opened Downloads.")
+    w.tick()
+    assert w.bubble_text == ""                                     # nothing sounds yet
+    w.meter.start(np.ones(24_000, np.float32), 24_000)              # one second of audio starts
+    window.clock.t += 0.1
+    w.tick()
+    assert w.bubble_text == "Opened Downloads."
+    w._on_said("Opened Downloads.")                                 # a late `said` replaces it, no doubling
+    assert w.bubble_text == "Opened Downloads."
+
+
+def test_what_the_user_said_shows_grey_and_stays_while_red_thinks(window):
+    w = window.window
+    w._apply("speaking", "Earlier reply.")
+    w._on_said("Earlier reply.")
+    w._apply("thinking", "")
+    assert w.bubble_until <= window.clock.t                        # Red's old words are gone
+    w._on_heard("what's   up with you")
+    assert w.heard_text == "what's up with you"
+    assert w.bubble_text == "" and w.heard_until == float("inf")
+    window.clock.t += 2
+    w.tick()
+    assert not w.grab().isNull()                                   # painted: "you: ..." above the bubble
+    w._on_said("Not much. You?")
+    assert w.bubble_text == "Not much. You?"
+    assert w.heard_until == float("inf")                           # the user's line stays with the reply
+    w._apply("idle", "")
+    assert w.heard_until == window.clock.t + avatar_window().BUBBLE_HOLD
+    w._apply("listening", "")                                      # the user talks again: both go
+    assert w.heard_until <= window.clock.t and w.bubble_until <= window.clock.t
+
+
+def avatar_window():
+    from red.avatar import window as win
+    return win
+
+
+def test_a_long_reply_keeps_the_latest_pieces(window):
+    w = window.window
+    for i in range(30):
+        window.clock.t += 0.5
+        w._on_said(f"This is sentence number {i} of a long reply.")
+    assert len(w.bubble_text) <= avatar_window().BUBBLE_TEXT
+    assert w.bubble_text.endswith("number 29 of a long reply.")
+
+
+def test_the_next_reply_starts_fresh(window):
+    w = window.window
+    w._on_said("First reply.")
+    window.clock.t += 0.5
+    w._on_said("Still the first.")
+    assert w.bubble_text == "First reply. Still the first."
+    w._apply("thinking", "")
+    w._on_said("A new reply.")
+    assert w.bubble_text == "A new reply."
+
+
+def test_events_reach_the_window_through_queued_signals(app, window):
+    """red.events handlers run on Red's voice thread: the bubble gets them on the Qt thread."""
+    import threading
+    from red import events
+    seen = []
+    w = window.window
+    original = w._on_said
+    w._on_said = lambda text: (seen.append(threading.current_thread()), original(text))
+    w.said_signal.disconnect()
+    w.said_signal.connect(w._on_said, __import__("PySide6.QtCore", fromlist=["Qt"]).Qt.ConnectionType.QueuedConnection)
+    t = threading.Thread(target=lambda: (events.emit("heard", text="hello there"),
+                                         events.emit("said", text="Hey."),
+                                         events.emit("mic", muted=True)))
+    t.start()
+    t.join()
+    assert w.heard_text == "" and not seen                         # nothing ran on the other thread
+    app.processEvents()
+    assert w.heard_text == "hello there" and w.bubble_text == "Hey." and w.muted
+    assert seen == [threading.main_thread()] or seen[0] is not t
+    window.close()
+    events.emit("heard", text="after close")                       # unsubscribed: no error, no change
+    app.processEvents()
+    assert w.heard_text == "hello there"
+
+
+def test_microphone_off_from_the_menu(window):
+    w = window.window
+    calls = []
+    window.on_mic = calls.append
+    w.toggle_mic()
+    assert calls == [True] and w.muted
+    w.tick()
+    assert not w.grab().isNull()                                   # the crossed-out mic is drawn
+    w.toggle_mic()
+    assert calls == [True, False] and not w.muted
+
+
+def test_microphone_stays_as_it_was_if_the_listener_cant_mute(window):
+    w = window.window
+
+    def fail(muted):
+        raise RuntimeError("no listener")
+    window.on_mic = fail
+    w.toggle_mic()
+    assert not w.muted
+    window.on_mic = None
+    w.toggle_mic()
+    assert not w.muted
+
+
+def test_mic_control_uses_mute_or_pauses_the_wake_word():
+    from red import events
+    from red.avatar import mic_control
+
+    class WithMute:
+        def __init__(self):
+            self.calls = []
+
+        def mute(self, on):
+            self.calls.append(on)
+
+    class OldListener:
+        def __init__(self):
+            self.calls = []
+
+        def pause(self):
+            self.calls.append("pause")
+
+        def resume(self):
+            self.calls.append("resume")
+
+    got = []
+    off = events.on("mic", lambda muted: got.append(muted))
+    try:
+        new = WithMute()
+        mic_control(lambda: new)(True)
+        assert new.calls == [True] and got == []                   # Listener.mute announces itself
+        old = OldListener()
+        control = mic_control(lambda: old)
+        control(True)
+        control(True)                                              # never paused twice
+        control(False)
+        control(False)
+        assert old.calls == ["pause", "resume"] and got == [True, True, False, False]
+        with pytest.raises(RuntimeError):
+            mic_control(lambda: None)(True)
+    finally:
+        off()
 
 
 def test_greeting_waves(window):

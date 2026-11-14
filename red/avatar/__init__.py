@@ -309,6 +309,11 @@ class MouthMeter:
                 return float(self._levels[i])
             return 0.0
 
+    def playing(self) -> bool:
+        """True while a clip handed to start() is still sounding (even in a quiet moment of it)."""
+        with self._lock:
+            return 0 <= int((self._clock() - self._start) * self.RATE) < self._levels.size
+
 
 class MouthPlayer:
     """Wraps Red's audio player (red/tts.Player) so the meter sees everything Red says."""
@@ -396,3 +401,33 @@ def play_clip(path: Path) -> None:
         winsound.PlaySound(str(path), winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
     except Exception:  # noqa: BLE001 - a missing sound is never worth an error
         log.debug("Couldn't play %s", path, exc_info=True)
+
+
+# --------------------------------------------------------------------------
+# Microphone off
+# --------------------------------------------------------------------------
+
+def mic_control(get_listener: Callable[[], object]) -> Callable[[bool], None]:
+    """`muted -> None` for the companion's menu: mute or unmute the listener.
+
+    Uses `Listener.mute(on)` (the microphone-off feature). Until a listener has it, the wake word is
+    paused with `pause()` and `resume()` instead (the hotkey still works)."""
+    state = {"paused": False}
+
+    def control(muted: bool) -> None:
+        listener = get_listener()
+        if listener is None:
+            raise RuntimeError("Red isn't listening yet")
+        mute = getattr(listener, "mute", None)
+        if callable(mute):
+            mute(muted)
+        elif muted and not state["paused"]:
+            listener.pause()
+            state["paused"] = True
+        elif not muted and state["paused"]:
+            listener.resume()
+            state["paused"] = False
+        if getattr(listener, "mute", None) is None:       # no mute() to say so: tell the bus ourselves
+            from .. import events
+            events.emit("mic", muted=muted)
+    return control

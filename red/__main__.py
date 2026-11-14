@@ -924,6 +924,8 @@ def _voice_mode(settings: Settings, router: Router, registry) -> int:
             try:
                 attach(voice.speaker)
                 overlay.on_click = lambda: app.chat_window.show() if getattr(app, "chat_window", None) else None
+                from .avatar import mic_control
+                overlay.on_mic = mic_control(lambda: app.listener)       # "Microphone off" in the menu
             except Exception:  # noqa: BLE001 - the companion is only a display
                 log.exception("Couldn't connect the companion to the voice")
         app.run(stop)

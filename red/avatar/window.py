@@ -28,14 +28,19 @@ from typing import Callable
 from . import (SIDES, SIZES, SLEEP_AFTER_SECONDS, Look, MouthMeter, Sprites, available_companions,
                clip_paths, companion_folder, emotion_from_text, frame_for_side, kokoro_synthesizer,
                load_sprites, make_clips, mark_for, meter_speaker, pick_frame, play_clip, side_for)
+from .. import events
 from ..overlay import STATES, Overlay, _check_state, _clean
 
 log = logging.getLogger(__name__)
 
-BUBBLE_SPACE = 150         # logical pixels above the head kept for the bubble and the marks
+BUBBLE_SPACE = 190         # logical pixels above the head kept for the bubbles and the marks
 BUBBLE_WIDTH = 270
-BUBBLE_TEXT = 200          # characters shown in the bubble
-TYPE_SPEED = 38            # characters per second
+BUBBLE_TEXT = 200          # characters shown in Red's bubble
+HEARD_TEXT = 120           # characters shown in the "you:" line
+TYPE_SPEED = 38            # characters per second (a reply with no `said` events)
+SAID_SPEED = 90            # characters per second for a piece that has just started to be spoken
+NEW_REPLY_GAP = 8.0        # a piece this long after the last one starts a new reply
+USER_INK = "#6b6f7a"       # grey: what Red heard, against what Red says
 BUBBLE_HOLD = 5.0          # seconds the bubble stays after Red goes quiet
 DRAG_START = 6             # pixels of movement before a press becomes a pickup
 GRAVITY = 3200.0           # pixels per second squared when dropped
@@ -88,6 +93,9 @@ def _window_class():
 
     class CompanionWindow(QWidget):
         state_changed = Signal(str, str)
+        heard_signal = Signal(str)            # events "heard", "said" and "mic" arrive on Red's voice
+        said_signal = Signal(str)             # thread: these queued signals hand them to Qt
+        mic_signal = Signal(bool)
         finished = Signal()
 
         def __init__(self, sprites: Sprites, *, size: str = "medium", models_dir: Path | None = None,
@@ -116,6 +124,18 @@ def _window_class():
             self.bubble_text = ""
             self.bubble_started = 0.0
             self.bubble_until = 0.0
+            self.pieces: list[tuple[str, float]] = []   # what Red has said this reply, with when each began
+            self.pending_text = ""                       # the reply text of a "speaking" state, not yet voiced
+            self.said_this_turn = False
+            self.fresh = True                            # the next `said` starts a new reply
+            self.pending_shown = False                   # the bubble shows a fallback line, not pieces
+            self.reveal_from = 0                         # the characters before this are already shown
+            self.type_speed = TYPE_SPEED
+            self.heard_text = ""                         # what the user said, shown as "you: ..."
+            self.heard_at = 0.0
+            self.heard_until = 0.0
+            self.muted = False                           # microphone off: a crossed mic on the companion
+            self.on_mic: Callable[[bool], None] | None = None     # the host mutes the listener
             self.press_at: QPointF | None = None
             self.grab_offset = QPointF(0, 0)
             self.drag_pos = QPointF(0, 0)
@@ -135,6 +155,9 @@ def _window_class():
             self._restore()
 
             self.state_changed.connect(self._apply, Qt.ConnectionType.QueuedConnection)
+            self.heard_signal.connect(self._on_heard, Qt.ConnectionType.QueuedConnection)
+            self.said_signal.connect(self._on_said, Qt.ConnectionType.QueuedConnection)
+            self.mic_signal.connect(self._on_mic, Qt.ConnectionType.QueuedConnection)
             self.timer = QTimer(self)
             self.timer.timeout.connect(self.tick)
             self.timer.start(NORMAL)
@@ -295,15 +318,23 @@ def _window_class():
                     feeling = "happy"
                 if feeling:
                     self.turn_emotion = feeling
-                self._bubble(text, now)
+                # The words appear with the voice (the `said` events), never before it. This state comes
+                # before the audio starts, so the text only waits here as a fallback for a speaker that
+                # sends no `said`: tick() shows it once the voice is really sounding.
+                if not self.said_this_turn:
+                    self.pending_text = self._first_line(text)
             elif state in ("error", "confirm") and text:
                 self._bubble(text, now)
             elif state in ("listening", "thinking"):
                 if state == "listening":
                     self.turn_emotion = None
+                    self.heard_until = now           # the user talks again: their last line goes too
+                self._next_reply()
                 self.bubble_until = now          # the last reply goes once you talk again
             if state == "idle":
                 self.bubble_until = now + BUBBLE_HOLD
+                if self.heard_until == float("inf"):
+                    self.heard_until = now + BUBBLE_HOLD
                 if self.turn_emotion:
                     self.until["emotion"] = now + EMOTION_HOLD
             self.look.state = state
@@ -311,14 +342,99 @@ def _window_class():
             self._speed(FAST)
             self.tick()
 
-        def _bubble(self, text: str, now: float) -> None:
-            first = (text or "").strip().split("\n")[0]
+        @staticmethod
+        def _first_line(text: str) -> str:
+            first = (text or "").strip().splitlines()[0] if (text or "").strip() else ""
             if len(first) > BUBBLE_TEXT:
                 first = first[:BUBBLE_TEXT - 1].rstrip() + "…"
+            return first
+
+        def _bubble(self, text: str, now: float) -> None:
+            """Show a whole line at once (a question or a problem, and the fallback for a reply)."""
+            first = self._first_line(text)
             if first != self.bubble_text:
                 self.bubble_text = first
                 self.bubble_started = now
+                self.reveal_from = 0
+                self.type_speed = TYPE_SPEED
+            self.pieces = []
             self.bubble_until = float("inf")
+
+        def _next_reply(self) -> None:
+            """What comes next is a new reply: the pieces so far are old."""
+            self.fresh = True
+            self.said_this_turn = False
+            self.pending_text = ""
+
+        # --- the user's words, Red's words, the microphone ----------------------
+        # Handlers of red.events run on Red's voice thread: the overlay turns them into these queued
+        # signals, so the slots below run on the Qt thread.
+
+        def _on_heard(self, text: str) -> None:
+            """The transcript is final: show it at once, grey and italic ("you: ...")."""
+            now = self.clock()
+            text = " ".join((text or "").split())
+            if not text:
+                return
+            if len(text) > HEARD_TEXT:
+                text = text[:HEARD_TEXT - 1].rstrip() + "…"
+            self.heard_text, self.heard_at, self.heard_until = text, now, float("inf")
+            self.bubble_text, self.pieces, self.bubble_until = "", [], now
+            self._next_reply()
+            self.last_activity = now
+            if not self.isVisible() and not self.hidden_for_fullscreen:
+                self.show()
+            self._speed(FAST)
+            self.tick()
+
+        def _on_said(self, text: str) -> None:
+            """One piece of Red's reply, right after its audio started: reveal it now."""
+            now = self.clock()
+            text = " ".join((text or "").split())
+            if not text:
+                return
+            gap = now - (self.pieces[-1][1] if self.pieces else now)
+            if self.fresh or self.pending_shown or gap > NEW_REPLY_GAP:
+                self.pieces = []
+            self.fresh = self.pending_shown = False
+            self.said_this_turn = True
+            self.pending_text = ""
+            self.pieces.append((text, now))
+            while len(self.pieces) > 1 and sum(len(t) + 1 for t, _ in self.pieces) > BUBBLE_TEXT:
+                self.pieces.pop(0)                   # the oldest pieces make room
+            before = " ".join(t for t, _ in self.pieces[:-1])
+            joined = " ".join(t for t, _ in self.pieces)
+            if len(joined) > BUBBLE_TEXT:
+                joined = "…" + joined[-(BUBBLE_TEXT - 1):]
+                before = joined[: max(0, len(joined) - len(self.pieces[-1][0]))]
+            self.bubble_text = joined
+            self.reveal_from = len(before) + (1 if before else 0)
+            self.bubble_started = now
+            self.type_speed = SAID_SPEED
+            self.bubble_until = float("inf")
+            self.last_activity = now
+            if not self.isVisible() and not self.hidden_for_fullscreen:
+                self.show()
+            self._speed(FAST)
+            self.tick()
+
+        def _on_mic(self, muted: bool) -> None:
+            self.muted = bool(muted)
+            self.update()
+
+        def toggle_mic(self) -> None:
+            """Microphone off or on from the menu: the host mutes the listener, then the badge shows."""
+            muted = not self.muted
+            if self.on_mic is None:
+                log.warning("No microphone control is connected, so the microphone stays as it is")
+                return
+            try:
+                self.on_mic(muted)
+            except Exception:  # noqa: BLE001 - the menu must survive a listener that can't mute
+                log.exception("Couldn't turn the microphone %s", "off" if muted else "on")
+                return
+            self.muted = muted
+            self.update()
 
         # --- the clock --------------------------------------------------------
 
@@ -336,6 +452,10 @@ def _window_class():
             if look.state == "idle" and now - self.last_activity > SLEEP_AFTER_SECONDS and not look.dragging:
                 look.state = "sleeping"
             look.mouth = self.meter.level() if look.state == "speaking" else 0.0
+            if (self.pending_text and not self.said_this_turn and look.state == "speaking"
+                    and self.meter.playing()):
+                self._bubble(self.pending_text, now)     # no `said` came, but the voice is sounding
+                self.pending_shown, self.pending_text = True, ""
             look.emotion = "happy" if "hover" in self.until else self.turn_emotion
 
             if look.falling:
@@ -353,8 +473,12 @@ def _window_class():
             self._speed(FAST if busy else SLOW if look.state == "sleeping" else NORMAL)
             self.update()
 
+        def _typed(self, now: float) -> int:
+            """How many characters of the bubble are shown: the old pieces, then the new one typing in."""
+            return self.reveal_from + int(max(0.0, now - self.bubble_started) * self.type_speed)
+
         def _typing(self, now: float) -> bool:
-            return bool(self.bubble_text) and (now - self.bubble_started) * TYPE_SPEED < len(self.bubble_text)
+            return bool(self.bubble_text) and self._typed(now) < len(self.bubble_text)
 
         def _check_fullscreen(self) -> None:
             if self.look.dragging:
@@ -511,6 +635,7 @@ def _window_class():
                     if cid != self.companion:
                         menu.addAction(f"Switch to {name}", functools.partial(self.switch, cid))
             menu.addSeparator()
+            menu.addAction("Microphone on" if self.muted else "Microphone off", self.toggle_mic)
             menu.addAction("Hide until Red talks", self.hide)
             menu.exec(event.globalPos())
 
@@ -581,8 +706,9 @@ def _window_class():
             age = self.anim_age("hop", now, 1.1)
             if age is not None:
                 self._paint_heart(p, head, age, unit)
-            if self.bubble_text and now < self.bubble_until:
-                self._paint_bubble(p, head, now)
+            self._paint_bubbles(p, head, now)
+            if self.muted:
+                self._paint_mic_badge(p, QRectF(left + dx, top + dy, w, h), unit)
             p.end()
 
         def _paint_heart(self, p, head: QPointF, age: float, unit: float) -> None:
@@ -672,24 +798,80 @@ def _window_class():
                 p.setBrush(QColor(140, 195, 250, 220))
                 p.drawPath(path)
 
-        def _paint_bubble(self, p, head: QPointF, now: float) -> None:
-            shown = self.bubble_text[: max(0, int((now - self.bubble_started) * TYPE_SPEED))]
-            if not shown:
-                return
+        def _paint_bubbles(self, p, head: QPointF, now: float) -> None:
+            """Red's words nearest the head, and above them (below, hanging) what the user said."""
+            reach = 0.27 * SIZES[self.size_name]          # how far from the head the first bubble starts
+            if self.bubble_text and now < self.bubble_until:
+                shown = self.bubble_text[: max(0, self._typed(now))]
+                if shown:
+                    reach += self._paint_bubble(p, head, now, shown, reach) + 8
+            if self.heard_text and now < self.heard_until:
+                self._paint_heard(p, head, now, reach)
+
+        def _paint_heard(self, p, head: QPointF, now: float, reach: float) -> None:
+            """"you: ..." in grey italic, in a small quiet bubble: what Red heard, not what Red says."""
+            font = QFont("Segoe UI", 9)
+            font.setItalic(True)
+            p.setFont(font)
+            line = f"you: {self.heard_text}"
+            inner = BUBBLE_WIDTH - 40
+            full = QFontMetricsF(font).boundingRect(QRectF(0, 0, inner, 1000), Qt.TextFlag.TextWordWrap, line)
+            height = min(full.height(), 2 * QFontMetricsF(font).lineSpacing() + 1) + 12
+            width = min(inner, max(40.0, full.width())) + 22
+            fade = 1.0 if self.heard_until == float("inf") else max(0.0, min(1.0, self.heard_until - now))
+            fade = min(fade, min(1.0, (now - self.heard_at) * 6))        # and it fades in
+            x = min(max(head.x() - width / 2, 4.0), self.width() - width - 4)
+            if self.hanging:
+                y = min(self.height() - height - 4.0, head.y() + reach)
+            else:
+                y = max(4.0, head.y() - reach - height)
+            rect = QRectF(x, y, width, height)
+            path = QPainterPath()
+            path.addRoundedRect(rect, 9, 9)
+            p.setOpacity(fade)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(236, 238, 242, 215))
+            p.drawPath(path)
+            p.setPen(QColor(USER_INK))
+            p.drawText(rect.adjusted(11, 6, -11, -6), Qt.TextFlag.TextWordWrap, line)
+            p.setOpacity(1.0)
+
+        def _paint_mic_badge(self, p, sprite: QRectF, unit: float) -> None:
+            """A small crossed-out microphone on the outer top corner of the picture: the mic is off."""
+            r = max(10.0, 15 * unit)
+            toward_left = self.prefix != "cornerL"            # away from the screen's side
+            c = QPointF(sprite.left() + r + 6 if toward_left else sprite.right() - r - 6,
+                        sprite.bottom() - r - 6 if self.hanging else sprite.top() + r + 6)
+            p.save()
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(38, 40, 48, 225))
+            p.drawEllipse(c, r, r)
+            ink = QPen(QColor(245, 245, 248), max(1.3, r * 0.13))
+            ink.setCapStyle(Qt.PenCapStyle.RoundCap)
+            p.setPen(ink)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(QRectF(c.x() - r * 0.2, c.y() - r * 0.58, r * 0.4, r * 0.7), r * 0.2, r * 0.2)
+            p.drawArc(QRectF(c.x() - r * 0.40, c.y() - r * 0.38, r * 0.8, r * 0.68), 180 * 16, 180 * 16)
+            p.drawLine(QPointF(c.x(), c.y() + r * 0.3), QPointF(c.x(), c.y() + r * 0.55))
+            p.setPen(QPen(QColor("#e5484d"), max(1.8, r * 0.17), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            p.drawLine(QPointF(c.x() - r * 0.62, c.y() - r * 0.62), QPointF(c.x() + r * 0.62, c.y() + r * 0.62))
+            p.restore()
+
+        def _paint_bubble(self, p, head: QPointF, now: float, shown: str, reach: float) -> float:
+            """Red's speech bubble, `reach` away from the head. Returns its height."""
             font = QFont("Segoe UI", 10)
             p.setFont(font)
             metrics = QFontMetricsF(font)
             inner = BUBBLE_WIDTH - 24
             full = metrics.boundingRect(QRectF(0, 0, inner, 1000), Qt.TextFlag.TextWordWrap, self.bubble_text)
-            height = min(full.height(), BUBBLE_SPACE - 40) + 18
+            height = min(full.height(), BUBBLE_SPACE - 60) + 18
             width = min(inner, max(60.0, full.width())) + 24
             fade = 1.0 if self.bubble_until == float("inf") else max(0.0, min(1.0, (self.bubble_until - now)))
             x = min(max(head.x() - width / 2, 4.0), self.width() - width - 4)
-            gap = 0.27 * SIZES[self.size_name]
             if self.hanging:                             # below the (upside-down) head
-                y = min(self.height() - height - 4.0, head.y() + gap)
+                y = min(self.height() - height - 4.0, head.y() + reach)
             else:
-                y = max(4.0, head.y() - gap - height)
+                y = max(4.0, head.y() - reach - height)
             rect = QRectF(x, y, width, height)
             path = QPainterPath()
             path.addRoundedRect(rect, 10, 10)
@@ -711,6 +893,7 @@ def _window_class():
             p.setPen(QColor("#1f1f26"))
             p.drawText(rect.adjusted(12, 9, -12, -9), Qt.TextFlag.TextWordWrap, shown)
             p.setOpacity(1.0)
+            return height
 
     return CompanionWindow
 
@@ -728,6 +911,34 @@ class CompanionOverlay(Overlay):
         self.window.set_clips(self.window._clips_for(companion, voice))
         self.window.show()
         self._closed = False
+        # red.events handlers run on Red's voice thread: each one only emits a queued Qt signal.
+        self._unsubscribe = [events.on("heard", self._heard), events.on("said", self._said),
+                             events.on("mic", self._mic)]
+
+    def _heard(self, text: str = "", **_) -> None:
+        self._emit(self.window.heard_signal, str(text))
+
+    def _said(self, text: str = "", **_) -> None:
+        self._emit(self.window.said_signal, str(text))
+
+    def _mic(self, muted: bool = False, **_) -> None:
+        self._emit(self.window.mic_signal, bool(muted))
+
+    def _emit(self, signal, value) -> None:
+        if self._closed:
+            return
+        try:
+            signal.emit(value)
+        except RuntimeError:          # the window is already gone
+            pass
+
+    @property
+    def on_mic(self):
+        return self.window.on_mic
+
+    @on_mic.setter
+    def on_mic(self, callback) -> None:
+        self.window.on_mic = callback
 
     @property
     def on_click(self):
@@ -766,6 +977,9 @@ class CompanionOverlay(Overlay):
 
     def close(self) -> None:
         self._closed = True
+        for undo in self._unsubscribe:
+            undo()
+        self._unsubscribe = []
         try:
             self.window.timer.stop()
             self.window.full_timer.stop()
