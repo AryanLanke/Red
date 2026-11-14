@@ -513,6 +513,8 @@ class VoiceApp:
         the recording carries on from it, and "Hey Red" is taken off the transcript.
         """
         self._state("listening", "Listening...")
+        if not follow_up:
+            self._prime_chat()
         if prefix is None:
             self.voice.chime()
         timer = Timing(self.settings)
@@ -673,6 +675,17 @@ class VoiceApp:
 
     # --- helpers -------------------------------------------------------------
 
+    def _prime_chat(self) -> None:
+        """Red just woke: let the model read the chat prompt (and load, if it was unloaded)
+        while you talk, so the reply only has your words left to read. At most once a minute."""
+        if not getattr(self.settings, "chat_first", False) or self.chat is None:
+            return
+        now = time.monotonic()
+        if now - getattr(self, "_primed_at", -PRIME_EVERY_SECONDS) < PRIME_EVERY_SECONDS:
+            return
+        self._primed_at = now
+        threading.Thread(target=self.chat.prime, name="red-prime", daemon=True).start()
+
     def _follow_up_question(self, answer: str) -> str:
         """'Anything more you want to know about it?', or "" when the answer already asks something."""
         if asks_back(answer) or self.settings.follow_up_seconds <= 0 or self.chat.is_debate:
@@ -828,6 +841,10 @@ def _keep_alive_is_zero(keep_alive: str) -> bool:
     return keep_alive.strip().lower() in {"0", "0s", "0m", "0h"}
 
 
+RESUME_CHECK_SECONDS = 15.0
+PRIME_EVERY_SECONDS = 60.0          # the chat prompt is read ahead when Red wakes, at most this often
+
+
 def keep_model_warm(llm, stop: threading.Event, every: float = KEEP_WARM_SECONDS,
                     prime: Callable[[], object] | None = None):
     """Load the model now, then keep it loaded until `stop` is set.
@@ -854,8 +871,16 @@ def keep_model_warm(llm, stop: threading.Event, every: float = KEEP_WARM_SECONDS
                              since_start())
             except Exception as e:  # noqa: BLE001 - a slow first command is the only cost
                 log.warning("Couldn't load the model ahead of time: %s", e)
-            if stop.wait(every):
-                return
+            # Wait by the wall clock, in short steps: after the laptop sleeps, Ollama has
+            # unloaded the model (its keep_alive ran out) while a plain wait(every) could
+            # still have minutes to go. On 2026-11-13 the first "You're crazy!" after a
+            # sleep spent 23 s loading. Now the model is back within RESUME_CHECK seconds.
+            due = time.time() + every
+            while time.time() < due:
+                if stop.wait(min(RESUME_CHECK_SECONDS, every)):
+                    return
+            if time.time() - due > RESUME_CHECK_SECONDS * 2:
+                log.info("Woke up after %.0f s away: loading the model again", time.time() - due)
 
     thread = threading.Thread(target=loop, name="red-keep-warm", daemon=True)
     thread.start()

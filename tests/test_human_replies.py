@@ -79,6 +79,20 @@ def test_a_streamed_reply_never_speaks_the_invented_part():
     assert text == "Honestly, nothing deep. What's on yours?"
 
 
+def test_prime_reads_the_chat_prompt_with_one_token():
+    calls = []
+
+    class LLM:
+        def complete_json(self, system, user, schema, **kw):
+            calls.append((system, kw))
+            return "{"
+
+    chat = Chat(LLM())
+    chat.prime()
+    assert calls[0][0] == chat.system() and calls[0][1]["max_tokens"] == 1
+    Chat(None).prime()                                    # no model: nothing, no error
+
+
 def test_the_clock_is_only_in_the_prompt_when_time_comes_up():
     llm = StreamLLM("Not much. You?")
     chat = Chat(llm, now=lambda: datetime(2026, 11, 13, 12, 0))

@@ -374,6 +374,22 @@ class Chat:
             personality = ""
         return with_personality(CHAT_SYSTEM, personality) + self._profile()
 
+    def prime(self) -> None:
+        """Have the model read the chat prompt now, while the user is still talking.
+
+        Called when Red wakes. Ollama keeps the prompt it last read, so the real reply
+        only reads the new words: the first sentence came 1.4 s after the transcript
+        when the router's prompt was the one cached, about 0.3 s when the chat's was.
+        One token, thrown away; it also loads the model if it was unloaded.
+        """
+        if self.llm is None:
+            return
+        try:
+            complete(self.llm, self.system(), self.prompt("hi"), CHAT_SCHEMA,
+                     temperature=CHAT_TEMPERATURE, max_tokens=1)
+        except Exception as e:  # noqa: BLE001 - only a head start
+            log.debug("Chat prime failed: %s", e)
+
     def _ask(self, said: str) -> str:
         system = self.system()
         prompt = self._debate_prompt(said) if self.is_debate else self.prompt(said)

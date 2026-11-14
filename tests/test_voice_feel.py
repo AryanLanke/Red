@@ -181,6 +181,24 @@ def test_keep_model_warm_survives_errors():
     assert llm.calls >= 2
 
 
+def test_keep_model_warm_reloads_soon_after_the_laptop_wakes(monkeypatch):
+    """A sleep makes the wall clock jump: the next warm comes within one short check, not `every`."""
+    llm, stop = WarmLLM(), threading.Event()
+    clock = [1000.0]
+    monkeypatch.setattr(cli.time, "time", lambda: clock[0])
+    monkeypatch.setattr(cli, "RESUME_CHECK_SECONDS", 0.01)
+    thread = cli.keep_model_warm(llm, stop, every=3600)
+    assert llm.called.wait(2)
+    first = llm.calls
+    clock[0] += 4 * 3600                                  # the laptop slept 4 hours
+    deadline = time.monotonic() + 2
+    while llm.calls == first and time.monotonic() < deadline:
+        time.sleep(0.01)
+    stop.set()
+    thread.join(2)
+    assert llm.calls > first
+
+
 def test_keep_model_warm_skips_clients_without_warm():
     assert cli.keep_model_warm(object(), threading.Event()) is None
 

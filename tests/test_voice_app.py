@@ -483,7 +483,7 @@ def test_a_command_after_chat_runs_and_then_red_goes_quiet(world, monkeypatch):
     app, speaker, overlay, record, out = follow_app(
         world, monkeypatch, "Hello.", "Open my downloads.", "Check my repos.")
     app.handle("hotkey")
-    assert speaker.said[0].endswith("What's up?")
+    assert speaker.said[0].endswith(("What's up?", "What's going on?"))   # hello() by the hour
     assert speaker.said[1:] == ["Opening Downloads."]
     assert len(record.calls) == 2                            # "Check my repos." is never heard
     assert len(world["start"].calls) == 1
@@ -556,7 +556,7 @@ def test_asks_back(reply, asks):
 def test_a_question_in_the_reply_is_not_followed_by_another(world, monkeypatch):
     app, speaker, overlay, record, out = follow_app(world, monkeypatch, "Hello.", "No thanks.")
     app.handle("wakeword")
-    assert speaker.said[0].endswith("What's up?")
+    assert speaker.said[0].endswith(("What's up?", "What's going on?"))   # hello() by the hour
     assert speaker.said[1:] == ["Okay."]
 
 
@@ -917,6 +917,8 @@ class TalkLLM:
 
     def complete_json(self, system, user, schema, **kw):
         kind = "route" if system.startswith("You are the intent router") else "chat"
+        if kw.get("max_tokens") == 1:
+            kind = "prime"                                # read ahead when Red wakes
         self.calls.append(kind)
         if kind == "route":
             return json.dumps(COMMANDS.get(user.rsplit("\nCommand: ", 1)[-1],
@@ -929,7 +931,8 @@ def test_talk_goes_straight_to_chat_without_the_router(world, monkeypatch):
     world["llm"] = TalkLLM()
     app, speaker, _, _, _ = make_app(world, "You're crazy.", settings=load_settings(world["home"]))
     app.handle("hotkey")
-    assert world["llm"].calls == ["chat"]                 # one model call, not route + chat
+    calls = [c for c in world["llm"].calls if c != "prime"]
+    assert calls == ["chat"]                              # one model call, not route + chat
     assert speaker.said == ["Rude. What did I do?"]
     assert log_lines(world)[0]["tool"] == "none"
 
@@ -941,3 +944,17 @@ def test_a_command_still_goes_to_the_router_with_chat_first_on(world, monkeypatc
     app.handle("hotkey")
     assert "chat" not in world["llm"].calls[:1]           # the router (or its fast path), never chat
     assert log_lines(world)[0]["tool"] == "shutdown"
+
+
+def test_waking_reads_the_chat_prompt_ahead_once_a_minute(world, monkeypatch):
+    monkeypatch.setenv("RED_CHAT_FIRST", "on")
+    world["llm"] = TalkLLM()
+    app, *_ = make_app(world, "You're crazy.", "You're a nerd.", settings=load_settings(world["home"]))
+    started = []
+    monkeypatch.setattr(app.chat, "prime", lambda: started.append(1))
+    app.handle("hotkey")
+    app.handle("hotkey")                                  # within a minute: no second read-ahead
+    for t in threading.enumerate():
+        if t.name == "red-prime":
+            t.join(2)
+    assert started == [1]
