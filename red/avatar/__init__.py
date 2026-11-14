@@ -114,7 +114,12 @@ def available_companions(models_dir: Path) -> dict[str, str]:
 
 # Where the companion sits, and the frame set for it: the bottom edge, a bottom corner, or hanging
 # upside down from the top edge.
-SIDES = {"edge": "peek", "left": "cornerL", "right": "cornerR", "top": "top"}
+SIDES = {"edge": "peek", "left": "cornerL", "right": "cornerR", "top": "top",
+         "top-left": "topL", "top-right": "topR"}
+SIDE_OF = {prefix: side for side, prefix in SIDES.items()}       # frame set -> placement
+TOP_SIDES = ("top", "top-left", "top-right")        # the placements that hang upside down
+# A model without the frames for a placement uses the next best: a top corner is the top edge, then the edge.
+FALLBACK = {"topL": "top", "topR": "top", "top": "peek", "cornerL": "peek", "cornerR": "peek"}
 
 
 def frame_for_side(name: str, side: str, available: Callable[[str], bool] = lambda n: True) -> str:
@@ -128,9 +133,13 @@ def frame_for_side(name: str, side: str, available: Callable[[str], bool] = lamb
 
 def side_for(x: float, left: float, right: float, snap: float, y: float | None = None,
              top: float | None = None) -> str:
-    """Dropped within `snap` pixels of the top of the screen: hanging from the top edge. Near a side:
-    that bottom corner. Otherwise the bottom edge."""
+    """Dropped within `snap` pixels of the top of the screen: hanging from the top edge, or from the top
+    corner if it is also near a side. Near a side lower down: that bottom corner. Otherwise the bottom edge."""
     if y is not None and top is not None and y <= top + snap:
+        if x >= right - snap:
+            return "top-right"
+        if x <= left + snap:
+            return "top-left"
         return "top"
     if x >= right - snap:
         return "right"

@@ -47,6 +47,7 @@ def main() -> None:
     ap.add_argument("id", help="a short lowercase id, like bruno")
     ap.add_argument("--name", help="the name shown in the menu (default: the id, capitalised)")
     ap.add_argument("--voice", help="Kokoro voice for its pickup clips, like am_fenrir")
+    ap.add_argument("--sets", help="render only these frame sets (like topL,topR) into an existing companion")
     args = ap.parse_args()
     if not re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", args.id):
         raise SystemExit("the id must be lowercase letters, digits, - or _ (like bruno)")
@@ -69,8 +70,10 @@ def main() -> None:
     if not (HERE / "node_modules").exists():
         subprocess.run(["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund"], cwd=HERE,
                        check=True, shell=True)
-    subprocess.run(["node", str(HERE / "render.mjs"), "--vrm", str(stored), "--out", str(raw)], cwd=HERE,
-                   check=True)
+    render = ["node", str(HERE / "render.mjs"), "--vrm", str(stored), "--out", str(raw)]
+    if args.sets:
+        render += ["--sets", args.sets]
+    subprocess.run(render, cwd=HERE, check=True)
     finish = [sys.executable, str(HERE / "finish.py"), str(raw), str(out),
               "--name", args.name or args.id.title()]
     if args.voice:

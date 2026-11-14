@@ -24,20 +24,22 @@ PEEK = ["peek_idle", "peek_idle_blink", "peek_talk_1", "peek_talk_2", "peek_talk
 BODY = ["body_drag_1", "body_drag_2", "body_drag_3", "body_drag_fun", "body_drop"]
 CORNERS = [n.replace("peek_", "cornerR_") for n in PEEK] + [n.replace("peek_", "cornerL_") for n in PEEK]
 TOP = [n.replace("peek_", "top_") for n in PEEK]
+TOP_CORNERS = [n.replace("peek_", "topL_") for n in PEEK] + [n.replace("peek_", "topR_") for n in PEEK]
 
 
 def make_sprites(folder, names=None):
     """A tiny sprite folder like finish.py writes: solid pictures, marks, frames.json."""
     from PIL import Image
     folder.mkdir(parents=True, exist_ok=True)
-    names = names or PEEK + BODY + CORNERS + TOP
+    names = names or PEEK + BODY + CORNERS + TOP + TOP_CORNERS
     sets = {}
     for set_name, size, head in (("peek", (100, 80), [50, 30]), ("cornerR", (70, 90), [30, 30]),
                                  ("cornerL", (70, 90), [40, 30]), ("top", (100, 80), [50, 50]),
+                                 ("topL", (70, 90), [40, 60]), ("topR", (70, 90), [30, 60]),
                                  ("body", (80, 200), [40, 50])):
         frames = []
         for name in names:
-            if not name.startswith(set_name):
+            if not name.startswith(set_name + "_"):
                 continue
             Image.new("RGBA", size, (200, 80, 80, 255)).save(folder / f"{name}.png")
             frames.append({"name": name, "state": None, "emotion": None, "marks": {"head": head}})
@@ -52,7 +54,7 @@ def test_load_sprites(tmp_path):
     sprites = load_sprites(make_sprites(tmp_path / "red"))
     assert sprites.px_per_metre == 300
     assert sprites.sizes == {"peek": (100, 80), "cornerR": (70, 90), "cornerL": (70, 90), "top": (100, 80),
-                             "body": (80, 200)}
+                             "topL": (70, 90), "topR": (70, 90), "body": (80, 200)}
     assert (sprites.name, sprites.voice) == ("Red", None)       # Red speaks with RED_VOICE
     assert sprites.frames["body_drop"].set == "body"
     assert sprites.frames["peek_idle"].marks["head"] == [50, 30]
@@ -82,8 +84,12 @@ def test_corners():
     assert avatar.side_for(100, 0, 1919, 180) == "left"
     assert avatar.side_for(900, 0, 1919, 180) == "edge"
     assert avatar.side_for(900, 0, 1919, 180, y=60, top=0) == "top"
-    assert avatar.side_for(1900, 0, 1919, 180, y=60, top=0) == "top"      # the top wins over a corner
+    assert avatar.side_for(1900, 0, 1919, 180, y=60, top=0) == "top-right"   # near the top and a side
+    assert avatar.side_for(100, 0, 1919, 180, y=60, top=0) == "top-left"
+    assert avatar.side_for(1900, 0, 1919, 180, y=600, top=0) == "right"      # near a side, lower down
     assert avatar.side_for(900, 0, 1919, 180, y=600, top=0) == "edge"
+    assert avatar.frame_for_side("peek_sad", "top-left") == "topL_sad"
+    assert avatar.frame_for_side("peek_sad", "top-right") == "topR_sad"
     assert avatar.frame_for_side("peek_sad", "top") == "top_sad"
 
 
@@ -344,6 +350,65 @@ def test_corners_and_the_edge(window, tmp_path):
     assert w.frame_name.startswith("peek_")
     assert area.left() <= w.x_center <= area.right()
     assert json.loads((tmp_path / "spot.json").read_text())["side"] == "edge"
+
+
+def test_top_corners_hang_upside_down(window, tmp_path):
+    from PySide6.QtGui import QGuiApplication
+    w = window.window
+    area = QGuiApplication.primaryScreen().availableGeometry()
+    w.place("top-left")
+    assert w.hanging and w.geometry().top() == area.top() and w.geometry().left() == area.left()
+    w.tick()
+    assert w.frame_name.startswith("topL_")
+    assert w.sprite_left(70) == 0.0
+    w.place("top-right")
+    assert w.hanging and w.geometry().top() == area.top() and w.geometry().right() == area.right()
+    w.tick()
+    assert w.frame_name.startswith("topR_")
+    assert w.sprite_left(70) == w.width() - 70
+    w._on_heard("hello")
+    w._on_said("Hi there.")
+    window.clock.t += 2
+    w.muted = True
+    w.tick()
+    assert not w.grab().isNull()                          # bubbles below the head, badge at the bottom
+    assert json.loads((tmp_path / "spot.json").read_text())["side"] == "top-right"
+    menu = w.build_menu()
+    labels = [action.text() for action in menu.actions()]
+    assert "Hang from the top-left corner" in labels and "Hang from the top-right corner" not in labels
+
+
+def test_a_drop_near_a_top_corner_snaps_there(window):
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QGuiApplication
+    w = window.window
+    area = QGuiApplication.primaryScreen().availableGeometry()
+    start = QPointF(area.center().x(), area.bottom() - 20)
+    w.press(start)
+    spot = QPointF(area.right() - 40, area.top() + 30)
+    w.move(spot)
+    w.release(spot)
+    assert w.side == "top-right" and not w.look.falling
+    assert w.geometry().top() == area.top() and w.geometry().right() == area.right()
+
+
+def test_a_model_without_top_corner_frames_hangs_from_the_top_edge(app, tmp_path, monkeypatch):
+    from red.avatar import window as win
+    monkeypatch.setattr(win, "play_clip", lambda p: None)
+    names = [n for n in PEEK + BODY + CORNERS + TOP]
+    sprites = load_sprites(make_sprites(tmp_path / "models" / "companion" / "red", names))
+    overlay = win.CompanionOverlay(sprites, models_dir=tmp_path / "models", clock=Clock(),
+                                   check_fullscreen=lambda: False)
+    try:
+        from PySide6.QtGui import QGuiApplication
+        area = QGuiApplication.primaryScreen().availableGeometry()
+        w = overlay.window
+        w.place("top-left")
+        w.tick()
+        assert w.hanging and w.frame_name.startswith("top_")       # the top edge's frames, in the corner
+        assert w.x_center == pytest.approx(area.left() + w.perch_size[0] / 2)
+    finally:
+        overlay.close()
 
 
 def test_the_reply_waits_for_the_voice(app, window):

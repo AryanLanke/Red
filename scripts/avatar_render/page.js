@@ -23,6 +23,9 @@ const SETS = {
   cornerL: { width: 1000, height: 1000 },
   // Hanging upside down from the top edge (the model is rolled 180 degrees).
   top: { width: 1000, height: 1000 },
+  // Hanging from a top corner: the bottom-corner poses turned over (finish.py cuts the side and the top).
+  topL: { width: 1000, height: 1000 },
+  topR: { width: 1000, height: 1000 },
 };
 
 const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
@@ -102,6 +105,8 @@ window.loadModel = async (url) => {
   views.cornerR = views.peek;
   views.cornerL = views.peek;
   views.top = { centerY: -(headY - 0.12), visible: 1.0 };      // the peek view, turned over
+  views.topL = views.top;
+  views.topR = views.top;
   vrm.lookAt.target = lookTarget;
   vrm.lookAt.autoUpdate = true;
 

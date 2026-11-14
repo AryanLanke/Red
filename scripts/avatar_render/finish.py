@@ -2,7 +2,7 @@
 
     python scripts\\avatar_render\\finish.py D:\\RED\\models\\companion\\red\\raw D:\\RED\\models\\companion\\red
 
-Frames come in sets (see frames.js): peek, the two bottom corners, top (hanging upside down) and body. Every frame of a set gets the same crop, so the character never
+Frames come in sets (see frames.js): peek, the two bottom corners, top (hanging upside down), the two top corners (topL, topR) and body. Every frame of a set gets the same crop, so the character never
 jumps between frames, and both sets are scaled to the same pixels per metre, so the character is the same
 size when you pick it up. Peek frames are cut at the edge line: just under the forearms in `peek_idle`.
 The window puts the bottom of a peek frame on the screen edge.
@@ -65,9 +65,9 @@ def contact_sheet(frames: list[tuple[str, Image.Image]], path: Path, columns: in
 def finish_set(name: str, entries: list[dict], raw: Path, out: Path, ppm: float) -> dict:
     images = [Image.open(raw / f"{e['name']}.png").convert("RGBA") for e in entries]
     left, top, right, bottom = union_box(images)
-    if name in ("peek", "cornerR", "cornerL", "top"):
+    if name in ("peek", "cornerR", "cornerL", "top", "topL", "topR"):
         idle = next((e for e in entries if e["name"] == f"{name}_idle"), entries[0])
-        if name == "top":
+        if name.startswith("top"):
             top = edge_line(idle, upside_down=True)   # the window puts the top of these on the top edge
         else:
             bottom = edge_line(idle)
@@ -76,6 +76,10 @@ def finish_set(name: str, entries: list[dict], raw: Path, out: Path, ppm: float)
         right = idle["marks"]["leftHand"][0]
     elif name == "cornerL":
         left = idle["marks"]["rightHand"][0]
+    elif name == "topL":                    # cornerR turned over: the left hand grips the left edge
+        left = idle["marks"]["leftHand"][0]
+    elif name == "topR":
+        right = idle["marks"]["rightHand"][0]
     scale = ppm / entries[0]["pxPerMetre"]
     width, height = round((right - left) * scale), round((bottom - top) * scale)
 
@@ -104,8 +108,8 @@ def main() -> None:
     args.out.mkdir(parents=True, exist_ok=True)
     old = args.out / "frames.json"
     kept = json.loads(old.read_text(encoding="utf-8")) if old.exists() else {}
-    sets = {}
-    for name in ("peek", "cornerR", "cornerL", "top", "body"):
+    sets = dict(kept.get("sets", {}))          # sets this raw folder doesn't have stay as they were
+    for name in ("peek", "cornerR", "cornerL", "top", "topL", "topR", "body"):
         entries = [f for f in meta["frames"] if f["set"] == name and (args.raw / f"{f['name']}.png").exists()]
         if entries:
             sets[name] = finish_set(name, entries, args.raw, args.out, args.ppm)

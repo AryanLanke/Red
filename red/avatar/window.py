@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from . import (SIDES, SIZES, SLEEP_AFTER_SECONDS, Look, MouthMeter, Sprites, available_companions,
+from . import (FALLBACK, SIDE_OF, SIDES, SIZES, TOP_SIDES, SLEEP_AFTER_SECONDS, Look, MouthMeter, Sprites, available_companions,
                clip_paths, companion_folder, emotion_from_text, frame_for_side, kokoro_synthesizer,
                load_sprites, make_clips, mark_for, meter_speaker, pick_frame, play_clip, side_for)
 from .. import events
@@ -182,7 +182,7 @@ def _window_class():
                 self.pixmaps[name] = pm
             peek = self.pixmaps["peek_idle"]
             self.set_size = {}                           # frame set -> (width, height) on screen
-            for set_name in ("peek", "cornerR", "cornerL", "top", "body"):
+            for set_name in ("peek", "cornerR", "cornerL", "top", "topL", "topR", "body"):
                 pm = next((p for n, p in self.pixmaps.items() if n.startswith(set_name + "_")), None)
                 if pm is not None:
                     self.set_size[set_name] = (pm.width() / dpr, pm.height() / dpr)
@@ -195,6 +195,8 @@ def _window_class():
         def prefix(self) -> str:
             """The frame set for where it sits; a corner the model has no frames for is the edge."""
             prefix = SIDES.get(self.side, "peek")
+            while prefix not in self.set_size and prefix in FALLBACK:
+                prefix = FALLBACK[prefix]
             return prefix if prefix in self.set_size else "peek"
 
         @property
@@ -218,14 +220,18 @@ def _window_class():
             width = max(w, BUBBLE_WIDTH) + (SIDE_PAD if self.prefix != "peek" else 2 * SIDE_PAD)
             height = BUBBLE_SPACE + h
             top = round(area.bottom() + 1 - height)
-            if self.prefix == "cornerR":
+            if self.prefix in ("cornerR", "topR"):
                 left = area.right() + 1 - width
                 self.x_center = area.right() + 1 - w / 2
-            elif self.prefix == "cornerL":
+            elif self.prefix in ("cornerL", "topL"):
                 left = area.left()
                 self.x_center = area.left() + w / 2
             else:
-                if self.x_center is None:
+                if self.side in ("left", "top-left"):         # a corner this model has no frames for
+                    self.x_center = area.left() + w / 2
+                elif self.side in ("right", "top-right"):
+                    self.x_center = area.right() - w / 2
+                elif self.x_center is None:
                     self.x_center = area.right() - w / 2 - SIDE_PAD
                 self.x_center = min(max(self.x_center, area.left() + w / 2), area.right() - w / 2)
                 left = self.x_center - width / 2
@@ -236,16 +242,16 @@ def _window_class():
         @property
         def hanging(self) -> bool:
             """Upside down from the top edge: the picture is at the top and the bubble below it."""
-            return self.prefix == "top"
+            return self.prefix in ("top", "topL", "topR")
 
         def sprite_top(self, h: float) -> float:
             return 0.0 if self.hanging else self.height() - h
 
         def sprite_left(self, w: float) -> float:
             """Where the picture starts inside the window: flush with the screen side in a corner."""
-            if self.prefix == "cornerR":
+            if self.prefix in ("cornerR", "topR"):
                 return self.width() - w
-            if self.prefix == "cornerL":
+            if self.prefix in ("cornerL", "topL"):
                 return 0.0
             return (self.width() - w) / 2
 
@@ -465,7 +471,7 @@ def _window_class():
                 shown.state, shown.since = "greeting", self.until["greeting"] - GREETING_SECONDS
             elif "notice" in self.until and look.state in ("listening", "idle", "sleeping"):
                 shown.state = "notice"
-            self.frame_name = frame_for_side(pick_frame(shown, now, self.has), self.side, self.has)
+            self.frame_name = frame_for_side(pick_frame(shown, now, self.has), SIDE_OF[self.prefix], self.has)
             self.shown = shown
 
             busy = (look.dragging or look.falling or look.state in ("speaking", "greeting") or self.until
@@ -523,7 +529,7 @@ def _window_class():
                 self.side = side_for(pos.x(), area.left(), area.right(), CORNER_SNAP, pos.y(), area.top())
                 self._sound(self.drop_clips)
                 self._speed(FAST)
-                if self.side == "top":                   # it grabs the top edge: no falling
+                if self.side in TOP_SIDES:               # it grabs the top edge or corner: no falling
                     self.look.falling = False
                     self.x_center = pos.x()
                     self.until["notice"] = self.clock() + NOTICE_SECONDS
@@ -621,12 +627,17 @@ def _window_class():
             self.tick()
 
         def contextMenuEvent(self, event):  # noqa: N802
+            self.build_menu().exec(event.globalPos())
+
+        def build_menu(self):
             menu = QMenu()
             if self.on_click:
                 menu.addAction("Open chat", self.on_click)
             menu.addSeparator()
-            for side, label in (("left", "Sit in the left corner"), ("edge", "Sit on the bottom edge"),
-                                ("right", "Sit in the right corner"), ("top", "Hang from the top edge")):
+            for side, label in (("left", "Sit in the bottom-left corner"), ("edge", "Sit on the bottom edge"),
+                                ("right", "Sit in the bottom-right corner"), ("top", "Hang from the top edge"),
+                                ("top-left", "Hang from the top-left corner"),
+                                ("top-right", "Hang from the top-right corner")):
                 if side != self.side and SIDES[side] in self.set_size:
                     menu.addAction(label, functools.partial(self.place, side))
             if self.models_dir is not None:
@@ -637,7 +648,7 @@ def _window_class():
             menu.addSeparator()
             menu.addAction("Microphone on" if self.muted else "Microphone off", self.toggle_mic)
             menu.addAction("Hide until Red talks", self.hide)
-            menu.exec(event.globalPos())
+            return menu
 
         def switch(self, companion: str) -> None:
             try:
@@ -839,7 +850,7 @@ def _window_class():
         def _paint_mic_badge(self, p, sprite: QRectF, unit: float) -> None:
             """A small crossed-out microphone on the outer top corner of the picture: the mic is off."""
             r = max(10.0, 15 * unit)
-            toward_left = self.prefix != "cornerL"            # away from the screen's side
+            toward_left = self.prefix not in ("cornerL", "topL")     # away from the screen's side
             c = QPointF(sprite.left() + r + 6 if toward_left else sprite.right() - r - 6,
                         sprite.bottom() - r - 6 if self.hanging else sprite.top() + r + 6)
             p.save()

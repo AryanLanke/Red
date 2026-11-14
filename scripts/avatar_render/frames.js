@@ -197,4 +197,17 @@ function top(frame) {
 }
 const TOP = PEEK.map(top);
 
-export const FRAMES = [...PEEK, ...CORNER_R, ...CORNER_L, ...TOP, ...BODY];
+// --- Hanging upside down from a top corner ----------------------------------------------------------------
+// The bottom-corner pose rolled over like `top` above: cornerR turned over is the top-LEFT corner (the
+// hand that gripped the right edge now grips the left one), and cornerL turned over is the top-right
+// corner. Both are posed, never flipped sideways, so hair clips and logos stay on the right side.
+function hang(frame, from, set) {
+  const aim = {};
+  for (const [k, [x, y, z]] of Object.entries(frame.aim || {})) aim[k] = [-x, -y, z];
+  const look = frame.look ? [-frame.look[0], -frame.look[1]] : undefined;
+  return { ...frame, name: frame.name.replace(from, `${set}_`), set, flip: true, aim, look };
+}
+const TOP_L = CORNER_R.map((f) => hang(f, /^cornerR_/, 'topL'));
+const TOP_R = CORNER_L.map((f) => hang(f, /^cornerL_/, 'topR'));
+
+export const FRAMES = [...PEEK, ...CORNER_R, ...CORNER_L, ...TOP, ...TOP_L, ...TOP_R, ...BODY];
