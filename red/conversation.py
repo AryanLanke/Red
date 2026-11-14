@@ -154,6 +154,8 @@ _DEV_WORDS = re.compile(
 _MODAL = re.compile(r"\b\w+ (?:should|must|needs to|has to|have to) (?:be|go|have|use|run|work|look|say|show|"
                     r"stay|do|get|make|keep|start|stop)\b")
 _CONTINUATION = re.compile(r"^(?:and|but|also|then|so|because|or|which|that)\b")
+_YOU = re.compile(r"\b(?:you|you're|youre|your|yourself)\b")
+_ME = re.compile(r"\b(?:i|i'm|im|i've|i'd|me|my|myself)\b")
 
 
 def foreground_title() -> str:
@@ -175,7 +177,7 @@ def dictation_window(title: str) -> bool:
 # correction. 2026-11-14: "Could you write a code for me?" and "I said write a code for me..." were
 # dropped five times as dictation into the editor in front.
 _ASKS_RED = re.compile(
-    r"\bfor me\b|"
+    r"\bfor me\b|\b(?:remind|notify|wake|alert) me\b|"
     r"^(?:(?:hey|hi|ok|okay|so|um|uh|and|please|now|no|alright|all right)[ ,]+)*"
     r"(?:can you|could you|would you|will you|can u|could u)\b")
 _REPEAT = re.compile(
@@ -261,15 +263,19 @@ def dictation_like(text: str, title: str, own_names: Iterable[str] = ("red",)) -
         return False
     if asks_red(said, own_names):
         return False
-    if len(words) >= _LONG_WORDS:
-        return True
-    if _RED_START.match(said):
-        return False
-    if len(words) >= 10 and not _CONTINUATION.match(said) and _DEV_WORDS.search(said) is None:
-        return False                                       # a long sentence about anything else
     instruction = _INSTRUCTION_START.match(said) is not None or (
         len(words) >= 8 and _MODAL.search(said) is not None)
     dev = _DEV_WORDS.search(said) is not None
+    if not dev and _YOU.search(said) and _ME.search(said):
+        return False                       # "what do you feel I should do?": the user and Red, no code
+    if len(words) >= _LONG_WORDS:
+        # Long prose about code, or an instruction: dictation. A long story, a feeling or a question
+        # about anything else is talk to Red (2026-11-14: 20 of the user's 168 real lines are like that).
+        return dev or instruction or _CONTINUATION.match(said) is not None
+    if _RED_START.match(said):
+        return False
+    if len(words) >= 10 and not _CONTINUATION.match(said) and not dev:
+        return False                                       # a long sentence about anything else
     if len(words) >= 6 and (instruction or dev):
         return True
     if len(words) >= 4 and instruction and dev:            # "make this project faster"

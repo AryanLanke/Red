@@ -1,0 +1,32 @@
+# Real sentences that never reached the command log: red.log on 2026-11-14 shows them dropped as
+# dictation into the editor in front (plan.md A1). Same fields as commands.toml.
+
+[[line]]
+said = "Could you write a code for me?"
+want = ["write_code", "talk"]
+note = "dropped as dictation; Red may ask what the code should do"
+first = "2026-11-14"
+
+[[line]]
+said = "Write a code for me that adds 2 binary numbers in Python language"
+want = ["write_code"]
+note = "dropped as dictation"
+first = "2026-11-14"
+
+[[line]]
+said = "I said write a code for me that adds two numbers"
+want = ["write_code"]
+note = "dropped as dictation"
+first = "2026-11-14"
+
+[[line]]
+said = "I said write a code for me that adds two numbers in Python language"
+want = ["write_code"]
+note = "dropped as dictation"
+first = "2026-11-14"
+
+[[line]]
+said = "OK, skip that thing, I want you to write a code that adds two numbers in Python language."
+want = ["write_code"]
+note = "dropped as dictation (16 words)"
+first = "2026-11-14"
