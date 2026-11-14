@@ -71,10 +71,47 @@ def test_build_script_checks_hashes_and_never_runs_unpinned_downloads():
     assert "pins.json" in ps1 and "requirements-lock.txt" in ps1
 
 
+def test_the_sandbox_config_is_offline_and_maps_only_the_results_read_write():
+    import xml.etree.ElementTree as ET
+    text = (INSTALLER / "sandbox-test.wsb").read_text(encoding="utf-8")
+    for slot in ("{SETUP_DIR}", "{SCRIPTS_DIR}", "{RESULTS_DIR}", "{SETUP_NAME}"):
+        assert slot in text
+    filled = text.replace("{SETUP_DIR}", r"D:\a").replace("{SCRIPTS_DIR}", r"D:\b") \
+        .replace("{RESULTS_DIR}", r"D:\c").replace("{SETUP_NAME}", "Red-Setup.exe")
+    root = ET.fromstring(filled)
+    assert root.findtext("Networking") == "Disable" and root.findtext("vGPU") == "Disable"
+    assert root.findtext("AudioInput") == "Disable"
+    maps = {m.findtext("HostFolder"): m.findtext("ReadOnly") for m in root.iter("MappedFolder")}
+    assert maps == {r"D:\a": "true", r"D:\b": "true", r"D:\c": "false"}
+    command = root.findtext("LogonCommand/Command")
+    assert "sandbox_test.ps1 -Mode guest" in command and r"C:\RedTest\setup\Red-Setup.exe" in command
+
+
+def test_the_install_test_covers_install_doctor_and_both_uninstalls():
+    ps1 = (INSTALLER / "sandbox_test.ps1").read_text(encoding="utf-8")
+    for needed in ("/VERYSILENT", "/TASKS=startup", '"doctor"', "/DELETEDATA=1", "uninstall keeps memory",
+                   "result.json", "WindowsSandbox.exe", "sandbox-test.wsb"):
+        assert needed in ps1, needed
+    # staged mode must never install into the real %LOCALAPPDATA%\Red
+    assert "never the real %LOCALAPPDATA%\\Red" in ps1
+
+
+def test_the_uninstaller_knows_every_folder_red_makes(tmp_path):
+    from red.config import load_settings
+    iss = (INSTALLER / "red.iss").read_text(encoding="utf-8")
+    listed = set(re.search(r"UserFolders = '([^']+)'", iss).group(1).split(";"))
+    s = load_settings(tmp_path)
+    s.ensure_dirs()
+    made = {p.name for p in tmp_path.iterdir() if p.is_dir()}
+    assert made and made <= listed, made - listed
+    assert {"memory", "sounds", "plugins", "searxng"} <= listed
+
+
 @pytest.mark.skipif(shutil.which("powershell") is None, reason="needs Windows PowerShell")
-def test_build_script_parses():
+@pytest.mark.parametrize("script", ["build.ps1", "sandbox_test.ps1"])
+def test_installer_scripts_parse(script):
     command = ("$e=$null; [void][System.Management.Automation.Language.Parser]::ParseFile("
-               f"'{INSTALLER / 'build.ps1'}', [ref]$null, [ref]$e); if ($e) {{ $e | ForEach-Object Message; exit 1 }}")
+               f"'{INSTALLER / script}', [ref]$null, [ref]$e); if ($e) {{ $e | ForEach-Object Message; exit 1 }}")
     done = subprocess.run(["powershell", "-NoProfile", "-Command", command], capture_output=True, text=True,
                           timeout=60)
     assert done.returncode == 0, done.stdout

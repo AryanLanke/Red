@@ -1,0 +1,36 @@
+<!--
+  Windows Sandbox config for Red's install test. Don't open this file directly: run
+    powershell -ExecutionPolicy Bypass -File installer\sandbox_test.ps1 -Mode host
+  which fills in the {..} folders, starts the Sandbox and waits for result.json.
+  A clean Windows with no network and no GPU (the Lite tier's PC): the installer must not need either.
+  The installer and scripts are mapped read-only; only the results folder is writable.
+-->
+<Configuration>
+  <Networking>Disable</Networking>
+  <vGPU>Disable</vGPU>
+  <AudioInput>Disable</AudioInput>
+  <VideoInput>Disable</VideoInput>
+  <ClipboardRedirection>Disable</ClipboardRedirection>
+  <PrinterRedirection>Disable</PrinterRedirection>
+  <MemoryInMB>4096</MemoryInMB>
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>{SETUP_DIR}</HostFolder>
+      <SandboxFolder>C:\RedTest\setup</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>{SCRIPTS_DIR}</HostFolder>
+      <SandboxFolder>C:\RedTest\scripts</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>{RESULTS_DIR}</HostFolder>
+      <SandboxFolder>C:\RedTest\results</SandboxFolder>
+      <ReadOnly>false</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+  <LogonCommand>
+    <Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\RedTest\scripts\sandbox_test.ps1 -Mode guest -Setup C:\RedTest\setup\{SETUP_NAME} -Results C:\RedTest\results -Shutdown</Command>
+  </LogonCommand>
+</Configuration>

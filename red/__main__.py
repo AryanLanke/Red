@@ -1422,6 +1422,9 @@ def main(argv: list[str] | None = None) -> int:
     p_plugins.add_argument("action", nargs="*", metavar="list | on NAME | off NAME")
     p_startup = sub.add_parser("startup", help="start Red when you sign in: on, off, or show")
     p_startup.add_argument("action", nargs="?", choices=("on", "off"))
+    p_nightly = sub.add_parser("nightly", help="the nightly self-test: on, off, run, or show",
+                               add_help=False)
+    p_nightly.add_argument("rest", nargs=argparse.REMAINDER)
     p_route = sub.add_parser("route", help="show the tool call for one command")
     p_route.add_argument("text", nargs="+")
     p_run = sub.add_parser("run", help="run one typed command")
@@ -1463,6 +1466,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "startup":
         from .startup import main as startup_main
         return startup_main(args.action, settings.home)
+    if args.cmd == "nightly":
+        from .nightly import main as nightly_main
+        return nightly_main(args.rest, settings.home)
     if args.cmd in ("google-login", "google-logout"):
         return _google_command(args.cmd, settings)
     logging.basicConfig(filename=settings.logs_dir / "red.log", level=logging.INFO,
