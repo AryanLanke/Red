@@ -138,6 +138,7 @@ def wire_menu(overlay, app) -> MenuActions | None:
                               music=music_function(app), remind=remind)
         window.actions = actions
         window.on_switch = switch_function(app)
+        window.on_conversation = lambda: app.toggle_conversation("button")   # the mic button
         window.on_quiet = quiet_function(app)
         window.on_settings = settings_function()
         window.on_quit = quit_function()

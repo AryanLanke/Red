@@ -97,6 +97,7 @@ def _window_class():
         heard_signal = Signal(str)            # events "heard", "said" and "mic" arrive on Red's voice
         said_signal = Signal(str)             # thread: these queued signals hand them to Qt
         mic_signal = Signal(bool)
+        conv_signal = Signal(str, bool)       # events conversation / zipped / paused / not_for_me (kind, on)
         summon_signal = Signal()              # the summon/hide hotkey (pynput's thread -> Qt)
         companion_signal = Signal(str)        # event "companion": switched by a voice command or the app
         idle_signal = Signal(str)             # event "idle_action": look around, yawn, doze, wander...
@@ -140,6 +141,13 @@ def _window_class():
             self.heard_until = 0.0
             self.muted = False                           # microphone off: a crossed mic on the companion
             self.on_mic: Callable[[bool], None] | None = None     # the host mutes the listener
+            # Conversation mode (the mic button, like Windows Copilot): red/conversation.py
+            self.convo = False                           # every sentence is for Red: a glowing ring
+            self.zipped = False                          # the mouth is zipped: deaf until clicked or Hey Red
+            self.paused = False                          # another app has the microphone
+            self.not_for_me_until = 0.0                  # not for me? in grey on the bubble
+            self.on_conversation: Callable[[], bool] | None = None   # VoiceApp.toggle_conversation
+            self.mic_rect = QRectF()                     # where the mic button was painted (for clicks)
             self.rng = random.Random()
             self.actions = None                           # MenuActions: reminders, tasks, talk, music
             self.on_settings: Callable[[], None] | None = None
@@ -178,6 +186,7 @@ def _window_class():
             self.heard_signal.connect(self._on_heard, Qt.ConnectionType.QueuedConnection)
             self.said_signal.connect(self._on_said, Qt.ConnectionType.QueuedConnection)
             self.mic_signal.connect(self._on_mic, Qt.ConnectionType.QueuedConnection)
+            self.conv_signal.connect(self._on_conv, Qt.ConnectionType.QueuedConnection)
             self.idle_signal.connect(self._on_idle_action, Qt.ConnectionType.QueuedConnection)
             self.companion_signal.connect(self._on_companion, Qt.ConnectionType.QueuedConnection)
             self.summon_signal.connect(self.summon, Qt.ConnectionType.QueuedConnection)
@@ -456,6 +465,30 @@ def _window_class():
             self._speed(FAST)
             self.tick()
 
+        def _on_conv(self, kind: str, on: bool) -> None:
+            if kind == "conversation":
+                self.convo = bool(on)
+                if on:
+                    self.zipped = False
+            elif kind == "zipped":
+                self.zipped = bool(on)
+            elif kind == "paused":
+                self.paused = bool(on)
+            elif kind == "not_for_me":
+                self.not_for_me_until = self.clock() + 3.0
+            self.last_activity = self.clock()
+            self.update()
+
+        def click_mic(self) -> None:
+            """The mic button: conversation mode on, or (while it listens) the zipped mouth."""
+            if self.on_conversation is None:
+                log.warning("No conversation control is connected")
+                return
+            try:
+                self.on_conversation()
+            except Exception:  # noqa: BLE001 - the window must survive it
+                log.exception("The mic button failed")
+
         def _on_mic(self, muted: bool) -> None:
             self.muted = bool(muted)
             self.update()
@@ -716,6 +749,11 @@ def _window_class():
                     self._save()
                     self.animate("land")
                 return
+            if pressed is not None and not self.mic_rect.isEmpty():
+                local = self.mapFromGlobal(pressed.toPoint())
+                if self.mic_rect.contains(QPointF(local)):
+                    self.click_mic()
+                    return
             if pressed is not None and self.on_click:
                 try:
                     self.on_click()
@@ -843,6 +881,8 @@ def _window_class():
             who it is, how big, asleep or quiet, the microphone, settings, hide and quit."""
             menu = QMenu()
             have = self.actions is not None
+            menu.addAction("Talk to me" if not self.convo else "Zip it (stop listening)",
+                           self.click_mic).setEnabled(self.on_conversation is not None)
             menu.addAction("Talk", self.talk).setEnabled(have and self.actions.can_talk)
             if self.on_click:
                 menu.addAction("Open chat", self.on_click)
@@ -1089,8 +1129,9 @@ def _window_class():
             if age is not None:
                 self._paint_heart(p, head, age, unit)
             self._paint_bubbles(p, head, now)
-            if self.muted:
-                self._paint_mic_badge(p, QRectF(left + dx, top + dy, w, h), unit)
+            self._paint_mic_badge(p, QRectF(left + dx, top + dy, w, h), unit)
+            if now < self.not_for_me_until:
+                self._paint_not_for_me(p, head)
             p.end()
 
         def _paint_heart(self, p, head: QPointF, age: float, unit: float) -> None:
@@ -1219,14 +1260,25 @@ def _window_class():
             p.setOpacity(1.0)
 
         def _paint_mic_badge(self, p, sprite: QRectF, unit: float) -> None:
-            """A small crossed-out microphone on the outer top corner of the picture: the mic is off."""
+            """The mic button, on the outer top corner of the picture. Click it to talk (conversation mode),
+            click again to zip Red's mouth. Dark with a mic when idle, a pulsing red ring while listening,
+            a zip line when zipped, three dots while another app has the microphone, crossed when off."""
             r = max(10.0, 15 * unit)
             toward_left = self.prefix not in ("cornerL", "topL")     # away from the screen's side
             c = QPointF(sprite.left() + r + 6 if toward_left else sprite.right() - r - 6,
                         sprite.bottom() - r - 6 if self.hanging else sprite.top() + r + 6)
+            self.mic_rect = QRectF(c.x() - r * 1.15, c.y() - r * 1.15, r * 2.3, r * 2.3)
             p.save()
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor(38, 40, 48, 225))
+            if self.convo and not self.muted:
+                pulse = 0.5 + 0.5 * math.sin(self.clock() * 4.0)
+                p.setBrush(QColor(229, 72, 77, int(60 + 60 * pulse)))
+                p.drawEllipse(c, r * (1.25 + 0.2 * pulse), r * (1.25 + 0.2 * pulse))
+                p.setBrush(QColor(229, 72, 77, 235))
+            elif self.zipped or self.paused or self.muted:
+                p.setBrush(QColor(90, 92, 100, 225))
+            else:
+                p.setBrush(QColor(38, 40, 48, 205))
             p.drawEllipse(c, r, r)
             ink = QPen(QColor(245, 245, 248), max(1.3, r * 0.13))
             ink.setCapStyle(Qt.PenCapStyle.RoundCap)
@@ -1235,8 +1287,39 @@ def _window_class():
             p.drawRoundedRect(QRectF(c.x() - r * 0.2, c.y() - r * 0.58, r * 0.4, r * 0.7), r * 0.2, r * 0.2)
             p.drawArc(QRectF(c.x() - r * 0.40, c.y() - r * 0.38, r * 0.8, r * 0.68), 180 * 16, 180 * 16)
             p.drawLine(QPointF(c.x(), c.y() + r * 0.3), QPointF(c.x(), c.y() + r * 0.55))
-            p.setPen(QPen(QColor("#e5484d"), max(1.8, r * 0.17), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-            p.drawLine(QPointF(c.x() - r * 0.62, c.y() - r * 0.62), QPointF(c.x() + r * 0.62, c.y() + r * 0.62))
+            if self.muted:
+                p.setPen(QPen(QColor("#e5484d"), max(1.8, r * 0.17), Qt.PenStyle.SolidLine,
+                              Qt.PenCapStyle.RoundCap))
+                p.drawLine(QPointF(c.x() - r * 0.62, c.y() - r * 0.62), QPointF(c.x() + r * 0.62, c.y() + r * 0.62))
+            elif self.zipped:       # a zip across the mic: a line with teeth
+                p.setPen(QPen(QColor(245, 245, 248), max(1.2, r * 0.12)))
+                for i in range(-3, 4):
+                    x = c.x() + i * r * 0.22
+                    d = r * 0.09 * (1 if i % 2 else -1)
+                    p.drawLine(QPointF(x, c.y() - d), QPointF(x, c.y() + d))
+                p.drawLine(QPointF(c.x() - r * 0.66, c.y()), QPointF(c.x() + r * 0.66, c.y()))
+            elif self.paused:       # three dots: paused, another app is listening
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QColor(245, 245, 248))
+                for i in (-1, 0, 1):
+                    p.drawEllipse(QPointF(c.x() + i * r * 0.34, c.y() + r * 0.72), r * 0.09, r * 0.09)
+            p.restore()
+
+        def _paint_not_for_me(self, p, head: QPointF) -> None:
+            """'not for me?' in grey, a small tag by the head, for 3 s after a sentence Red let go."""
+            font = QFont("Segoe UI", 9)
+            font.setItalic(True)
+            p.save()
+            p.setFont(font)
+            width = 82.0
+            x = min(max(head.x() - width / 2, 4.0), self.width() - width - 4)
+            y = head.y() + 14 if self.hanging else max(4.0, head.y() - 34)
+            rect = QRectF(x, y, width, 22)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(236, 238, 242, 200))
+            p.drawRoundedRect(rect, 9, 9)
+            p.setPen(QColor(120, 122, 130))
+            p.drawText(rect, Qt.AlignmentFlag.AlignCenter, "not for me?")
             p.restore()
 
         def _paint_bubble(self, p, head: QPointF, now: float, shown: str, reach: float) -> float:
@@ -1296,6 +1379,10 @@ class CompanionOverlay(Overlay):
         # red.events handlers run on Red's voice thread: each one only emits a queued Qt signal.
         self._unsubscribe = [events.on("heard", self._heard), events.on("said", self._said),
                              events.on("mic", self._mic),
+                             events.on("conversation", lambda on=False, **_: self._conv("conversation", on)),
+                             events.on("zipped", lambda on=False, **_: self._conv("zipped", on)),
+                             events.on("paused", lambda on=False, **_: self._conv("paused", on)),
+                             events.on("not_for_me", lambda **_: self._conv("not_for_me", True)),
                              events.on("idle_action", self._idle_action),
                              events.on("companion", self._companion)]
 
@@ -1313,6 +1400,21 @@ class CompanionOverlay(Overlay):
 
     def _mic(self, muted: bool = False, **_) -> None:
         self._emit(self.window.mic_signal, bool(muted))
+
+    def _conv(self, kind: str, on: bool) -> None:
+        if not self._closed:
+            try:
+                self.window.conv_signal.emit(kind, bool(on))
+            except RuntimeError:
+                pass
+
+    @property
+    def on_conversation(self):
+        return self.window.on_conversation
+
+    @on_conversation.setter
+    def on_conversation(self, callback) -> None:
+        self.window.on_conversation = callback
 
     def _emit(self, signal, value) -> None:
         if self._closed:

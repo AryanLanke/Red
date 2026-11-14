@@ -998,8 +998,9 @@ def test_the_menu_has_everything_a_desktop_pet_has(window, tmp_path):
     w.on_click = lambda: None
     w.actions = FakeActions(tmp_path).real
     w.on_settings = lambda: None
+    w.on_conversation = lambda: True
     menu = w.build_menu()
-    assert menu_labels(menu) == ["Talk", "Open chat", "Set a reminder…", "Add a task…", "To-do list…",
+    assert menu_labels(menu) == ["Talk to me", "Talk", "Open chat", "Set a reminder…", "Add a task…", "To-do list…",
                                  "Play music", "Move", "Switch companion", "Size", "Sleep", "Quiet mode",
                                  "Microphone off", "Settings…", "Hide", "Quit Red"]
     assert all(a.isEnabled() for a in menu.actions() if not a.isSeparator())
@@ -1254,3 +1255,43 @@ def test_the_window_reloads_the_idle_switches_the_app_wrote(app, window, tmp_pat
     (pack / "companion.toml").write_text("[idle]\nsleep = false\n", encoding="utf-8")
     w._check_external()
     assert w.idle_switches["sleep"] is False and w.idle_switches["wander"] is True
+
+
+def test_the_mic_button_starts_and_zips_and_shows_each_state(window):
+    w = window.window
+    clicks = []
+    window.on_conversation = lambda: clicks.append(1) or True
+    w.tick()
+    w.grab()                                                       # paints the button, so it has a place
+    assert not w.mic_rect.isEmpty()
+    center = w.mic_rect.center()
+    w.press(w.mapToGlobal(center.toPoint()).toPointF() if hasattr(w.mapToGlobal(center.toPoint()), "toPointF")
+            else center)
+    from PySide6.QtCore import QPointF
+    g = QPointF(w.mapToGlobal(center.toPoint()))
+    w.press(g)
+    w.release(g)
+    assert clicks == [1]
+    for kind, on in (("conversation", True), ("zipped", True), ("paused", True), ("not_for_me", True)):
+        w._on_conv(kind, on)
+        assert not w.grab().isNull()
+    assert w.convo is True and w.zipped is True and w.paused is True
+    w._on_conv("conversation", False)
+    assert w.convo is False
+
+
+def test_render_mic_states_for_eyes(window, tmp_path):
+    import os
+    out = os.environ.get("RED_MIC_RENDER")
+    if not out:
+        return
+    w = window.window
+    for name, flags in (("idle", {}), ("listening", {"convo": True}), ("zipped", {"zipped": True}),
+                        ("paused", {"paused": True}), ("muted", {"muted": True}),
+                        ("notforme", {"not_for_me_until": 1e12})):
+        w.convo = w.zipped = w.paused = w.muted = False
+        w.not_for_me_until = 0.0
+        for k, v in flags.items():
+            setattr(w, k, v)
+        w.tick()
+        w.grab().save(os.path.join(out, f"mic-{name}.png"))
