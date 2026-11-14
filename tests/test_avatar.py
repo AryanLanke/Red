@@ -20,7 +20,8 @@ PEEK = ["peek_idle", "peek_idle_blink", "peek_talk_1", "peek_talk_2", "peek_talk
         "peek_listen", "peek_listen_blink", "peek_think", "peek_think_blink", "peek_happy",
         "peek_happy_talk_1", "peek_happy_talk_2", "peek_laugh", "peek_laugh_2", "peek_sad", "peek_sad_talk",
         "peek_angry", "peek_angry_talk", "peek_surprised", "peek_shy", "peek_wave_1", "peek_wave_2",
-        "peek_wave_3", "peek_sleep"]
+        "peek_wave_3", "peek_sleep", "peek_look_left", "peek_look_right", "peek_look_up", "peek_yawn",
+        "peek_stretch", "peek_sleepy", "peek_bored"]
 BODY = ["body_drag_1", "body_drag_2", "body_drag_3", "body_drag_fun", "body_drop"]
 CORNERS = [n.replace("peek_", "cornerR_") for n in PEEK] + [n.replace("peek_", "cornerL_") for n in PEEK]
 TOP = [n.replace("peek_", "top_") for n in PEEK]
@@ -782,3 +783,188 @@ def test_companion_overlay_from_settings(app, monkeypatch, tmp_path):
         assert shown.window.companion == "red"
     finally:
         shown.close()
+
+
+# --- idle life -------------------------------------------------------------------------------------
+
+def test_idle_scripts_and_choices():
+    import random
+    from red.avatar import idle
+    script = idle.script_for("look_around", 10.0)
+    assert script.at(10.5) == (False, "look_left")
+    assert script.at(10 + 1.3 + 0.1) == (False, None)
+    assert script.at(10 + script.length - 0.1) == (False, "look_up")
+    assert script.at(10 + script.length + 0.1) == (True, None)
+    assert idle.script_for("doze", 0).then == "sleep"
+    assert idle.script_for("nonsense", 0) is None
+    rng = random.Random(3)
+    everything = lambda action: True  # noqa: E731
+    fresh = {idle.choose(0, rng, everything, "edge") for _ in range(300)}
+    assert "bored" not in fresh and "doze" not in fresh and {"look_around", "yawn", "wander"} <= fresh
+    long = {idle.choose(400, rng, everything, "edge") for _ in range(300)}
+    assert {"bored", "doze"} <= long
+    corner = {idle.choose(0, rng, everything, "right") for _ in range(300)}
+    assert "wander" not in corner and "corner" in corner            # a corner can't walk, it can move
+    sleepless = {idle.choose(400, rng, lambda a: idle.SWITCH[a] != "sleep", "edge") for _ in range(300)}
+    assert "doze" not in sleepless
+    assert idle.choose(0, rng, lambda a: False, "edge") == ""
+
+
+def test_walk_path_hops_and_stays_on_screen():
+    import random
+    from red.avatar import idle
+    walk = idle.Walk(100, 400, 0.0)
+    assert walk.seconds == pytest.approx(2.0) and walk.direction == "look_right"
+    assert walk.x_at(0) == 100 and walk.x_at(2.0) == 400 and 100 < walk.x_at(1.0) < 400
+    assert walk.hop_at(0.0) == pytest.approx(0, abs=1e-6) and walk.hop_at(idle.HOP_SECONDS / 2) == pytest.approx(1)
+    assert not walk.done(1.9) and walk.done(2.0)
+    rng = random.Random(1)
+    for _ in range(50):
+        x = idle.walk_target(500, 0, 1919, 200, rng)
+        assert 212 <= x <= 1919 - 212 and abs(x - 500) >= 140
+    assert idle.walk_target(500, 0, 300, 200, rng) is None             # the edge is too short
+
+
+def test_idle_frames_exist_for_every_placement_in_the_picker():
+    look = Look(state="idle", action="yawn")
+    assert pick_frame(look, 1.0) == "peek_yawn"
+    assert pick_frame(Look(state="idle", action="look_left"), 1.0) == "peek_look_left"
+    assert pick_frame(Look(state="idle", action="yawn", emotion="happy"), 1.0) == "peek_happy"   # a feeling wins
+    assert pick_frame(Look(state="sleeping", action="yawn"), 1.0) == "peek_sleep"
+    assert pick_frame(Look(state="idle", action="yawn"), 1.0, lambda n: n == "peek_idle") == "peek_idle"
+    assert avatar.frame_for_side("peek_look_up", "top-left", lambda n: True) == "topL_look_up"
+
+
+def idle_window(window):
+    import random
+    w = window.window
+    w.rng = random.Random(7)
+    w.idle_switches = {}
+    w.idle_next = float("inf")                               # only what a test starts
+    w.until.clear()
+    return w
+
+
+def test_it_looks_around_and_goes_back_to_idle(window):
+    w = idle_window(window)
+    assert w.start_idle("look_around")
+    seen = []
+    for _ in range(60):
+        window.clock.t += 0.1
+        w.tick()
+        seen.append(as_peek(w.frame_name))
+    assert {"peek_look_left", "peek_look_right", "peek_look_up"} <= set(seen)
+    assert w.script is None and as_peek(w.frame_name) in ("peek_idle", "peek_idle_blink")
+    assert not w.start_idle("nonsense")
+
+
+def test_idle_actions_wait_for_a_calm_moment_and_stop_for_activity(window):
+    w = idle_window(window)
+    w._apply("speaking", "Hello.")
+    assert not w.start_idle("yawn")                          # busy
+    w._apply("idle", "")
+    w.until.clear()
+    w.turn_emotion = None
+    w.bubble_until = 0
+    assert w.start_idle("yawn")
+    w.tick()
+    assert as_peek(w.frame_name) in ("peek_sleepy", "peek_yawn")
+    w._apply("listening", "")                                # someone talks: the yawn is over
+    assert w.script is None and w.idle_frame is None
+    w.until.clear()
+    w.tick()
+    assert as_peek(w.frame_name) == "peek_listen"
+
+
+def test_a_companion_can_switch_idle_actions_off(window):
+    w = idle_window(window)
+    w.idle_switches = {"look_around": False, "sleep": False, "wander": True}
+    assert not w.start_idle("look_around") and not w.start_idle("yawn") and not w.start_idle("doze")
+    assert w.start_idle("wander") or w.walk is None          # (a short screen may have no room to walk)
+
+
+def test_dozing_ends_asleep_and_a_touch_wakes_it(window):
+    w = idle_window(window)
+    assert w.start_idle("doze")
+    for _ in range(100):
+        window.clock.t += 0.1
+        w.tick()
+    assert w.look.state == "sleeping" and as_peek(w.frame_name) == "peek_sleep"
+    w.enterEvent(None)
+    assert w.look.state == "idle"
+
+
+def test_it_hop_walks_along_the_edge_and_remembers_where(window, tmp_path):
+    from PySide6.QtGui import QGuiApplication
+    w = idle_window(window)
+    w.place("edge")
+    w.until.clear()
+    start = w.x_center
+    assert w.start_idle("wander") and w.walk is not None
+    target = w.walk.x1
+    moved = []
+    for _ in range(400):
+        window.clock.t += 1 / 30
+        w.tick()
+        moved.append(w.x_center)
+        assert as_peek(w.frame_name) in ("peek_look_left", "peek_look_right", "peek_idle", "peek_idle_blink")
+        if w.walk is None:
+            break
+    assert w.walk is None and w.x_center == pytest.approx(target, abs=1)
+    assert len({round(x) for x in moved}) > 5                # it really moved, step by step
+    assert abs(w.x_center - start) >= 100
+    area = QGuiApplication.primaryScreen().availableGeometry()
+    assert w.geometry().bottom() == area.bottom()
+    assert json.loads((tmp_path / "spot.json").read_text())["x"] == pytest.approx(w.x_center)
+    w.grab()
+
+
+def test_in_a_corner_wander_moves_to_another_place(window):
+    w = idle_window(window)
+    first = w.side
+    assert w.start_idle("wander")
+    assert w.side != first and w.walk is None
+
+
+def test_idle_action_events_come_through_a_queued_signal(app, window):
+    import threading
+    from red import events
+    w = idle_window(window)
+    t = threading.Thread(target=lambda: events.emit("idle_action", name="stretch"))
+    t.start()
+    t.join()
+    assert w.script is None
+    app.processEvents()
+    assert w.script is not None and w.idle_events_until > window.clock.t
+    window.clock.t += 0.1
+    w.tick()
+    assert as_peek(w.frame_name) == "peek_stretch"
+
+
+def test_with_no_events_it_starts_things_by_itself(window):
+    w = idle_window(window)
+    w.idle_next = window.clock.t + 5
+    started = False
+    for _ in range(600):
+        window.clock.t += 0.5
+        w.tick()
+        if w.script is not None or w.walk is not None or w.until or w.side != "right":
+            started = True
+            break
+    assert started
+    w2 = idle_window(window)
+    w2.cancel_idle()
+    w2.idle_events_until = window.clock.t + 900              # lane 2 is choosing: no timer of its own
+    w2.idle_next = window.clock.t
+    window.clock.t += 1
+    w2.tick()
+    assert w2.script is None and w2.walk is None
+
+
+def test_idle_life_is_cheap_when_nothing_happens(window):
+    w = idle_window(window)
+    w.look.state = "idle"
+    w.until.clear()
+    w.bubble_until = 0
+    w.tick()
+    assert w.timer.interval() == 100                         # 10 ticks a second, not the animation rate

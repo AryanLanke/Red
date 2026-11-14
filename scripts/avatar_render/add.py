@@ -47,6 +47,7 @@ def main() -> None:
     ap.add_argument("id", help="a short lowercase id, like bruno")
     ap.add_argument("--name", help="the name shown in the menu (default: the id, capitalised)")
     ap.add_argument("--voice", help="Kokoro voice for its pickup clips, like am_fenrir")
+    ap.add_argument("--only", help="render only these frames (comma separated names), keeping the sets' crop")
     ap.add_argument("--sets", help="render only these frame sets (like topL,topR) into an existing companion")
     args = ap.parse_args()
     if not re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", args.id):
@@ -73,11 +74,15 @@ def main() -> None:
     render = ["node", str(HERE / "render.mjs"), "--vrm", str(stored), "--out", str(raw)]
     if args.sets:
         render += ["--sets", args.sets]
+    if args.only:
+        render += ["--only", args.only]
     subprocess.run(render, cwd=HERE, check=True)
     finish = [sys.executable, str(HERE / "finish.py"), str(raw), str(out),
               "--name", args.name or args.id.title()]
     if args.voice:
         finish += ["--voice", args.voice]
+    if args.only:
+        finish += ["--keep-crop"]
     subprocess.run(finish, check=True)
     print(f"Done: {out}. Look at sheet-peek.png, sheet-cornerR.png and sheet-body.png there.")
 

@@ -62,17 +62,38 @@ def contact_sheet(frames: list[tuple[str, Image.Image]], path: Path, columns: in
     sheet.save(path)
 
 
-def finish_set(name: str, entries: list[dict], raw: Path, out: Path, ppm: float) -> dict:
+def existing_crop(entries: list[dict], images: list[Image.Image], kept: dict, ppm: float):
+    """The crop box (raw pixels) the set already has, worked out from where a frame's head mark landed
+    in the old picture and in this render, so frames added later line up with the old ones exactly."""
+    for entry, img in zip(entries, images):
+        old = next((f for f in kept["frames"] if f["name"] == entry["name"]), None)
+        if old and old["marks"].get("head") and entry["marks"].get("head"):
+            scale = ppm / entry["pxPerMetre"]
+            left = round(entry["marks"]["head"][0] - old["marks"]["head"][0] / scale)
+            top = round(entry["marks"]["head"][1] - old["marks"]["head"][1] / scale)
+            width, height = kept["size"]
+            return left, top, left + round(width / scale), top + round(height / scale)
+    return None
+
+
+def finish_set(name: str, entries: list[dict], raw: Path, out: Path, ppm: float, kept: dict | None = None) -> dict:
     images = [Image.open(raw / f"{e['name']}.png").convert("RGBA") for e in entries]
-    left, top, right, bottom = union_box(images)
-    if name in ("peek", "cornerR", "cornerL", "top", "topL", "topR"):
+    fixed = existing_crop(entries, images, kept, ppm) if kept else None
+    if fixed:                                   # adding frames to a set that exists: same crop as its frames
+        left, top, right, bottom = fixed
+        idle = entries[0]
+    else:
+        left, top, right, bottom = union_box(images)
+    if not fixed and name in ("peek", "cornerR", "cornerL", "top", "topL", "topR"):
         idle = next((e for e in entries if e["name"] == f"{name}_idle"), entries[0])
         if name.startswith("top"):
             top = edge_line(idle, upside_down=True)   # the window puts the top of these on the top edge
         else:
             bottom = edge_line(idle)
     # Corners: the side edge runs through the wrist of the hand gripping it, so only its fingers show.
-    if name == "cornerR":
+    if fixed:
+        pass
+    elif name == "cornerR":
         right = idle["marks"]["leftHand"][0]
     elif name == "cornerL":
         left = idle["marks"]["rightHand"][0]
@@ -91,7 +112,12 @@ def finish_set(name: str, entries: list[dict], raw: Path, out: Path, ppm: float)
         marks = {k: [round((v[0] - left) * scale), round((v[1] - top) * scale)]
                  for k, v in entry["marks"].items() if v}
         frames.append({"name": entry["name"], "state": entry["state"], "emotion": entry["emotion"], "marks": marks})
-    contact_sheet(done, out / f"sheet-{name}.png")
+    if fixed:                                   # the old frames stay; these join them
+        contact_sheet(done, out / f"sheet-{name}-new.png")
+        have = {f["name"] for f in frames}
+        frames = [f for f in kept["frames"] if f["name"] not in have] + frames
+    else:
+        contact_sheet(done, out / f"sheet-{name}.png")
     return {"size": [width, height], "frames": frames}
 
 
@@ -100,6 +126,8 @@ def main() -> None:
     ap.add_argument("raw", type=Path)
     ap.add_argument("out", type=Path)
     ap.add_argument("--ppm", type=float, default=560, help="output pixels per metre (both sets)")
+    ap.add_argument("--keep-crop", action="store_true",
+                    help="frames are being added to sets that already exist: crop them like the old ones")
     ap.add_argument("--name", help="the companion's name, shown in its menu (default: the folder name)")
     ap.add_argument("--voice", help="the Kokoro voice for its pickup clips (default: Red's voice)")
     args = ap.parse_args()
@@ -112,7 +140,7 @@ def main() -> None:
     for name in ("peek", "cornerR", "cornerL", "top", "topL", "topR", "body"):
         entries = [f for f in meta["frames"] if f["set"] == name and (args.raw / f"{f['name']}.png").exists()]
         if entries:
-            sets[name] = finish_set(name, entries, args.raw, args.out, args.ppm)
+            sets[name] = finish_set(name, entries, args.raw, args.out, args.ppm, (kept.get("sets", {}).get(name) if args.keep_crop else None))
             print(f"{name}: {len(entries)} frames, {sets[name]['size'][0]}x{sets[name]['size'][1]}")
     (args.out / "frames.json").write_text(json.dumps({
         "model": meta["model"].get("title"),

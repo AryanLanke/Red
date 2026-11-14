@@ -29,6 +29,7 @@ from . import (FALLBACK, SIDE_OF, SIDES, SIZES, TOP_SIDES, SLEEP_AFTER_SECONDS, 
                clip_paths, companion_folder, emotion_from_text, frame_for_side, kokoro_synthesizer,
                load_sprites, make_clips, mark_for, meter_speaker, pick_frame, play_clip, side_for)
 from .. import events
+from . import idle
 from ..overlay import STATES, Overlay, _check_state, _clean
 
 log = logging.getLogger(__name__)
@@ -96,6 +97,7 @@ def _window_class():
         heard_signal = Signal(str)            # events "heard", "said" and "mic" arrive on Red's voice
         said_signal = Signal(str)             # thread: these queued signals hand them to Qt
         mic_signal = Signal(bool)
+        idle_signal = Signal(str)             # event "idle_action": look around, yawn, doze, wander...
         finished = Signal()
 
         def __init__(self, sprites: Sprites, *, size: str = "medium", models_dir: Path | None = None,
@@ -136,6 +138,14 @@ def _window_class():
             self.heard_until = 0.0
             self.muted = False                           # microphone off: a crossed mic on the companion
             self.on_mic: Callable[[bool], None] | None = None     # the host mutes the listener
+            self.rng = random.Random()
+            self.script: idle.Script | None = None        # an idle frame sequence being played
+            self.walk: idle.Walk | None = None            # a hop-walk along the edge
+            self.idle_frame: str | None = None
+            self.idle_next = clock() + idle.next_gap(self.rng, first=True)
+            self.idle_events_until = 0.0                  # idle_action events are arriving: no own timer
+            self.idle_switches: dict = {}                 # companion.toml [idle]; missing means on
+            self._load_traits()
             self.press_at: QPointF | None = None
             self.grab_offset = QPointF(0, 0)
             self.drag_pos = QPointF(0, 0)
@@ -158,6 +168,7 @@ def _window_class():
             self.heard_signal.connect(self._on_heard, Qt.ConnectionType.QueuedConnection)
             self.said_signal.connect(self._on_said, Qt.ConnectionType.QueuedConnection)
             self.mic_signal.connect(self._on_mic, Qt.ConnectionType.QueuedConnection)
+            self.idle_signal.connect(self._on_idle_action, Qt.ConnectionType.QueuedConnection)
             self.timer = QTimer(self)
             self.timer.timeout.connect(self.tick)
             self.timer.start(NORMAL)
@@ -311,6 +322,7 @@ def _window_class():
             previous = self.look.state
             if state != "idle":
                 self.last_activity = now
+                self.cancel_idle()
                 if not self.isVisible() and not self.hidden_for_fullscreen:
                     self.show()                          # "Hide until Red talks"
             if previous == "sleeping" and state != "idle":
@@ -442,6 +454,104 @@ def _window_class():
             self.muted = muted
             self.update()
 
+        # --- idle life ----------------------------------------------------------
+        # Left alone, it looks around, yawns, stretches, gets bored, dozes off, hop-walks along the edge
+        # and now and then goes to another corner. Lane 2's `idle_action` events say when; until they
+        # arrive (idle_events_until), a timer of its own does (red/avatar/idle.py has the choices).
+
+        def _load_traits(self) -> None:
+            try:
+                from .. import companions
+                self.idle_switches = dict(companions.load(self.companion).idle)
+            except Exception:  # noqa: BLE001 - no pack for this look: everything is allowed
+                self.idle_switches = {}
+
+        def allows(self, action: str) -> bool:
+            return bool(self.idle_switches.get(idle.SWITCH.get(action, action), True))
+
+        def _calm(self, now: float) -> bool:
+            """Nothing is going on that an idle action would get in the way of."""
+            look = self.look
+            return (look.state == "idle" and not look.dragging and not look.falling and self.isVisible()
+                    and not self.until and not (self.bubble_text and now < self.bubble_until)
+                    and not (self.heard_text and now < self.heard_until))
+
+        def cancel_idle(self) -> None:
+            self.script = None
+            self.idle_frame = None
+            if self.walk is not None:
+                self.walk = None
+                self._save()
+
+        def _on_idle_action(self, name: str) -> None:
+            now = self.clock()
+            self.idle_events_until = now + 900.0          # someone else is choosing: wait for them
+            self.start_idle(name)
+
+        def start_idle(self, name: str) -> bool:
+            """Begin an idle action by name. False if it isn't allowed or now is not a calm moment."""
+            now = self.clock()
+            name = idle.EVENT_ALIASES.get(name, name)
+            if name not in idle.SWITCH or not self.allows(name) or not self._calm(now):
+                return False
+            if self.script is not None or self.walk is not None:
+                return False
+            if name == "wander" and self.prefix not in ("peek", "top"):
+                name = "corner"                           # in a corner it can't walk: it moves instead
+            if name == "wander":
+                area = self._area_for(self.x_center or 0)
+                target = idle.walk_target(self.x_center, area.left(), area.right(), self.perch_size[0] / 2,
+                                          self.rng)
+                if target is None:
+                    return False
+                self.walk = idle.Walk(self.x_center, target, now)
+            elif name == "corner":
+                places = [s for s in SIDES if s != self.side and SIDES[s] in self.set_size]
+                if not places:
+                    return False
+                self.place(self.rng.choice(places))
+            elif name == "hum":
+                self.turn_emotion = "happy"
+                self.until["emotion"] = now + 3.5
+            else:
+                self.script = idle.script_for(name, now)
+                if self.script is None:
+                    return False
+            self.idle_next = now + idle.next_gap(self.rng)
+            self._speed(FAST if self.walk is not None else NORMAL)
+            return True
+
+        def _idle_life(self, now: float) -> None:
+            if not self._calm(now):
+                if self.script is not None or self.walk is not None:
+                    self.cancel_idle()
+                self.idle_frame = None
+                return
+            if self.walk is not None:
+                self.x_center = self.walk.x_at(now)
+                self.perch()
+                self.idle_frame = self.walk.direction
+                if self.walk.done(now):
+                    self.walk = None
+                    self.idle_frame = None
+                    self._save()
+                    self.animate("land")
+            elif self.script is not None:
+                finished, frame = self.script.at(now)
+                self.idle_frame = frame
+                if finished:
+                    then, self.script, self.idle_frame = self.script.then, None, None
+                    if then == "sleep":
+                        self.look.state = "sleeping"
+                        self.look.since = now
+            else:
+                self.idle_frame = None
+                if now >= self.idle_next and now >= self.idle_events_until:
+                    name = idle.choose(now - self.last_activity, self.rng, self.allows, self.side)
+                    self.idle_next = now + idle.next_gap(self.rng)
+                    if name:
+                        self.start_idle(name)
+
         # --- the clock --------------------------------------------------------
 
         def _speed(self, interval: int) -> None:
@@ -466,6 +576,8 @@ def _window_class():
 
             if look.falling:
                 self._fall(now)                          # may land, so before the frame is picked
+            self._idle_life(now)
+            look.action = self.idle_frame
             shown = Look(**vars(look))
             if "greeting" in self.until:
                 shown.state, shown.since = "greeting", self.until["greeting"] - GREETING_SECONDS
@@ -475,7 +587,7 @@ def _window_class():
             self.shown = shown
 
             busy = (look.dragging or look.falling or look.state in ("speaking", "greeting") or self.until
-                    or self._typing(now) or self.animating(now))
+                    or self._typing(now) or self.animating(now) or self.walk is not None)
             self._speed(FAST if busy else SLOW if look.state == "sleeping" else NORMAL)
             self.update()
 
@@ -544,6 +656,7 @@ def _window_class():
                     log.exception("Companion click failed")
 
         def _pick_up(self, pos: QPointF) -> None:
+            self.cancel_idle()
             self.look.dragging = True
             self.last_activity = self.clock()
             self.until.pop("hover", None)
@@ -615,6 +728,7 @@ def _window_class():
             now = self.clock()
             if self.look.dragging or self.look.falling:
                 return
+            self.cancel_idle()
             if self.look.state == "sleeping":
                 self.look.state = "idle"
                 self.until["notice"] = now + NOTICE_SECONDS
@@ -657,6 +771,8 @@ def _window_class():
                 log.warning("Couldn't switch to %s: %s", companion, e)
                 return
             self.companion = companion
+            self.cancel_idle()
+            self._load_traits()
             self.load(sprites)
             self.perch()
             self._save()
@@ -704,6 +820,8 @@ def _window_class():
             age = self.anim_age("jolt", now, 0.5)
             if age is not None:                          # startled awake
                 dx += 5 * unit * math.sin(age * 70) * math.exp(-age * 7)
+            if self.walk is not None:                    # hop-walking along the edge
+                dy += inward * idle.HOP_HEIGHT * unit * self.walk.hop_at(now)
             edge_y = 0.0 if self.hanging else self.height()   # it stretches and squashes from the edge
             p.save()
             p.translate(left + w / 2 + dx, edge_y + dy)
@@ -924,13 +1042,17 @@ class CompanionOverlay(Overlay):
         self._closed = False
         # red.events handlers run on Red's voice thread: each one only emits a queued Qt signal.
         self._unsubscribe = [events.on("heard", self._heard), events.on("said", self._said),
-                             events.on("mic", self._mic)]
+                             events.on("mic", self._mic),
+                             events.on("idle_action", self._idle_action)]
 
     def _heard(self, text: str = "", **_) -> None:
         self._emit(self.window.heard_signal, str(text))
 
     def _said(self, text: str = "", **_) -> None:
         self._emit(self.window.said_signal, str(text))
+
+    def _idle_action(self, name: str = "", **_) -> None:
+        self._emit(self.window.idle_signal, str(name))
 
     def _mic(self, muted: bool = False, **_) -> None:
         self._emit(self.window.mic_signal, bool(muted))

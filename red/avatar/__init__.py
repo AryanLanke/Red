@@ -161,6 +161,7 @@ class Look:
     dragging: bool = False
     falling: bool = False
     since: float = 0.0            # when the state or emotion started (seconds, any clock)
+    action: str | None = None     # an idle frame being played: look_left, yawn, ... (red/avatar/idle.py)
 
 
 def blinking(now: float, seed: float = 0.0) -> bool:
@@ -224,6 +225,8 @@ def _pick(look: Look, now: float) -> str:
         return "peek_think_blink" if blink else "peek_think"
     if state == "error":
         return "peek_shy"
+    if look.action and not look.emotion:
+        return f"peek_{look.action}"
     if look.emotion:
         return {"happy": "peek_happy", "laugh": "peek_laugh_2", "sad": "peek_sad", "angry": "peek_angry",
                 "surprised": "peek_surprised", "shy": "peek_shy"}.get(look.emotion, "peek_idle")

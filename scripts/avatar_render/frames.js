@@ -27,6 +27,11 @@ const F = {
   think: { Fcl_BRW_Angry: 0.35, Fcl_BRW_Sorrow: 0.35, Fcl_EYE_Natural: 0.3, Fcl_MTH_Small: 0.7, Fcl_MTH_Down: 0.3 },
   sleep: { Fcl_EYE_Close: 1, Fcl_BRW_Fun: 0.3, Fcl_MTH_O: 0.25 },
   notice: { Fcl_BRW_Surprised: 0.8, Fcl_EYE_Surprised: 0.6, Fcl_MTH_Joy: 0.5 },
+  // Idle life: half-closed lids, a flat face, a wide yawn.
+  sleepy: { Fcl_EYE_Close: 0.55, Fcl_BRW_Sorrow: 0.15, Fcl_MTH_Small: 0.3 },
+  bored: { Fcl_EYE_Close: 0.3, Fcl_BRW_Sorrow: 0.25, Fcl_MTH_Down: 0.4 },
+  yawn: { Fcl_EYE_Close: 1, Fcl_BRW_Sorrow: 0.25, Fcl_MTH_A: 1, Fcl_MTH_Large: 0.8 },
+  stretch: { Fcl_EYE_Close: 1, Fcl_BRW_Joy: 0.4, Fcl_MTH_A: 0.7, Fcl_MTH_Large: 0.5 },
 };
 const talk = (face, a) => ({ ...face, Fcl_MTH_A: a });
 const blinked = (face) => ({ ...face, Fcl_EYE_Close: 1, Fcl_EYE_Joy: 0, Fcl_EYE_Surprised: 0, Fcl_EYE_Spread: 0 });
@@ -43,9 +48,11 @@ const onEdge = {
 };
 const leanIn = { spine: [6, 0, 0], chest: [4, 0, 0] };
 
-function peek(name, { face = F.neutral, bones = {}, aim = {}, look, state = null, emotion = null } = {}) {
+// `screenLook`: the frame looks toward a side of the SCREEN (the eyes' target is in screen space), so the
+// rolled and mirrored sets keep that meaning instead of copying the pose (see hang and mirror below).
+function peek(name, { face = F.neutral, bones = {}, aim = {}, look, state = null, emotion = null, screenLook = false } = {}) {
   return {
-    name: `peek_${name}`, set: 'peek', state, emotion, face, look,
+    name: `peek_${name}`, set: 'peek', state, emotion, face, look, screenLook,
     bones: { ...leanIn, head: [0, 0, 4], ...bones },
     aim: { ...onEdge, ...aim },
   };
@@ -78,6 +85,16 @@ const fists = {
   rightUpperArm: [-0.42, -0.7, 0.58], rightLowerArm: [0.25, -0.2, 0.95],
 };
 
+// One hand over the mouth (a yawn), and both arms up over the head (a stretch).
+const yawnHand = {
+  rightUpperArm: [-0.22, -0.8, 0.55], rightLowerArm: [0.42, 0.82, 0.38], rightHand: [0.5, 0.82, 0.1],
+};
+// (elbows out, forearms up beside the head, as high as a wave so the picture's crop doesn't grow)
+const stretchArms = {
+  leftUpperArm: [0.78, -0.15, 0.6], leftLowerArm: [0.15, 0.97, 0.2], leftHand: [0.1, 0.98, 0.15],
+  rightUpperArm: [-0.78, -0.15, 0.6], rightLowerArm: [-0.15, 0.97, 0.2], rightHand: [-0.1, 0.98, 0.15],
+};
+
 const PEEK = [
   peek('idle', { state: 'idle' }),
   peek('idle_blink', { state: 'idle', face: F.blink }),
@@ -105,6 +122,14 @@ const PEEK = [
   peek('wave_1', { state: 'greeting', face: F.happyOpen, aim: waveArm(-0.45), bones: { head: [-4, 0, 8] } }),
   peek('wave_2', { state: 'greeting', face: F.happy, aim: waveArm(0.0), bones: { head: [-4, 0, 8] } }),
   peek('wave_3', { state: 'greeting', face: F.happyOpen, aim: waveArm(0.45), bones: { head: [-4, 0, 8] } }),
+  // Idle life (the window plays these now and then): glancing around, a yawn, a stretch, drowsy, bored.
+  peek('look_left', { face: F.neutral, bones: { head: [0, -22, 4], neck: [0, -8, 0] }, look: [-0.9, 0.05], screenLook: true }),
+  peek('look_right', { face: F.neutral, bones: { head: [0, 22, 4], neck: [0, 8, 0] }, look: [0.9, 0.05], screenLook: true }),
+  peek('look_up', { face: F.neutral, bones: { head: [-14, 0, 4], neck: [-4, 0, 0] }, look: [0.1, 0.9], screenLook: true }),
+  peek('yawn', { face: F.yawn, aim: yawnHand, bones: { spine: [-4, 0, 0], head: [-14, 0, 6] } }),
+  peek('stretch', { face: F.stretch, aim: stretchArms, bones: { spine: [-8, 0, 0], chest: [-6, 0, 0], head: [-16, 0, 0] } }),
+  peek('sleepy', { face: F.sleepy, bones: { spine: [12, 0, 0], chest: [6, 0, 0], head: [10, 0, 8] }, look: [0, -0.5] }),
+  peek('bored', { face: F.bored, aim: chinOnHand, bones: { spine: [8, 0, 0], head: [4, 0, -12] }, look: [-0.8, 0.2] }),
   peek('sleep', { state: 'sleeping', face: F.sleep, bones: { spine: [22, 0, 0], chest: [10, 0, 0], neck: [14, 0, 0], head: [26, 0, 14] } }),
 ];
 
@@ -179,7 +204,9 @@ function mirror(frame, set) {
   const aim = {};
   for (const [k, [x, y, z]] of Object.entries(frame.aim || {})) aim[swapSide(k)] = [-x, y, z];
   const look = frame.look ? [-frame.look[0], frame.look[1]] : undefined;
-  return { ...frame, name: frame.name.replace(/^cornerR_/, `${set}_`), set, bones, aim, look };
+  // A mirrored "look_left" looks to the right: it is the new set's look_right.
+  const name = frame.name.replace(/^cornerR_/, `${set}_`).replace(/look_(left|right)$/, (_, side) => `look_${side === 'left' ? 'right' : 'left'}`);
+  return { ...frame, name, set, bones, aim, look };
 }
 
 const CORNER_R = PEEK.map(corner);
@@ -189,11 +216,22 @@ const CORNER_L = CORNER_R.map((f) => mirror(f, 'cornerL'));
 // The edge pose turned over: the whole model is rolled 180 degrees in the picture (`flip`), so its
 // forearms rest along the top edge and its head hangs below them. Hair and clothes settle under the
 // real gravity, so they fall past the head. Directions in the picture turn with it.
-function top(frame) {
+function rolled(frame) {
   const aim = {};
   for (const [k, [x, y, z]] of Object.entries(frame.aim || {})) aim[k] = [-x, -y, z];
-  const look = frame.look ? [-frame.look[0], -frame.look[1]] : undefined;
-  return { ...frame, name: frame.name.replace(/^peek_/, 'top_'), set: 'top', flip: true, aim, look };
+  let look = frame.look ? [-frame.look[0], -frame.look[1]] : undefined;
+  let bones = frame.bones;
+  if (frame.screenLook) {
+    // Turned over, the head's own turn and nod run the other way round on the screen; the eyes' target
+    // is already in screen space and stays. "look_up" is up on the SCREEN: toward the top edge.
+    look = frame.look;
+    const [x, y, z] = frame.bones.head;
+    bones = { ...frame.bones, head: [-x, -y, z], neck: (frame.bones.neck || [0, 0, 0]).map((v, i) => (i < 2 ? -v : v)) };
+  }
+  return { aim, look, bones };
+}
+function top(frame) {
+  return { ...frame, ...rolled(frame), name: frame.name.replace(/^peek_/, 'top_'), set: 'top', flip: true };
 }
 const TOP = PEEK.map(top);
 
@@ -202,10 +240,7 @@ const TOP = PEEK.map(top);
 // hand that gripped the right edge now grips the left one), and cornerL turned over is the top-right
 // corner. Both are posed, never flipped sideways, so hair clips and logos stay on the right side.
 function hang(frame, from, set) {
-  const aim = {};
-  for (const [k, [x, y, z]] of Object.entries(frame.aim || {})) aim[k] = [-x, -y, z];
-  const look = frame.look ? [-frame.look[0], -frame.look[1]] : undefined;
-  return { ...frame, name: frame.name.replace(from, `${set}_`), set, flip: true, aim, look };
+  return { ...frame, ...rolled(frame), name: frame.name.replace(from, `${set}_`), set, flip: true };
 }
 const TOP_L = CORNER_R.map((f) => hang(f, /^cornerR_/, 'topL'));
 const TOP_R = CORNER_L.map((f) => hang(f, /^cornerL_/, 'topR'));
