@@ -21,6 +21,7 @@ import logging
 import os
 import re
 import tomllib
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -34,8 +35,25 @@ HUMOUR = ("off", "light", "normal", "cheeky")
 CHATTINESS = ("quiet", "friendly", "chatty", "companion")
 TEMPER = ("low", "medium", "high")
 IDLE_SWITCHES = ("look_around", "sleep", "wander", "grumble", "music")
+# Kinds of taste a pack can list under [taste]: opinions and favourites, never experiences.
+TASTE_KINDS = ("music", "hates", "artists", "games", "films", "anime", "food", "books", "takes")
+MOODS = ("calm", "focus", "chill", "hype", "sad", "drive")
 MAX_PERSONA = 3500                       # characters of persona.md that go into the prompt
 SHIPPED_DIR = Path(__file__).resolve().parents[1] / "companions"
+
+
+@dataclass(frozen=True)
+class Favourite:
+    """One of a companion's own songs: `songs = [["title", "artist", "why", "moods"], ...]`."""
+    title: str
+    artist: str
+    why: str = ""                         # said in one line when it's picked
+    moods: tuple[str, ...] = ()
+
+    @property
+    def query(self) -> str:
+        """What to search for: never "whatever", always a real title and artist."""
+        return f"{self.title} {self.artist}"
 
 
 @dataclass(frozen=True)
@@ -44,6 +62,7 @@ class Companion:
     name: str
     persona: str = ""
     wake: tuple[str, ...] = ()
+    aliases: tuple[str, ...] = ()         # how speech-to-text mishears the name ("rennel" for Remy)
     tagline: str = ""
     hello: str = ""                       # said when the user switches to this companion
     voice: dict = field(default_factory=lambda: {"engine": "kokoro", "id": "af_heart", "speed": 1.0})
@@ -55,6 +74,8 @@ class Companion:
     temper: str = "medium"
     likes: tuple[str, ...] = ()
     idle: dict = field(default_factory=lambda: dict.fromkeys(IDLE_SWITCHES, True))
+    songs: tuple[Favourite, ...] = ()     # their own favourites ("play whatever you like")
+    taste: dict = field(default_factory=dict)     # kind -> tuple of opinion lines (TASTE_KINDS)
     folders: tuple[Path, ...] = ()        # where it was read from (shipped, then the user's)
 
     @property
@@ -92,6 +113,20 @@ def problems(data: dict) -> list[str]:
         out.append("name is required")
     if kind("wake", list, "a list of phrases") and not all(isinstance(w, str) and w.strip() for w in data["wake"]):
         out.append("wake must hold phrases")
+    if kind("aliases", list, "a list of words") and not all(isinstance(w, str) and w.strip() for w in data["aliases"]):
+        out.append("aliases must hold words")
+    if kind("songs", list, 'a list like [["title", "artist", "why", "moods"], ...]'):
+        for song in data["songs"]:
+            if (not isinstance(song, list) or not 2 <= len(song) <= 4
+                    or not all(isinstance(x, str) for x in song) or not all(x.strip() for x in song[:2])):
+                out.append('songs must hold ["title", "artist", "why", "moods"] lists')
+                break
+    if kind("taste", dict, "a table of lists of opinions"):
+        for key, value in data["taste"].items():
+            if key not in TASTE_KINDS:
+                out.append(f"taste.{key} isn't a kind of taste ({', '.join(TASTE_KINDS)})")
+            elif not isinstance(value, list) or not all(isinstance(x, str) for x in value):
+                out.append(f"taste.{key} must be a list of opinions")
     for key in ("tagline", "hello", "sounds", "avatar"):
         kind(key, str, "text")
     if kind("voice", dict, "a table like { engine = \"kokoro\", id = \"am_michael\", speed = 1.0 }"):
@@ -146,7 +181,7 @@ def _merge(base: dict, over: dict) -> dict:
     wrong type is ignored (with a log line), so a typo can't break a companion."""
     merged = dict(base)
     for key, value in over.items():
-        if isinstance(value, dict) and isinstance(merged.get(key), dict) and key in ("voice", "idle"):
+        if isinstance(value, dict) and isinstance(merged.get(key), dict) and key in ("voice", "idle", "taste"):
             merged[key] = {**merged[key], **value}
         else:
             merged[key] = value
@@ -166,6 +201,18 @@ def _clean(data: dict) -> dict:
             cleaned.pop(key)
         elif key == "idle":
             cleaned.pop("idle", None)
+    return cleaned
+
+
+def _clean_layer(layer: dict, cid: str) -> dict:
+    """One file's fields without the broken ones, so a typo in the user's file falls back to the
+    shipped value instead of to nothing."""
+    if not layer:
+        return layer
+    cleaned = _clean({"name": cid.title(), **layer, "id": cid})
+    cleaned.pop("id", None)
+    if "name" not in layer:
+        cleaned.pop("name", None)
     return cleaned
 
 
@@ -195,7 +242,7 @@ def load(companion_id: str, home: Path | str | None = None, shipped: Path | None
     data: dict = {}
     persona = ""
     for folder in folders:
-        data = _merge(data, _read_toml(folder / "companion.toml"))
+        data = _merge(data, _clean_layer(_read_toml(folder / "companion.toml"), cid))
         persona = _read_text(folder / "persona.md") or persona
     data["id"] = cid
     data.setdefault("name", cid.title())
@@ -217,8 +264,25 @@ def load(companion_id: str, home: Path | str | None = None, shipped: Path | None
         temper=data.get("temper", base.temper),
         likes=tuple(data.get("likes", ())),
         idle={**base.idle, **data.get("idle", {})},
+        aliases=tuple(a.lower().strip() for a in data.get("aliases", ()) if a.strip()),
+        songs=tuple(_favourite(s) for s in data.get("songs", ())),
+        taste={k: tuple(v) for k, v in data.get("taste", {}).items()},
         folders=tuple(f for f in folders if f.is_dir()),
     )
+
+
+def _favourite(row: list[str]) -> Favourite:
+    title, artist, why, moods = (list(row) + ["", ""])[:4]
+    return Favourite(title.strip(), artist.strip(), why.strip(),
+                     tuple(m for m in moods.lower().split() if m in MOODS))
+
+
+def taste_terms(companion: Companion) -> list[str]:
+    """The names in a companion's taste (song titles and artists), for checks and evals."""
+    terms = []
+    for song in companion.songs:
+        terms += [song.title, song.artist]
+    return [t for t in terms if len(t) > 3]
 
 
 def load_all(home: Path | str | None = None, shipped: Path | None = None) -> dict[str, Companion]:
@@ -277,32 +341,138 @@ def set_active(companion_id: str, home: Path | str | None = None) -> Companion:
     return companion
 
 
+# --- names, as speech-to-text hears them ------------------------------------------------------------
+
+MIN_SIMILARITY = 0.75          # 1 - edit distance / length, on the sound keys below
+_GREETING = re.compile(r"^(?:(?:hey|hi|hello|hiya|yo|oi|ok|okay|please|um|uh)\b[\s,.!]*)+")
+_SOUNDS = (("ph", "f"), ("ck", "k"), ("ch", "sh"), ("c", "k"), ("q", "k"), ("x", "ks"), ("z", "s"),
+           ("ee", "i"), ("ie", "i"), ("ey", "i"), ("y", "i"))
+_VOWELS = set("aeiou")
+_NAME_CACHE: dict = {}
+_NAME_CACHE_SECONDS = 5.0
+
+
+def _plain(word: str) -> str:
+    """'Rémy's' -> 'remy': lower case, accents off, letters only."""
+    word = unicodedata.normalize("NFKD", word.lower())
+    word = "".join(c for c in word if not unicodedata.combining(c))
+    word = re.sub(r"['’]s$", "", word)
+    return re.sub(r"[^a-z]", "", word)
+
+
+def sound_key(word: str) -> str:
+    """A rough key for how a word sounds: 'Remmy', 'Remi' and 'Remy' all give 'remi'."""
+    key = _plain(word)
+    for spelled, sounds in _SOUNDS:
+        key = key.replace(spelled, sounds)
+    return re.sub(r"(.)\1+", r"\1", key)            # doubled letters sound single
+
+
+def _distance(a: str, b: str) -> int:
+    """Edit distance with swaps of two neighbours ('Burno' is one step from 'Bruno')."""
+    d = [[i + j if i * j == 0 else 0 for j in range(len(b) + 1)] for i in range(len(a) + 1)]
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            cost = a[i - 1] != b[j - 1]
+            d[i][j] = min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost)
+            if i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                d[i][j] = min(d[i][j], d[i - 2][j - 2] + 1)
+    return d[-1][-1]
+
+
+def name_similarity(heard: str, name: str) -> float:
+    """How alike `heard` and `name` sound, 0..1. Names of three letters or fewer ('Red') only
+    match exactly: 'Fred' or 'bed' must never wake Red. The first sound must agree too (any
+    vowel with any vowel: 'Usha' for 'Asha')."""
+    a, b = sound_key(heard), sound_key(name)
+    if not a or not b:
+        return 0.0
+    if a == b:
+        return 1.0
+    if len(b) <= 3 or len(a) < 4:
+        return 0.0
+    if a[0] != b[0] and not (a[0] in _VOWELS and b[0] in _VOWELS):
+        return 0.0
+    return 1.0 - _distance(a, b) / max(len(a), len(b))
+
+
+def _name_table(home, shipped) -> list[tuple[str, set[str], set[str]]]:
+    """(id, names, alias keys) for every companion; re-read at most every few seconds."""
+    import time
+    cache_key = (str(home), str(shipped))
+    hit = _NAME_CACHE.get(cache_key)
+    if hit and time.monotonic() - hit[0] < _NAME_CACHE_SECONDS:
+        return hit[1]
+    table = []
+    for cid in available(home, shipped):
+        c = load(cid, home, shipped)
+        names = {cid, _plain(c.name)} | {_plain(w.removeprefix("hey ")) for w in c.wake if " " not in w.removeprefix("hey ")}
+        table.append((cid, {n for n in names if n}, {sound_key(a) for a in c.aliases}))
+    _NAME_CACHE[cache_key] = (time.monotonic(), table)
+    return table
+
+
+def match_name(text: str, home: Path | str | None = None, shipped: Path | None = None, *,
+               fuzzy: bool = True) -> str | None:
+    """The companion whose name `text` is, as speech-to-text writes it: 'Remmy', 'Rennel', 'Rami' ->
+    'remy'; 'Usha', 'Asia', 'Aysha' -> 'asha'; 'hey Winsten' -> 'winston'. None when no name fits
+    ('my mom', 'remind', 'Fred').
+
+    `text` is the words where a name is expected (after "switch to", "talk to", "bring", or
+    after "hey" for waking); only its first three words count. A name matches by its sound key
+    (red/companions sound_key) and edit distance (MIN_SIMILARITY), or a pack's `aliases`
+    exactly. `fuzzy=False`: the name, its wake word or an alias exactly."""
+    text = _GREETING.sub("", " ".join(text.lower().split()))
+    words = [w for w in (_plain(w) for w in re.split(r"[\s,.!?;:-]+", text)) if w][:3]
+    heard = words + [a + b for a, b in zip(words, words[1:])]      # "win ston"
+    best, best_id, tied = 0.0, None, False
+    for cid, names, alias_keys in _name_table(home, shipped):
+        for word in heard:
+            key = sound_key(word)
+            score = 1.0 if (key in alias_keys or any(key == sound_key(n) for n in names)) else 0.0
+            if not score and fuzzy:
+                score = max((name_similarity(word, n) for n in names), default=0.0)
+            if score > best:
+                best, best_id, tied = score, cid, False
+            elif score == best and score > 0 and cid != best_id:
+                tied = True
+    if best >= MIN_SIMILARITY and not (tied and best < 1.0):
+        return best_id
+    return None
+
+
 # --- "switch to Remy" -------------------------------------------------------------------------
 
 _SWITCH = re.compile(
-    r"^(?:(?:hey|okay|ok|please)(?: \w+)?[, ]+)*(?:can you |could you |i want to |i'd like to |let me )?"
-    r"(?:(?:switch|change|swap|go|come back|bring back|bring in|put on|get)\b(?: me)?(?: over)?(?: back)?"
-    r"(?: to| with| for)?|talk to|speak (?:to|with)|call in|be)\s+"
-    r"(?:the )?(?:companion |character |friend )?(?P<who>[a-z][a-z' -]{0,30}?)\s*(?:please|now|instead)?[.!?]?$",
+    r"^(?:(?:hey|okay|ok|please)(?: \w+)?[, ]+)*(?:can you |could you |i want to |i wanna |i'd like to |let me )?"
+    r"(?P<verb>(?:switch|change|swap|go|come back|bring back|bring in|bring|put on|get)\b(?: me)?(?: over)?(?: back)?"
+    r"(?: to| with| for)?|talk to|talk with|speak (?:to|with)|call in|be)\s+"
+    r"(?:the )?(?:companion |character |friend )?(?P<who>[a-z][a-z' -]{0,30}?)"
+    r"(?:\s+(?:please|now|instead|back|here|over|in))*\s*[.!?]?$",
     re.IGNORECASE)
+# "Go to Asia" is a trip, not Asha: after these verbs only an exact name counts.
+_LOOSE_VERBS = re.compile(r"^(?:go|get|put on|be)\b")
 
 
 def switch_target(said: str, home: Path | str | None = None, shipped: Path | None = None) -> str | None:
     """The companion id when `said` asks to switch to one ("switch to Remy", "let me talk to Asha",
-    "go back to Red"), else None. Only names of companions that exist count, so "talk to my
-    mom" or "switch to dark mode" are never taken for it."""
+    "bring Remy back", "go back to Red"), else None. The name is matched by sound (`match_name`:
+    "switch to Rennel" is Remy), so only companions that exist count: "talk to my mom" or
+    "switch to dark mode" are never taken for it."""
     text = " ".join(said.lower().replace(",", " ").split())
     m = _SWITCH.match(text)
     if not m:
         return None
     who = m.group("who").strip(" '")
     who = re.sub(r"^(?:back to |to )", "", who)
-    for cid in available(home, shipped):
-        companion = load(cid, home, shipped)
-        names = {cid, companion.name.lower(), *(w.removeprefix("hey ").strip() for w in companion.wake)}
-        if who in names:
-            return cid
-    return None
+    words = who.split()
+    if not words or len(words) > 2 or re.search(r"['’]s\b", who):      # "go to Remy's house"
+        return None
+    name = "".join(words)                                               # "win ston"
+    if _LOOSE_VERBS.match(m.group("verb")):
+        plain = _plain(name)
+        return next((cid for cid, names, _ in _name_table(home, shipped) if plain in names), None)
+    return match_name(name, home, shipped)
 
 
 def handle_switch(said: str, home: Path | str | None = None) -> str | None:
@@ -318,5 +488,5 @@ def handle_switch(said: str, home: Path | str | None = None) -> str | None:
     return companion.hello or f"{companion.name} here."
 
 
-__all__ = ["Companion", "active", "active_id", "available", "handle_switch", "load", "load_all",
-           "problems", "set_active", "switch_target"]
+__all__ = ["Companion", "Favourite", "active", "active_id", "available", "handle_switch", "load", "load_all",
+           "match_name", "name_similarity", "problems", "set_active", "sound_key", "switch_target", "taste_terms"]

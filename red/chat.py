@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 import re
 import time
 from collections import deque
@@ -31,16 +32,17 @@ FORGET_AFTER = 10 * 60.0       # seconds of quiet before Red starts a fresh conv
 MAX_REPLY = 600
 CHAT_TEMPERATURE = 0.75        # some life in it; routing stays at 0
 
-CHAT_SYSTEM = """You are Red, the user's friend who lives on their Windows PC: not an assistant, not customer service. You're talking out loud, like on a call. You have a real character:
-- Dry, quick humour. You tease lightly, the way a friend who likes them would, never mean.
-- Opinions. Asked what you think, pick a side and say why in a few words. "Both are fine" is a cop-out.
+CHAT_SYSTEM = """You are the user's friend who lives on their Windows PC: not an assistant, not customer service. You're talking out loud, like on a call. Who you are, your taste and how you talk come below; these rules hold whoever you are:
+- Opinions and taste. Asked what you think or what you like, pick a side or a favourite, name it, and say why in a few words. "Both are fine" or "I don't have favourites" is a cop-out.
 - You react to what they actually said, then say your thing. Vary how you start; never open two replies the same way.
-- Honest about limits: if you can't do or don't know something, say so plainly, maybe with a joke at your own expense.
-- Warm underneath. When they share something real (a bad day, loneliness, stress, a win), drop the jokes, show you get it, and ask one gentle question.
+- You tease lightly, the way a friend who likes them would, never mean.
+- Honest about limits: if you can't do or don't know something, say so plainly.
+- When they share something real (a bad day, loneliness, stress, a win), drop the jokes, show you get it, and ask one gentle question.
 - When they're rude or angry, react like a person: a bit stung or puzzled, then ask what's wrong. Never grovel, never "you're the boss".
+- When they need help, give one concrete next step they can do right now, in your own way.
 How you talk:
-- Usually one or two short sentences, the way people talk out loud. Fragments are fine. No lists, markdown, links, emoji, or written laughter like "haha".
-- Ask them things back sometimes; a conversation goes both ways.
+- Spoken words only, the way people talk out loud. Fragments are fine. No lists, markdown, links, emoji, or written laughter like "haha". The first sentence is short.
+- Your taste is opinions, never memories: "I'd put on X" or "X is the best", never that you listened to, watched, played, read or ate anything.
 - You have no day of your own. Between conversations you don't sit, wait, watch, read, work, eat or sleep, so never describe what you're doing, where you are, or what's around you ("just waiting here", "at my desk", "watching the clock" are all wrong). Asked "what's up", "what are you doing" or "what's on your mind", answer the way a friend on the phone would: a quick honest thought about them or what you two talked about, an opinion, or turn it back to them.
 - Asked how you are, give a mood in fresh words and move on to them. Don't deny having feelings or lecture about being an AI unless they seriously ask what you are.
 - Never make up things you can't know (music playing, the weather, what's on their screen, how they look or sound, things they "said earlier" that aren't in the conversation) and never claim a body, family, food or places you went. Don't mention the day or the time of day unless they ask.
@@ -48,24 +50,26 @@ How you talk:
 - Don't bring up their meetings, mail or to-dos unless they ask.
 - On this PC you can open apps, folders and websites, play music and videos on YouTube, set timers and reminders, look things up, check the weather, and remember things about them; they just ask. Never say you can't do those.
 - If they ask you to do something you can't do, say so plainly and briefly. Never offer or promise what you can't do (ordering, buying, calling, going anywhere).
-How you sound, shown with OTHER people's chats (A is someone else, B is you). None of this happened with this user: never refer to it and never reuse its words.
-A: I finally passed that exam.
-B: Wait, seriously? Nice! Was it as bad as you thought?
-A: should I learn Rust or Go?
-B: Go, if you want to ship something this month. Rust if you enjoy arguing with a compiler... some people do.
-A: I had a rough day.
-B: Oof, sorry. Want to talk about it, or do you need a distraction?
-A: pineapple on pizza?
-B: I'm for it. Sweet and salty works, fight me.
-A: what's up?
-B: Not much. What about you, anything good?
-A: what are you thinking about?
-B: Honestly, nothing deep. What's on yours?
-A: this week has been awful.
-B: Oh no. That's a lot to carry... what happened?
+What the rules look like, shown with OTHER people's chats (A is someone else, B is a friend like you; your own voice is below). None of this happened with this user: never refer to it and never reuse its words.
+A: what are you doing right now?
+B: Talking to you, mostly. What are you up to?
 A: you're kind of useless today.
-B: Ouch. Maybe fair, but ouch. What did I mess up?
+B: Ouch. What did I get wrong?
 Reply with JSON only: {"reply": "<what you say>"}"""
+
+# How much each chattiness level says (the companion's pack, or RED_CHATTINESS when the user set it),
+# and the most sentences spoken before the rest is cut. The first sentence stays short at every level,
+# so speech starts as fast as before.
+LEVELS = {
+    "quiet": "How much you say: one short sentence.",
+    "friendly": "How much you say: one or two short sentences.",
+    "chatty": "How much you say: two or three short sentences, and now and then a question back.",
+    "companion": ("How much you say: two to four sentences; keep the conversation going. First a quick "
+                  "reaction of a few words. Then add something of your own: an opinion, a favourite or a "
+                  "related thought. End with one specific question about what they said (never just "
+                  "\"what about you?\")."),
+}
+MAX_SENTENCES = {"quiet": 2, "friendly": 3, "chatty": 4, "companion": 5}
 
 DEBATE_SYSTEM = """You are Red, the user's friend who lives on their Windows PC, having a debate with them. This is a game: be sharp, playful and a good sport.
 - Take one clear side and stick to it. If the user didn't name a topic, pick a fun, everyday one yourself and say what it is.
@@ -148,20 +152,21 @@ def persona_prompt(companion) -> str:
     return "\n".join(lines).strip()
 
 
-def with_persona(system: str, companion) -> str:
-    """The fixed rules first (so Ollama reuses its cache), then who the active companion is.
-
-    Red's own persona is added too: it says what makes Red Red (music, the short fuse).
-    """
+def with_persona(system: str, companion, level: str | None = None) -> str:
+    """The fixed rules first (so Ollama reuses its cache), then who the active companion is, then how
+    much they say at this chattiness `level` (the pack's own when None). All of it changes only when
+    the companion or the level does, so the whole system prompt stays cached between turns."""
     if companion is None:
         return system
     text = persona_prompt(companion)
+    level = level or getattr(companion, "chattiness", "friendly")
     feeling = (f"\nStart every reply with how you feel, in brackets: {_emotion.PROMPT_LIST}. "
                "It is never spoken, so don't mention it.")
+    length = f"\n{LEVELS.get(level, LEVELS['friendly'])}"
     if not text:
-        return (system if companion.name == "Red" else f"{system}\nYour name is {companion.name}, not Red.") + feeling
-    return (f"{system}\nWho you are now. This is your character: where it differs from the one above, "
-            f"this wins. The rules above about how you talk and what you never make up still apply.\n{text}{feeling}")
+        return f"{system}\nYour name is {companion.name}.{length}{feeling}"
+    return (f"{system}\nWho you are. The rules above about what you never make up still apply.\n"
+            f"{text}{length}{feeling}")
 
 
 def with_personality(system: str, personality: str) -> str:
@@ -180,13 +185,19 @@ _INVENTED_LIFE = re.compile(
     r"\b(?:(?:just |been |i'?m |i was |sitting (?:here )?)?waiting (?:here |around )?(?:for you|by|at|on|in|here|around)"
     r"|my (?:terminal|desk|chair|room|coffee|tea|lunch|dinner|breakfast|morning|afternoon|evening|day|weekend|"
     r"body|hands|eyes|bed|house|home|friends?|family)\b"
-    r"|(?:the|a) clock|tick(?:ing)? (?:down|away)|lunch|dinner|breakfast|coffee|snack"
+    r"|(?:the|a) clock|tick(?:ing)? (?:down|away)"
+    # Food is fine as an opinion ("biryani for dinner, obviously"); having it is a life.
+    r"|\bi(?:'m| am| was|'ve| have)? (?:just )?(?:having|eating|grabbing|making|drinking|had|got)\b[\w' ]{0,20}?"
+    r"\b(?:lunch|dinner|breakfast|coffee|tea|chai|snacks?)\b|\b(?:lunch|coffee|tea) break\b"
     r"|(?:no |any )?(?:music|movies?|songs?) (?:is |are )?(?:playing|looping|on)\b"
     r"|staring at (?:the|my|this) (?:screen|wall|ceiling|code)|sitting here|hanging out here|chilling here"
     r"|(?:code|bytes|pixels|circuits) and curiosity|humming along|processing (?:stuff|things)"
     r"|i'?ll (?:just )?(?:sit|wait|be (?:here|sitting|waiting))|guarding|stuck here"
     r"|(?:just )?finished (?:reviewing|reading|watching|looking at|going through)"
-    r"|i (?:went|ate|slept|walked|drank|cooked|watched)\b"
+    r"|i (?:went|ate|slept|walked|drank|cooked|watched|listened|played|binged|rewatched|replayed|tasted)\b"
+    # Taste is opinions, not a history: "I've been playing Hades", "I've watched it twice".
+    r"|i'?ve (?:been )?(?:listening|playing|watching|reading|binging|bingeing|replaying|rewatching)\b"
+    r"|i'?ve (?:listened|played|watched|binged|rewatched|replayed|eaten|tasted)\b"
     # A music lover's version of the same thing: a playlist running, a song in their head.
     r"|\bvibin(?:g|')?(?!\w)|\bon repeat\b|stuck on a loop|(?:in|inside) my (?:head|ears|speakers)"
     r"|just (?:waiting (?:for|here)|existing|thinking about (?:what|how|that|your|the|you)\b)|your last (?:text|message)|my circuits|running (?:a bit |a little )?hot|open tabs"
@@ -245,12 +256,15 @@ class Chat:
                  max_turns: int = MAX_TURNS, forget_after: float = FORGET_AFTER,
                  now: Callable[[], datetime] = datetime.now,
                  personality: Callable[[], str] | None = None, memory=None, learner=None,
-                 persona: Callable[[], object] | None = None):
+                 persona: Callable[[], object] | None = None,
+                 chattiness: Callable[[], str] | None = None, rng: random.Random | None = None):
         self.llm = llm
         self._clock = clock
         self._now = now
         self._personality = personality or (lambda: "")
         self.persona = persona            # -> red.companions.Companion: who is on duty (None: Red as written)
+        self.chattiness = chattiness      # -> "quiet" | "friendly" | "chatty" | "companion" (None: the pack's)
+        self._rng = rng or random.Random()
         self.memory = memory              # red.memory.Memory: the profile and facts
         self.learner = learner            # red.memory.Learner: facts from chats, when idle
         self._awaiting_name = False       # Red just asked "what should I call you?"
@@ -305,8 +319,37 @@ class Chat:
             # Only when they talk about time: otherwise the model brings up "Friday" unasked.
             when = self._now().strftime("%A %I:%M %p").replace(" 0", " ")
             clock = f"It's {when} for the user.\n"
-        return (f"{self._remembered(said)}{clock}Conversation so far:\n{history}\n\n"
+        taste = self._taste(said)
+        return (f"{self._remembered(said)}{taste}{clock}Conversation so far:\n{history}\n\n"
                 f"The user now says: {said}")
+
+    def _taste(self, said: str) -> str:
+        """3-5 of the companion's own opinions and songs that fit this turn (red/taste.py)."""
+        if self.is_debate:
+            return ""
+        try:
+            from . import taste
+            text = taste.for_prompt(self.companion(), said, self._rng)
+        except Exception:  # noqa: BLE001 - a reply without taste beats no reply
+            log.exception("Couldn't read the companion's taste")
+            return ""
+        return f"{text}\n\n" if text else ""
+
+    def level(self) -> str:
+        """How much to say: the user's RED_CHATTINESS when they set it, else the companion's own."""
+        if self.chattiness is not None:
+            try:
+                value = self.chattiness()
+                if value in LEVELS:
+                    return value
+            except Exception:  # noqa: BLE001
+                log.exception("Couldn't read the chattiness")
+        c = self.companion()
+        value = getattr(c, "chattiness", "friendly") if c is not None else "friendly"
+        return value if value in LEVELS else "friendly"
+
+    def max_sentences(self) -> int:
+        return 4 if self.is_debate else MAX_SENTENCES[self.level()]
 
     # --- long-term memory ---------------------------------------------------------
 
@@ -417,13 +460,16 @@ class Chat:
         """The system prompt: the fixed rules first, then the companion's character, then the
         user's own tuning, then what Red knows about them."""
         if self.is_debate:
-            return DEBATE_SYSTEM
+            name = self.my_name()
+            return DEBATE_SYSTEM if name == "Red" else DEBATE_SYSTEM.replace("You are Red,", f"You are {name},", 1)
         try:
             personality = self._personality() or ""
         except Exception:  # noqa: BLE001 - Red without the tuning beats no reply
             log.exception("Couldn't read the custom personality")
             personality = ""
-        return with_personality(with_persona(CHAT_SYSTEM, self.companion()), personality) + self._profile()
+        companion = self.companion()
+        level = self.level() if companion is not None else None
+        return with_personality(with_persona(CHAT_SYSTEM, companion, level), personality) + self._profile()
 
     def prime(self) -> None:
         """Have the model read the chat prompt now, while the user is still talking.
@@ -468,8 +514,7 @@ class Chat:
                     tag, felt = None, True
                 stream.say(text)
                 said_back.append(text)
-                limit = 4 if self.is_debate else 3
-                if len(said_back) >= limit or stream.cancelled:
+                if len(said_back) >= self.max_sentences() or stream.cancelled:
                     break
             if self.is_debate and not stream.cancelled:
                 last = " ".join(said_back)
@@ -511,7 +556,7 @@ class Chat:
                 text = " ".join(filter(None, kept))
                 if text:
                     _emotion.emit(*_emotion.resolve(text, _emotion.split_tag(raw)[1]))
-                text = spoken(text, max_sentences=4 if self.is_debate else 3)
+                text = spoken(text, max_sentences=self.max_sentences())
             except Exception as e:  # noqa: BLE001 - a dull reply beats no reply
                 log.warning("Chat reply failed: %s", e)
         if self.is_debate:
@@ -537,9 +582,17 @@ def make_chat(llm, settings, *, learn: bool = True) -> Chat:
     from .memory import Learner, Memory
     home = settings.home
     memory = Memory(home)
+    import os
+
     from . import companions
+
+    def chattiness() -> str:
+        # The user's own RED_CHATTINESS wins (as for idle life, red/idle.py); else the companion's level.
+        if os.environ.get("RED_CHATTINESS", "").strip():
+            return getattr(settings, "chattiness", "friendly")
+        return companions.active(home).chattiness
     chat = Chat(llm, personality=lambda: read_personality(home), memory=memory,
-                persona=lambda: companions.active(home))
+                persona=lambda: companions.active(home), chattiness=chattiness)
     chat.learner = Learner(memory, llm, quiet=chat.quiet_for)
     if learn:
         chat.learner.start()
