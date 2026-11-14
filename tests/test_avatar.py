@@ -1220,3 +1220,37 @@ def test_the_summon_hotkey_setting(tmp_path, monkeypatch):
     assert load_settings(tmp_path).summon_hotkey == "<ctrl>+<alt>+j"
     monkeypatch.setenv("RED_SUMMON_HOTKEY", "off")
     assert load_settings(tmp_path).summon_hotkey is None
+
+
+# --- following the Red app's changes -----------------------------------------------------------------
+
+def test_the_window_follows_size_place_and_companion_written_by_the_app(app, window, tmp_path):
+    import os
+    w = window.window
+    make_sprites(tmp_path / "models" / "companion" / "remy")
+    state = tmp_path / "spot.json"
+    w._save()
+    w._check_external()                                      # nothing new: nothing happens
+    assert (w.size_name, w.side, w.companion) == ("medium", "right", "red")
+    saved = json.loads(state.read_text())
+    saved.update(size="large", side="top-left", companion="remy")
+    state.write_text(json.dumps(saved))
+    os.utime(state, ns=(w._state_seen + 5_000_000_000, w._state_seen + 5_000_000_000))   # a newer write
+    w._check_external()
+    assert (w.size_name, w.side, w.companion) == ("large", "top-left", "remy")
+    assert json.loads(state.read_text())["companion"] == "remy"
+    w._check_external()                                      # our own save is not news again
+    assert w.side == "top-left"
+
+
+def test_the_window_reloads_the_idle_switches_the_app_wrote(app, window, tmp_path):
+    w = window.window
+    spot = tmp_path / "cache"
+    spot.mkdir()
+    w.state_file = spot / "companion.json"                   # home = tmp_path
+    w._pack_seen = w._pack_stamp()
+    pack = tmp_path / "companions" / "red"
+    pack.mkdir(parents=True)
+    (pack / "companion.toml").write_text("[idle]\nsleep = false\n", encoding="utf-8")
+    w._check_external()
+    assert w.idle_switches["sleep"] is False and w.idle_switches["wander"] is True

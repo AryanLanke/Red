@@ -10,12 +10,13 @@ from red.config import Settings
 from red.listener import normalize_hotkey
 
 from .env_file import save_values
+from .companions_page import CompanionsPage
 from .pages import (AudioSetupPage, GeneralSettingsPage, HardwareCheckPage, MemoryPage,
                     ModelStatusPage, PluginsPage, VoiceSettingsPage)
 
 _OFF = {"", "off", "none", "0", "no", "false", "disabled"}
 TITLES = ("Hardware Check", "Model Status", "Audio Setup", "Voice Settings", "General Settings",
-          "Memory", "Plugins")
+          "Companions", "Memory", "Plugins")
 
 
 class MainWindow(QMainWindow):
@@ -23,7 +24,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, settings: Settings, *, save=save_values, hardware=None, model_rows=None,
                  devices=None, monitor_factory=None, memory=None, discover_plugins=None,
-                 parent=None):
+                 voice_preview=None, sound_api="default", play=None, parent=None):
         super().__init__(parent)
         self.settings = settings
         self._save = save
@@ -48,11 +49,13 @@ class MainWindow(QMainWindow):
         self.audio_page = AudioSetupPage(settings, devices=devices, monitor_factory=monitor_factory)
         self.voice_page = VoiceSettingsPage(settings)
         self.general_page = GeneralSettingsPage(settings)
+        self.companions_page = CompanionsPage(settings, voice_preview=voice_preview, sound_api=sound_api,
+                                              play=play)
         self.memory_page = MemoryPage(settings, memory=memory)
         self.plugins_page = PluginsPage(settings, discover=discover_plugins)
         for page, title in zip((self.hardware_page, self.models_page, self.audio_page,
-                                self.voice_page, self.general_page, self.memory_page,
-                                self.plugins_page), TITLES):
+                                self.voice_page, self.general_page, self.companions_page,
+                                self.memory_page, self.plugins_page), TITLES):
             self.tabs.addTab(page, title)
         layout.addWidget(self.tabs, 1)
 
@@ -90,8 +93,13 @@ class MainWindow(QMainWindow):
         try:
             path = self._save(self.settings, values)
             write_personality(self.settings.home, self.general_page.personality_text())
+            self.companions_page.save()
             self.memory_page.save()
             self.plugins_page.save()
+        except ValueError as e:                      # a companion's edit that the pack's schema refuses
+            self.status.setStyleSheet("color: #b3261e;")
+            self.status.setText(str(e))
+            return False
         except OSError as e:
             self.status.setStyleSheet("color: #b3261e;")
             self.status.setText(f"Couldn't save your settings: {e}")

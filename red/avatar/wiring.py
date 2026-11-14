@@ -92,6 +92,22 @@ def quit_function() -> Callable[[], None]:
     return quit_red
 
 
+def sync_mic_badge(overlay, get_listener, sleep=None, tries: int = 240) -> bool:
+    """The microphone may have been left off by the last run (Listener remembers it): once the listener
+    exists, show the crossed-out mic if so. Polls every half second for up to two minutes."""
+    import time
+    sleep = sleep or time.sleep
+    for _ in range(tries):
+        listener = get_listener()
+        if listener is not None:
+            if getattr(listener, "muted", False):
+                overlay.window.mic_signal.emit(True)
+                return True
+            return False
+        sleep(0.5)
+    return False
+
+
 def start_summon_hotkey(overlay, settings, starter=None):
     """Ctrl+Alt+H (RED_SUMMON_HOTKEY): show the companion, which waves, or hide it. The hotkey's own thread
     only emits a queued Qt signal. Returns the hotkey (stop() it), or None when it is off or can't start."""
@@ -126,6 +142,8 @@ def wire_menu(overlay, app) -> MenuActions | None:
         window.on_settings = settings_function()
         window.on_quit = quit_function()
         start_summon_hotkey(overlay, app.settings)
+        threading.Thread(target=sync_mic_badge, args=(overlay, lambda: app.listener), name="red-mic-badge",
+                         daemon=True).start()
         return actions
     except Exception:  # noqa: BLE001 - the companion is only a display
         log.exception("Couldn't connect the companion's menu")

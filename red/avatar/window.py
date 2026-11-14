@@ -171,6 +171,8 @@ def _window_class():
             self.anims: dict[str, float] = {}
             self.load(sprites)
             self._restore()
+            self._state_seen = self._state_stamp()
+            self._pack_seen = self._pack_stamp()
 
             self.state_changed.connect(self._apply, Qt.ConnectionType.QueuedConnection)
             self.heard_signal.connect(self._on_heard, Qt.ConnectionType.QueuedConnection)
@@ -183,7 +185,7 @@ def _window_class():
             self.timer.timeout.connect(self.tick)
             self.timer.start(NORMAL)
             self.full_timer = QTimer(self)
-            self.full_timer.timeout.connect(self._check_fullscreen)
+            self.full_timer.timeout.connect(self._slow_checks)
             self.full_timer.start(2000)
 
         # --- pictures --------------------------------------------------------
@@ -329,6 +331,7 @@ def _window_class():
                 data.update({"x": self.x_center, "side": self.side, "companion": self.companion,
                              "size": self.size_name})
                 path.write_text(json.dumps(data), encoding="utf-8")
+                self._state_seen = self._state_stamp()          # our own write is not news
             except OSError:
                 log.debug("Couldn't save the companion's spot", exc_info=True)
 
@@ -479,7 +482,8 @@ def _window_class():
         def _load_traits(self) -> None:
             try:
                 from .. import companions
-                self.idle_switches = dict(companions.load(self.companion).idle)
+                home = Path(self.state_file).parent.parent if self.state_file else None
+                self.idle_switches = dict(companions.load(self.companion, home=home).idle)
             except Exception:  # noqa: BLE001 - no pack for this look: everything is allowed
                 self.idle_switches = {}
 
@@ -614,6 +618,52 @@ def _window_class():
 
         def _typing(self, now: float) -> bool:
             return bool(self.bubble_text) and self._typed(now) < len(self.bubble_text)
+
+        # --- changes made in the Red app (size, place, who is on duty, idle switches) -------
+
+        def _slow_checks(self) -> None:
+            self._check_fullscreen()
+            self._check_external()
+
+        def _state_stamp(self) -> int:
+            try:
+                return Path(self.state_file).stat().st_mtime_ns if self.state_file else 0
+            except OSError:
+                return 0
+
+        def _pack_stamp(self) -> int:
+            """When this companion's own companion.toml (the app's edits) last changed."""
+            if not self.state_file:
+                return 0
+            try:
+                home = Path(self.state_file).parent.parent
+                return (home / "companions" / self.companion / "companion.toml").stat().st_mtime_ns
+            except OSError:
+                return 0
+
+        def _check_external(self) -> None:
+            """The Red app writes cache/companion.json and companions/<id>/companion.toml: follow them."""
+            pack = self._pack_stamp()
+            if pack != self._pack_seen:
+                self._pack_seen = pack
+                self._load_traits()
+            stamp = self._state_stamp()
+            if stamp == self._state_seen or self.look.dragging or self.look.falling:
+                return
+            self._state_seen = stamp
+            try:
+                saved = json.loads(Path(self.state_file).read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return
+            if not isinstance(saved, dict):
+                return
+            if saved.get("companion"):
+                self._on_companion(str(saved["companion"]))
+            if saved.get("size") in SIZES and saved["size"] != self.size_name:
+                self.set_size_name(saved["size"])
+            if saved.get("side") in SIDES and saved["side"] != self.side:
+                self.cancel_idle()
+                self.place(saved["side"])
 
         def _check_fullscreen(self) -> None:
             if self.look.dragging:

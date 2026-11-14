@@ -73,9 +73,9 @@ def make_window(settings, *, save=None, hardware=None, models=None, devices=None
 
 # --- the window ---------------------------------------------------------------------
 
-def test_the_window_has_its_seven_pages(app, settings):
+def test_the_window_has_its_eight_pages(app, settings):
     window = make_window(settings)
-    assert window.tabs.count() == 7
+    assert window.tabs.count() == 8
     assert list(window.pages) == list(TITLES)
 
 

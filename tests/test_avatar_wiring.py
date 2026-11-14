@@ -130,3 +130,15 @@ def test_the_summon_hotkey_calls_the_windows_queued_signal():
     def broken(hotkey, callback):
         raise OSError("no keyboard hook")
     assert wiring.start_summon_hotkey(overlay, SimpleNamespace(summon_hotkey="x"), broken) is None
+
+
+def test_a_microphone_left_off_shows_its_badge_once_the_listener_exists():
+    emitted = []
+    overlay = SimpleNamespace(window=SimpleNamespace(mic_signal=SimpleNamespace(emit=emitted.append)))
+    listeners = iter([None, None, SimpleNamespace(muted=True)])
+    naps = []
+    assert wiring.sync_mic_badge(overlay, lambda: next(listeners), sleep=naps.append) is True
+    assert emitted == [True] and naps == [0.5, 0.5]
+    assert wiring.sync_mic_badge(overlay, lambda: SimpleNamespace(muted=False)) is False
+    assert wiring.sync_mic_badge(overlay, lambda: None, sleep=lambda s: None, tries=3) is False
+    assert emitted == [True]
