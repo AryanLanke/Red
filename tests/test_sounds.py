@@ -141,27 +141,69 @@ class FakeEngine:
         amp = 0.5 if voice.startswith("jm") else 0.05
         return (amp * np.sin(2 * np.pi * 200 * t)).astype(np.float32)
 
+    def create(self, text, voice, speed=1.0):                 # English packs: words, not phonemes
+        return self.create_phonemes(text, voice, speed)
 
-def test_the_builder_makes_complete_even_short_packs(tmp_path):
+
+RECORDED = """
+[[source]]
+id = "fs1"
+page = "https://freesound.org/people/someone/sounds/1/"
+url = "https://cdn.freesound.org/previews/0/1-hq.mp3"
+sha256 = "00"
+author = "someone"
+title = "cute giggle.wav"
+license = "CC BY 4.0"
+license_url = "https://creativecommons.org/licenses/by/4.0/"
+
+[[use]]
+source = "fs1"
+pack = "jp-female-1"
+kind = "giggle"
+end = 0.5
+"""
+
+
+def test_the_builder_makes_complete_packs_from_recorded_clips_and_kokoro(tmp_path):
     ms = load_make_sounds()
-    made = ms.build(ms.PACKS, out=tmp_path / "sounds", engine=FakeEngine())
-    assert set(made) == {"jp-male-1", "jp-male-2", "jp-female-1", "jp-female-2"}
+    sources = tmp_path / "sources.toml"
+    sources.write_text(RECORDED, encoding="utf-8")
+    recording = write_wav(tmp_path / "fs1.wav", seconds=1.0)
+    made = ms.build(ms.PACKS, out=tmp_path / "sounds", engine=FakeEngine(), sources_path=sources,
+                    fetcher=lambda src, cache: recording)                 # no network in tests
+    assert set(made) == {spec.id for spec in ms.PACKS}
     found = sounds.packs(tmp_path)
     assert set(found) == set(made)
+    assert {p.lang for p in found.values()} == {"ja", "en"}
     levels = []
     for pack in found.values():
-        assert set(pack.kinds) == set(sounds.KINDS)                      # every kind from plan.md 0.2
-        assert all(len(v) == 2 for v in pack.kinds.values())
-        assert "Apache-2.0" in pack.license and "Kokoro" in pack.source
-        for files in pack.kinds.values():
+        assert set(pack.kinds) == set(sounds.KINDS)                      # every kind, recorded or not
+        assert "Kokoro" in pack.license
+        for kind, files in pack.kinds.items():
             for f in files:
                 with wave.open(str(f)) as w:
                     audio = np.frombuffer(w.readframes(w.getnframes()), np.int16) / 32768
                     assert w.getnframes() / w.getframerate() <= 1.5
-                levels.append(20 * np.log10(np.sqrt(np.mean(audio ** 2))))
                 assert abs(audio).max() < 0.95
+                if kind == "zip":       # all clicks: it reaches the peak ceiling before the loudness target
+                    assert abs(audio).max() > 0.85
+                    continue
+                levels.append(20 * np.log10(np.sqrt(np.mean(audio ** 2))))
     assert max(levels) - min(levels) < 1.5                               # the same loudness everywhere
     assert {p.gender for p in found.values()} == {"male", "female"}
+    girl = found["jp-female-1"]
+    assert [f.name for f in girl.variants("giggle")] == ["giggle_1.wav"]   # the recorded clip, not Kokoro
+    assert "CC BY 4.0" in girl.license
+    assert sounds.credits(tmp_path) == ['"cute giggle.wav" by someone '
+                                        '(https://freesound.org/people/someone/sounds/1/), CC BY 4.0']
+
+
+def test_the_builder_refuses_a_licence_that_may_not_ship(tmp_path):
+    ms = load_make_sounds()
+    sources = tmp_path / "sources.toml"
+    sources.write_text(RECORDED.replace('"CC BY 4.0"', '"CC BY-NC 4.0"'), encoding="utf-8")
+    with pytest.raises(ValueError, match="not allowed"):
+        ms.load_sources(sources)
 
 
 def test_the_male_2_pack_is_higher_than_male_1():
@@ -170,11 +212,13 @@ def test_the_male_2_pack_is_higher_than_male_1():
     assert ms.shift_pitch(tone, 5).size < tone.size and ms.shift_pitch(tone, 0) is tone
 
 
-def test_every_kind_has_two_japanese_variants():
+def test_every_kind_has_two_japanese_and_two_english_fallbacks():
     ms = load_make_sounds()
-    assert tuple(ms.REACTIONS) == sounds.KINDS
+    assert ms.KINDS == sounds.KINDS
+    assert set(ms.JA) | {"zip"} == set(sounds.KINDS) == set(ms.EN) | {"zip"}     # the zip is made, not said
+    assert all(len(words) == 2 and all(words) for words in ms.EN.values())
     from red.tts_kokoro import VOCAB
-    for variants in ms.REACTIONS.values():
+    for variants in ms.JA.values():
         assert len(variants) == 2
         for label, phonemes in variants:
             assert label and phonemes
@@ -227,11 +271,20 @@ def test_picking_up_and_hovering_play_the_companions_pack(window, tmp_path, monk
     w._sound(w.pickup_clips, "pickup")
     assert len(played) == 1 and played[0].name.startswith("pickup_") and window.played == []
     w._sound(w.drop_clips, "drop")
+    assert len(played) == 1 and window.played == []         # held back: one reaction a second at most
+    window.clock.t += 1.1
+    w._sound(w.drop_clips, "drop")
     assert played[-1].name.startswith("drop_")
+    window.clock.t += 1.1
     assert w._react("hover", every=12.0) is True and played[-1].name.startswith("hover_")
     count = len(played)
+    window.clock.t += 1.1
     w._react("hover", every=12.0)
     assert len(played) == count                                            # not again within 12 s
+    w.quiet = True
+    window.clock.t += 20
+    assert w.react("poke") is True and len(played) == count                # quiet mode: no sounds
+    assert w.react("not a kind") is False
 
 
 def test_no_pack_falls_back_to_the_old_clips(window, tmp_path):
