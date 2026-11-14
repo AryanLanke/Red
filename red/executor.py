@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Callable
 
 from .confirm import DEFAULT_TIMEOUT, Ask, confirm, typed_ask
-from .router import Route
+from .router import Route, Router
 from .tools.base import ToolError, ToolRegistry
 
 log = logging.getLogger(__name__)
@@ -71,8 +71,13 @@ class Executor:
                 self._log(command, route, status="none", confirmed=None, result=placeholder)
                 return placeholder
             reply = talk(command, placeholder)
-            self._log(command, route, status="none", confirmed=None, result=reply,
-                      router_reply=placeholder)
+            if placeholder == Router.talk_route().args["reply"]:
+                # The gate's stand-in (red/gate.py: talk skips the router), not what anyone said: logging
+                # it made 2026-11-13's chat turns look like "Sorry, I lost my train of thought" when
+                # `result` held the real answer. Say it was chat. A reply the router really wrote stays.
+                route = Route(tool=route.tool, args={**route.args, "reply": "(chat)"}, destructive=route.destructive)
+                placeholder = "(chat)"
+            self._log(command, route, status="none", confirmed=None, result=reply, router_reply=placeholder)
             return reply
 
         if route.tool not in self.registry:

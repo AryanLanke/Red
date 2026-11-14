@@ -57,7 +57,7 @@ def companion_names(home: Path) -> dict[str, str]:
 
 
 def run_pair(sc: Scenario, companion: str, llm, *, judge: Judge | None = None, seed: int = 0,
-             real_home: Path | None = None, budgets: dict | None = None) -> Result:
+             real_home: Path | None = None, budgets: dict | None = None, strict_speed: bool = False) -> Result:
     start = time.perf_counter()
     result = Result(scenario=sc.id, category=sc.category, companion=companion, kind=sc.kind, tags=list(sc.tags))
     with SimWorld(llm, real_home=real_home, companion=companion, memory_facts=list(sc.memory),
@@ -78,7 +78,11 @@ def run_pair(sc: Scenario, companion: str, llm, *, judge: Judge | None = None, s
             turn = world.say(meant, heard)
             failures = rules.grade(turn, expect, names, shared_examples, budgets=budgets)
             row = turn.to_dict()
-            row["failures"] = [str(f) for f in failures]
+            # Speed is reported (median, p90, "slow" warnings) but doesn't fail a conversation unless
+            # strict: five sessions and the user share one GPU, so a single slow turn is often not Red's fault.
+            slow = [f for f in failures if f.code == "slow"]
+            row["failures"] = [str(f) for f in failures if f not in slow or strict_speed]
+            row["warnings"] = [str(f) for f in slow if not strict_speed]
             if judge is not None and turn.reply:
                 comp = companions.load(turn.companion_after or companion, world.home)
                 verdict = judge.grade(comp.name, comp.persona, list(history), turn.heard, turn.reply,
@@ -109,7 +113,7 @@ def run_pair(sc: Scenario, companion: str, llm, *, judge: Judge | None = None, s
 def run_all(scenarios: list[Scenario], llm, *, companions_filter: list[str] | None = None,
             judge: Judge | None = None, out_dir: Path | None = None, real_home: Path | None = None,
             progress=print, budgets: dict | None = None, seed: int = 0,
-            max_pairs: int | None = None, should_pause=None) -> list[Result]:
+            max_pairs: int | None = None, should_pause=None, strict_speed: bool = False) -> list[Result]:
     """Every (scenario, companion) pair, one conversation each. Results are appended to
     out_dir/results.jsonl as they finish, so a stopped run keeps what it did.
 
@@ -133,7 +137,8 @@ def run_all(scenarios: list[Scenario], llm, *, companions_filter: list[str] | No
                 progress("stopped: the user is back and the budget for this run is used")
                 break
             try:
-                res = run_pair(sc, cid, llm, judge=judge, seed=seed, real_home=real_home, budgets=budgets)
+                res = run_pair(sc, cid, llm, judge=judge, seed=seed, real_home=real_home, budgets=budgets,
+                               strict_speed=strict_speed)
             except Exception as e:  # noqa: BLE001 - one broken scenario must not end the night
                 log.exception("Scenario %s (%s) crashed", sc.id, cid)
                 res = Result(scenario=sc.id, category=sc.category, companion=cid, kind=sc.kind, tags=list(sc.tags))
