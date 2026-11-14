@@ -29,7 +29,7 @@ from . import (FALLBACK, SIDE_OF, SIDES, SIZES, TOP_SIDES, SLEEP_AFTER_SECONDS, 
                clip_paths, companion_folder, emotion_from_text, frame_for_side, kokoro_synthesizer,
                load_sprites, make_clips, mark_for, meter_speaker, pick_frame, play_clip, side_for)
 from .. import events
-from . import idle
+from . import dialogs, idle
 from ..overlay import STATES, Overlay, _check_state, _clean
 
 log = logging.getLogger(__name__)
@@ -97,6 +97,7 @@ def _window_class():
         heard_signal = Signal(str)            # events "heard", "said" and "mic" arrive on Red's voice
         said_signal = Signal(str)             # thread: these queued signals hand them to Qt
         mic_signal = Signal(bool)
+        companion_signal = Signal(str)        # event "companion": switched by a voice command or the app
         idle_signal = Signal(str)             # event "idle_action": look around, yawn, doze, wander...
         finished = Signal()
 
@@ -139,6 +140,12 @@ def _window_class():
             self.muted = False                           # microphone off: a crossed mic on the companion
             self.on_mic: Callable[[bool], None] | None = None     # the host mutes the listener
             self.rng = random.Random()
+            self.actions = None                           # MenuActions: reminders, tasks, talk, music
+            self.on_settings: Callable[[], None] | None = None
+            self.on_quit: Callable[[], None] | None = None
+            self.on_quiet: Callable[[bool], None] | None = None
+            self.on_switch: Callable[[str], None] | None = None   # switch everywhere (voice, persona)
+            self.quiet = False
             self.script: idle.Script | None = None        # an idle frame sequence being played
             self.walk: idle.Walk | None = None            # a hop-walk along the edge
             self.idle_frame: str | None = None
@@ -169,6 +176,7 @@ def _window_class():
             self.said_signal.connect(self._on_said, Qt.ConnectionType.QueuedConnection)
             self.mic_signal.connect(self._on_mic, Qt.ConnectionType.QueuedConnection)
             self.idle_signal.connect(self._on_idle_action, Qt.ConnectionType.QueuedConnection)
+            self.companion_signal.connect(self._on_companion, Qt.ConnectionType.QueuedConnection)
             self.timer = QTimer(self)
             self.timer.timeout.connect(self.tick)
             self.timer.start(NORMAL)
@@ -309,9 +317,16 @@ def _window_class():
             if not self.state_file:
                 return
             try:
-                Path(self.state_file).parent.mkdir(parents=True, exist_ok=True)
-                Path(self.state_file).write_text(json.dumps({"x": self.x_center, "side": self.side,
-                                                             "companion": self.companion}), encoding="utf-8")
+                path = Path(self.state_file)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    data = json.loads(path.read_text(encoding="utf-8"))
+                    data = data if isinstance(data, dict) else {}
+                except (OSError, ValueError):
+                    data = {}
+                data.update({"x": self.x_center, "side": self.side, "companion": self.companion,
+                             "size": self.size_name})
+                path.write_text(json.dumps(data), encoding="utf-8")
             except OSError:
                 log.debug("Couldn't save the companion's spot", exc_info=True)
 
@@ -492,7 +507,7 @@ def _window_class():
             """Begin an idle action by name. False if it isn't allowed or now is not a calm moment."""
             now = self.clock()
             name = idle.EVENT_ALIASES.get(name, name)
-            if name not in idle.SWITCH or not self.allows(name) or not self._calm(now):
+            if self.quiet or name not in idle.SWITCH or not self.allows(name) or not self._calm(now):
                 return False
             if self.script is not None or self.walk is not None:
                 return False
@@ -744,25 +759,162 @@ def _window_class():
             self.build_menu().exec(event.globalPos())
 
         def build_menu(self):
+            """The right-click menu, like Desktop Mate's: talk, reminders and tasks, music, where it sits,
+            who it is, how big, asleep or quiet, the microphone, settings, hide and quit."""
             menu = QMenu()
+            have = self.actions is not None
+            menu.addAction("Talk", self.talk).setEnabled(have and self.actions.can_talk)
             if self.on_click:
                 menu.addAction("Open chat", self.on_click)
             menu.addSeparator()
-            for side, label in (("left", "Sit in the bottom-left corner"), ("edge", "Sit on the bottom edge"),
-                                ("right", "Sit in the bottom-right corner"), ("top", "Hang from the top edge"),
-                                ("top-left", "Hang from the top-left corner"),
-                                ("top-right", "Hang from the top-right corner")):
-                if side != self.side and SIDES[side] in self.set_size:
-                    menu.addAction(label, functools.partial(self.place, side))
-            if self.models_dir is not None:
-                menu.addSeparator()
-                for cid, name in available_companions(self.models_dir).items():
-                    if cid != self.companion:
-                        menu.addAction(f"Switch to {name}", functools.partial(self.switch, cid))
+            menu.addAction("Set a reminder…", self.open_reminder).setEnabled(have)
+            menu.addAction("Add a task…", self.open_task).setEnabled(have)
+            menu.addAction("To-do list…", self.open_todo).setEnabled(have)
+            menu.addAction("Play music", self.play_music).setEnabled(have and self.actions.can_play_music)
             menu.addSeparator()
+            move = menu.addMenu("Move")
+            for side, label in (("left", "Bottom-left corner"), ("edge", "Bottom edge"),
+                                ("right", "Bottom-right corner"), ("top", "Top edge (hanging)"),
+                                ("top-left", "Top-left corner (hanging)"),
+                                ("top-right", "Top-right corner (hanging)")):
+                action = move.addAction(label, functools.partial(self.place, side))
+                action.setCheckable(True)
+                action.setChecked(side == self.side)
+                action.setEnabled(SIDES[side] in self.set_size)
+            if self.models_dir is not None:
+                switch = menu.addMenu("Switch companion")
+                for cid, name in available_companions(self.models_dir).items():
+                    action = switch.addAction(name, functools.partial(self.choose_companion, cid))
+                    action.setCheckable(True)
+                    action.setChecked(cid == self.companion)
+            size = menu.addMenu("Size")
+            for name in SIZES:
+                action = size.addAction(name.capitalize(), functools.partial(self.set_size_name, name))
+                action.setCheckable(True)
+                action.setChecked(name == self.size_name)
+            menu.addSeparator()
+            asleep = self.look.state == "sleeping"
+            menu.addAction("Wake up" if asleep else "Sleep", self.wake if asleep else self.sleep_now)
+            quiet = menu.addAction("Quiet mode", self.toggle_quiet)
+            quiet.setCheckable(True)
+            quiet.setChecked(self.quiet)
             menu.addAction("Microphone on" if self.muted else "Microphone off", self.toggle_mic)
-            menu.addAction("Hide until Red talks", self.hide)
+            menu.addSeparator()
+            menu.addAction("Settings…", self.open_settings).setEnabled(self.on_settings is not None)
+            menu.addAction("Hide", self.hide)
+            menu.addAction("Quit Red", self.quit_red)
             return menu
+
+        # --- what the menu does ---------------------------------------------------
+
+        def show_note(self, text: str, seconds: float = 4.5) -> None:
+            """A short line from the companion itself (not spoken): shown, then it fades."""
+            now = self.clock()
+            self.pieces = []
+            self.bubble_text = self._first_line(text)
+            self.bubble_started, self.reveal_from, self.type_speed = now, 0, TYPE_SPEED
+            self.bubble_until = now + seconds
+            self.last_activity = now
+            self._speed(FAST)
+            self.tick()
+
+        def talk(self) -> None:
+            if self.actions is not None:
+                self.actions.talk()
+
+        def play_music(self) -> None:
+            line = self.actions.play_music() if self.actions is not None else None
+            if line:
+                self.show_note(line)
+
+        def _open_dialog(self, dialog) -> None:
+            self.dialogs = [d for d in getattr(self, "dialogs", []) if d.isVisible()]
+            self.dialogs.append(dialog)
+            dialog.on_done = self._dialog_done(dialog.on_done)
+            dialog.show_near(self.geometry(), self._area_for(self.x_center or 0))
+
+        def _dialog_done(self, inner):
+            def done(text: str) -> None:
+                self.show_note(text)
+                if inner is not None:
+                    inner(text)
+            return done
+
+        def open_reminder(self) -> None:
+            if self.actions is not None:
+                self._open_dialog(dialogs.reminder_dialog(self.actions))
+
+        def open_task(self) -> None:
+            if self.actions is not None:
+                self._open_dialog(dialogs.task_dialog(self.actions))
+
+        def open_todo(self) -> None:
+            if self.actions is not None:
+                self._open_dialog(dialogs.todo_dialog(self.actions))
+
+        def choose_companion(self, companion: str) -> None:
+            """From the menu: the host switches the companion everywhere (voice, persona, look); on its
+            own, only the look changes."""
+            if companion == self.companion:
+                return
+            if self.on_switch is not None:
+                try:
+                    self.on_switch(companion)
+                    return
+                except Exception:  # noqa: BLE001 - fall back to changing only the look
+                    log.exception("Couldn't switch the companion everywhere")
+            self.switch(companion)
+
+        def _on_companion(self, companion: str) -> None:
+            """The companion event (a voice command or the app): follow it."""
+            if (companion and companion != self.companion and self.models_dir is not None
+                    and companion in available_companions(self.models_dir)):
+                self.switch(companion)
+
+        def set_size_name(self, name: str) -> None:
+            if name not in SIZES or name == self.size_name:
+                return
+            self.size_name = name
+            self.load(self.sprites)
+            self.perch()
+            self._save()
+            self.animate("land")
+            self.tick()
+
+        def sleep_now(self) -> None:
+            self.cancel_idle()
+            self.look.state = "sleeping"
+            self.look.since = self.clock()
+            self.bubble_until = 0
+            self.tick()
+
+        def wake(self) -> None:
+            now = self.clock()
+            self.look.state = "idle"
+            self.last_activity = now
+            self.until["notice"] = now + NOTICE_SECONDS
+            self.animate("jolt")
+            self.tick()
+
+        def toggle_quiet(self) -> None:
+            """Quiet mode: no idle actions and no unasked words (the host stops its idle life)."""
+            self.quiet = not self.quiet
+            self.cancel_idle()
+            if self.on_quiet is not None:
+                try:
+                    self.on_quiet(self.quiet)
+                except Exception:  # noqa: BLE001
+                    log.exception("Couldn't switch quiet mode")
+
+        def open_settings(self) -> None:
+            if self.on_settings is not None:
+                self.on_settings()
+
+        def quit_red(self) -> None:
+            if self.on_quit is not None:
+                self.on_quit()
+            else:
+                QGuiApplication.instance().quit()
 
         def switch(self, companion: str) -> None:
             try:
@@ -1043,13 +1195,17 @@ class CompanionOverlay(Overlay):
         # red.events handlers run on Red's voice thread: each one only emits a queued Qt signal.
         self._unsubscribe = [events.on("heard", self._heard), events.on("said", self._said),
                              events.on("mic", self._mic),
-                             events.on("idle_action", self._idle_action)]
+                             events.on("idle_action", self._idle_action),
+                             events.on("companion", self._companion)]
 
     def _heard(self, text: str = "", **_) -> None:
         self._emit(self.window.heard_signal, str(text))
 
     def _said(self, text: str = "", **_) -> None:
         self._emit(self.window.said_signal, str(text))
+
+    def _companion(self, id: str = "", **_) -> None:  # noqa: A002 - the event's payload key
+        self._emit(self.window.companion_signal, str(id))
 
     def _idle_action(self, name: str = "", **_) -> None:
         self._emit(self.window.idle_signal, str(name))
@@ -1127,16 +1283,20 @@ def companion_overlay(settings) -> CompanionOverlay:
     models_dir = settings.models_dir
     state_file = settings.home / "cache" / "companion.json"
     companion = settings.companion
-    if companion is None:
-        try:
-            companion = json.loads(state_file.read_text(encoding="utf-8")).get("companion")
-        except (OSError, ValueError, AttributeError):
-            companion = None
+    size = settings.companion_size
+    try:
+        saved = json.loads(state_file.read_text(encoding="utf-8"))
+        if companion is None:
+            companion = saved.get("companion")
+        if saved.get("size") in SIZES:
+            size = saved["size"]                  # what the menu or the app last picked wins
+    except (OSError, ValueError, AttributeError):
+        pass
     installed = available_companions(models_dir)
     if companion not in installed:
         companion = "red" if "red" in installed else next(iter(installed), "red")
     sprites = load_sprites(companion_folder(models_dir, companion))
-    return CompanionOverlay(sprites, size=settings.companion_size, models_dir=models_dir,
+    return CompanionOverlay(sprites, size=size, models_dir=models_dir,
                             companion=companion, state_file=state_file, voice=settings.voice)
 
 

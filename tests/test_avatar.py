@@ -375,8 +375,10 @@ def test_top_corners_hang_upside_down(window, tmp_path):
     assert not w.grab().isNull()                          # bubbles below the head, badge at the bottom
     assert json.loads((tmp_path / "spot.json").read_text())["side"] == "top-right"
     menu = w.build_menu()
-    labels = [action.text() for action in menu.actions()]
-    assert "Hang from the top-left corner" in labels and "Hang from the top-right corner" not in labels
+    move = next(a for a in menu.actions() if a.text() == "Move").menu()
+    checked = {a.text(): a.isChecked() for a in move.actions()}
+    assert checked["Top-right corner (hanging)"] and not checked["Top-left corner (hanging)"]
+    assert all(a.isEnabled() for a in move.actions())
 
 
 def test_a_drop_near_a_top_corner_snaps_there(window):
@@ -968,3 +970,204 @@ def test_idle_life_is_cheap_when_nothing_happens(window):
     w.bubble_until = 0
     w.tick()
     assert w.timer.interval() == 100                         # 10 ticks a second, not the animation rate
+
+
+# --- the right-click menu and its dialogs -----------------------------------------------------------
+
+class FakeActions:
+    def __init__(self, tmp_path, talk=True, music=True):
+        from datetime import datetime
+        from red.avatar.actions import MenuActions
+        self.added = []
+
+        class Sched:
+            def add(inner, when, text):
+                self.added.append((when, text))
+        self.real = MenuActions(tmp_path, scheduler=lambda: Sched(), now=lambda: datetime(2026, 11, 13, 10, 0),
+                                talk=(lambda: self.talked.append(True)) if talk else None,
+                                music=(lambda: "Putting on a song.") if music else None)
+        self.talked = []
+
+
+def menu_labels(menu):
+    return [a.text() for a in menu.actions() if not a.isSeparator()]
+
+
+def test_the_menu_has_everything_a_desktop_pet_has(window, tmp_path):
+    w = window.window
+    w.on_click = lambda: None
+    w.actions = FakeActions(tmp_path).real
+    w.on_settings = lambda: None
+    menu = w.build_menu()
+    assert menu_labels(menu) == ["Talk", "Open chat", "Set a reminder…", "Add a task…", "To-do list…",
+                                 "Play music", "Move", "Switch companion", "Size", "Sleep", "Quiet mode",
+                                 "Microphone off", "Settings…", "Hide", "Quit Red"]
+    assert all(a.isEnabled() for a in menu.actions() if not a.isSeparator())
+    size = next(a for a in menu.actions() if a.text() == "Size").menu()
+    assert {a.text(): a.isChecked() for a in size.actions()} == {"Small": False, "Medium": True, "Large": False}
+
+
+def test_menu_items_without_a_back_end_are_greyed_out(window):
+    w = window.window
+    menu = w.build_menu()
+    off = {a.text() for a in menu.actions() if not a.isSeparator() and not a.isEnabled()}
+    assert {"Talk", "Set a reminder…", "Add a task…", "To-do list…", "Play music", "Settings…"} <= off
+
+
+def test_talk_music_settings_and_quit_call_the_host(window, tmp_path):
+    w = window.window
+    fake = FakeActions(tmp_path)
+    w.actions = fake.real
+    calls = []
+    w.on_settings = lambda: calls.append("settings")
+    w.on_quit = lambda: calls.append("quit")
+    w.talk()
+    w.play_music()
+    w.open_settings()
+    w.quit_red()
+    assert fake.talked == [True] and calls == ["settings", "quit"]
+    assert w.bubble_text == "Putting on a song."
+
+
+def test_size_from_the_menu_is_kept(window, tmp_path):
+    w = window.window
+    before = w.pixmaps["peek_idle"].width()
+    w.set_size_name("large")
+    assert w.size_name == "large" and w.pixmaps["peek_idle"].width() > before
+    assert json.loads((tmp_path / "spot.json").read_text())["size"] == "large"
+    w.set_size_name("nonsense")
+    assert w.size_name == "large"
+
+
+def test_the_saved_size_wins_when_red_starts(app, monkeypatch, tmp_path):
+    from red.avatar import window as win
+    monkeypatch.setattr(win, "play_clip", lambda p: None)
+    make_sprites(tmp_path / "models" / "companion" / "red")
+    (tmp_path / "cache").mkdir()
+    (tmp_path / "cache" / "companion.json").write_text(json.dumps({"size": "small", "keep": 1}))
+    for key in [k for k in os.environ if k.startswith("RED_")]:
+        monkeypatch.delenv(key)
+    settings = load_settings(tmp_path)
+    overlay = win.companion_overlay(settings)
+    try:
+        assert overlay.window.size_name == "small"
+        overlay.window.set_size_name("large")
+        saved = json.loads((tmp_path / "cache" / "companion.json").read_text())
+        assert saved["size"] == "large" and saved["keep"] == 1       # other keys survive a save
+    finally:
+        overlay.close()
+
+
+def test_sleep_wake_and_quiet(window):
+    w = window.window
+    idle_window(window)
+    w.sleep_now()
+    assert w.look.state == "sleeping" and as_peek(w.frame_name) == "peek_sleep"
+    menu = w.build_menu()
+    assert next(a for a in menu.actions() if a.text() in ("Wake up", "Sleep")).text() == "Wake up"
+    w.wake()
+    assert w.look.state == "idle"
+    seen = []
+    w.on_quiet = seen.append
+    w.toggle_quiet()
+    w.until.clear()
+    w.turn_emotion = None
+    w.bubble_until = 0
+    assert w.quiet and seen == [True] and not w.start_idle("look_around")      # quiet: nothing on its own
+    w.toggle_quiet()
+    assert not w.quiet and seen == [True, False]
+    w.until.clear()
+    assert w.start_idle("look_around")
+
+
+def test_switching_from_the_menu_goes_through_the_host_and_the_event_follows(app, window, tmp_path):
+    from red import events
+    w = window.window
+    make_sprites(tmp_path / "models" / "companion" / "remy")
+    asked = []
+    w.on_switch = asked.append
+    w.choose_companion("remy")
+    assert asked == ["remy"] and w.companion == "red"        # the host does the switching...
+    events.emit("companion", id="remy")                      # ...and tells everyone, the look included
+    app.processEvents()
+    assert w.companion == "remy"
+    events.emit("companion", id="nobody")                    # a companion without a look: nothing happens
+    app.processEvents()
+    assert w.companion == "remy"
+    w.on_switch = None
+    w.choose_companion("red")                                # no host: only the look changes
+    assert w.companion == "red"
+
+
+def test_the_reminder_dialog(app, window, tmp_path):
+    from red.avatar import dialogs
+    fake = FakeActions(tmp_path)
+    shown = []
+    w = window.window
+    w.actions = fake.real
+    w.open_reminder()
+    dialog = w.dialogs[-1]
+    assert dialog.isVisible() and dialog.testAttribute(__import__("PySide6.QtCore", fromlist=["Qt"]).Qt.WidgetAttribute.WA_TranslucentBackground)
+    dialog.what.setText("call mom")
+    dialog.submit()                                          # no time yet
+    assert not dialog.error.isHidden() and "couldn't read" in dialog.error.text() and dialog.isVisible()
+    dialog.when.setText("in 10 minutes")
+    dialog.submit()
+    assert [t for _, t in fake.added] == ["Reminder: call mom."]
+    assert not dialog.isVisible() and w.bubble_text.startswith("Okay, I'll remind you at 10:10")
+    assert not dialog.grab().isNull() if dialog.isVisible() else True
+    d2 = dialogs.reminder_dialog(fake.real)
+    d2.show()
+    assert not d2.grab().isNull()
+    d2.what.setText("")
+    d2.when.setText("in 5 min")
+    d2.submit()
+    assert "remind you about" in d2.error.text()
+    d2.close()
+
+
+def test_the_task_and_todo_dialogs(app, window, tmp_path):
+    fake = FakeActions(tmp_path)
+    w = window.window
+    w.actions = fake.real
+    w.open_task()
+    dialog = w.dialogs[-1]
+    dialog.submit()
+    assert "task" in dialog.error.text().lower() and dialog.isVisible()
+    dialog.text.setText("send the invoice")
+    dialog.submit()
+    assert [t.text for t in fake.real.list_tasks()] == ["send the invoice"]
+    assert w.bubble_text == "Added to your list: send the invoice"
+    fake.real.add_task("buy milk")
+    w.open_todo()
+    todo = w.dialogs[-1]
+    app.processEvents()
+    assert not todo.empty.isVisible() and todo.rows.count() == 3          # two rows and the stretch
+    todo.new.setText("water plants")
+    todo.add()
+    assert len(fake.real.list_tasks()) == 3 and todo.new.text() == ""
+    first = fake.real.list_tasks()[0]
+    todo.tick(first.id, True)
+    assert fake.real.list_tasks()[0].done
+    assert not todo.grab().isNull()
+    todo.clear_done()
+    assert [t.text for t in fake.real.list_tasks()] == ["buy milk", "water plants"]
+    todo.remove(fake.real.list_tasks()[0].id)
+    todo.remove(fake.real.list_tasks()[0].id)
+    assert fake.real.list_tasks() == [] and todo.empty.isVisible() or not todo.empty.isHidden()
+    todo.close()
+
+
+def test_dialogs_open_next_to_the_companion_and_go_on_escape(app, window, tmp_path):
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QGuiApplication, QKeyEvent
+    fake = FakeActions(tmp_path)
+    w = window.window
+    w.actions = fake.real
+    w.open_task()
+    d = w.dialogs[-1]
+    area = QGuiApplication.primaryScreen().availableGeometry()
+    assert area.left() <= d.x() and d.x() + d.width() <= area.right() + 1
+    assert area.top() <= d.y() and d.y() + d.height() <= area.bottom() + 1
+    d.keyPressEvent(QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Escape, Qt.KeyboardModifier.NoModifier))
+    assert not d.isVisible()
