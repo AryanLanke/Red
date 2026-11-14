@@ -235,10 +235,11 @@ def load_profile(model_dir: Path) -> dict:
 def make_wake_transcriber(model_dir: Path):
     """Whisper (WAKE_WHISPER_MODEL, base.en) set up exactly as the detector uses it
     (voice-setup uses it too)."""
-    from red.stt import Transcriber
+    from red.stt import Transcriber, install_window_patch
 
     def factory(path: str, device: str, compute_type: str):
         from faster_whisper import WhisperModel
+        install_window_patch()
         return WhisperModel(path, device=device, compute_type=compute_type,
                             cpu_threads=WAKE_CPU_THREADS)
 

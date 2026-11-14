@@ -219,3 +219,32 @@ def test_a_broken_vocabulary_file_does_not_stop_transcription(tmp_path):
     path.write_bytes(b"\xff\xfe\x00 broken")                    # not UTF-8 at all
     t, created = make(tmp_path, vocabulary_file=path)
     assert t.transcribe(tone(1.0)) == "Open downloads."
+
+
+# --- the shorter encoder window (night 1) ----------------------------------------
+
+def test_encoder_window_fits_the_clip_in_steps():
+    from red.stt import FULL_WINDOW_FRAMES, encoder_frames
+    assert encoder_frames(1.0) == 1400          # at least 14 s: shorter windows made Whisper loop
+    assert encoder_frames(13.0) == 1400
+    assert encoder_frames(13.5) == 1600         # clip + 0.6 s margin, up to the next 2 s step
+    assert encoder_frames(15.5) == FULL_WINDOW_FRAMES
+    assert encoder_frames(25.0) == FULL_WINDOW_FRAMES
+
+
+def test_short_window_is_per_thread_and_restored():
+    from red import stt
+    with stt.short_window(2.0):
+        assert stt._window.frames == 1400
+        with stt.short_window(20.0):
+            assert stt._window.frames is None   # long clips use the model's own 30 s
+        assert stt._window.frames == 1400
+    assert getattr(stt._window, "frames", None) is None
+
+
+def test_looping_transcripts_are_spotted():
+    from red.stt import looks_looped
+    assert looks_looped("open open open open open open")
+    assert looks_looped("What's the weather // // // // // //")
+    assert not looks_looped("Hey Red red open YouTube")
+    assert not looks_looped("")

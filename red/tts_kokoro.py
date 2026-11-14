@@ -51,7 +51,9 @@ VOCAB: dict[str, int] = json.loads((Path(__file__).with_name("kokoro_vocab.json"
 
 
 def _language(voice: str) -> str:
-    return "en-gb" if voice.startswith("b") else "en-us"
+    # Piper's bundled espeak-ng has no plain "en-gb" voice (set_voice fails); "en-gb-x-rp" is the
+    # British voice kokoro-onnx's "en-gb" maps to. Found 2026-11-13 while testing the bm_* voices.
+    return "en-gb-x-rp" if voice.startswith("b") else "en-us"
 
 
 # espeak-ng keeps one global state, so phonemizing is done one text at a time.

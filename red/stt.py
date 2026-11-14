@@ -9,6 +9,8 @@ of the session.
 
 from __future__ import annotations
 
+import contextlib
+import functools
 import logging
 import re
 import threading
@@ -160,9 +162,101 @@ def add_nvidia_dll_dirs() -> list[str]:
     return added
 
 
-def _faster_whisper_model(path: str, device: str, compute_type: str):
+# --- A shorter encoder window ------------------------------------------------
+#
+# Whisper's encoder always reads 30 s of audio, padded with silence, so a 2 s
+# command costs as much as a 30 s one: about 0.5 s on this CPU (base.en). The
+# encoder works on any shorter window too. Measured on this PC's 10 recorded
+# "Hey Red, open YouTube" clips (base.en, int8, 8 threads): 30 s window 0.62 s,
+# 10 s window 0.19 s. But 4-10 s windows made Whisper repeat words on clean
+# spoken test clips (word errors 170-300%), while 14 s kept them (7.2% against
+# 6.9% for the full window) at 0.2 s instead of 0.52 s (scripts/voice_bench.py,
+# progress.md "Hearing fast"). So: the clip's length plus a margin, at least
+# 14 s, in steps of 2 s; the full 30 s for long clips; and a transcript that
+# loops is redone with the full window.
+
+FULL_WINDOW_FRAMES = 3000            # 30 s at Whisper's 100 frames per second
+MIN_WINDOW_SECONDS = 14.0           # 4-10 s windows made Whisper loop on clean clips (voice_bench)
+WINDOW_STEP_SECONDS = 2.0
+WINDOW_MARGIN_SECONDS = 0.6
+MAX_SHORT_WINDOW_SECONDS = 16.0      # longer clips use the full window
+
+_window = threading.local()
+_window_patched = False
+_window_lock = threading.Lock()
+
+
+def encoder_frames(seconds: float) -> int:
+    """The encoder window, in 10 ms frames, for a clip `seconds` long."""
+    want = max(MIN_WINDOW_SECONDS, seconds + WINDOW_MARGIN_SECONDS)
+    steps = -(-want // WINDOW_STEP_SECONDS)             # round up to a whole step
+    window = steps * WINDOW_STEP_SECONDS
+    if window > MAX_SHORT_WINDOW_SECONDS:
+        return FULL_WINDOW_FRAMES
+    return int(window * 100)
+
+
+def looks_looped(text: str, run: int = 5) -> bool:
+    """Whisper stuck on one word or phrase: the same word `run` times in a row, or '//' loops."""
+    words = text.lower().split()
+    streak = 1
+    for before, word in zip(words, words[1:]):
+        streak = streak + 1 if word == before else 1
+        if streak >= run:
+            return True
+    return False
+
+
+def install_window_patch() -> bool:
+    """Let this thread choose faster-whisper's encoder window (see above).
+
+    faster-whisper pads every segment's features with `pad_or_trim(segment)`. This
+    wraps that function so that, inside `short_window(...)`, it pads to the chosen
+    length instead. Outside it nothing changes. Returns False (and the full window
+    stays) if faster-whisper's internals are not what this expects.
+    """
+    global _window_patched
+    with _window_lock:
+        if _window_patched:
+            return True
+        try:
+            import faster_whisper.transcribe as ft
+            original = ft.pad_or_trim
+            if not callable(original):
+                return False
+        except Exception:  # noqa: BLE001 - no faster-whisper: nothing to patch
+            return False
+
+        def pad_or_trim(array, length=FULL_WINDOW_FRAMES, *, axis=-1):
+            frames = getattr(_window, "frames", None)
+            if frames and length == FULL_WINDOW_FRAMES:
+                length = frames
+            return original(array, length, axis=axis)
+
+        ft.pad_or_trim = pad_or_trim
+        _window_patched = True
+        return True
+
+
+class short_window:
+    """`with short_window(seconds):` Whisper runs in this thread with a window that fits the clip."""
+
+    def __init__(self, seconds: float):
+        self.frames = encoder_frames(seconds)
+
+    def __enter__(self):
+        self._before = getattr(_window, "frames", None)
+        _window.frames = self.frames if self.frames < FULL_WINDOW_FRAMES else None
+        return self
+
+    def __exit__(self, *exc):
+        _window.frames = self._before
+
+
+def _faster_whisper_model(path: str, device: str, compute_type: str, cpu_threads: int = 0):
     from faster_whisper import WhisperModel
-    return WhisperModel(path, device=device, compute_type=compute_type)
+    install_window_patch()
+    return WhisperModel(path, device=device, compute_type=compute_type, cpu_threads=cpu_threads)
 
 
 class Transcriber:
@@ -170,7 +264,7 @@ class Transcriber:
                  language: str | None = "en", beam_size: int = 5,
                  vad_filter: bool = True, hotwords: str | None = None,
                  vocabulary_file: Path | str | None = None,
-                 max_new_tokens: int | None = None,
+                 max_new_tokens: int | None = None, fit_window: bool = True, cpu_threads: int = 0,
                  model_factory: ModelFactory = _faster_whisper_model,
                  cuda_check: Callable[[], bool] = cuda_available):
         if model not in WHISPER_MODELS:
@@ -187,6 +281,9 @@ class Transcriber:
         self.hotwords = hotwords
         self.vocabulary_file = Path(vocabulary_file) if vocabulary_file else None
         self.max_new_tokens = max_new_tokens
+        self.fit_window = fit_window              # fit Whisper's window to the clip (see above)
+        if cpu_threads and model_factory is _faster_whisper_model:
+            model_factory = functools.partial(_faster_whisper_model, cpu_threads=cpu_threads)
         self._factory = model_factory
         self._cuda_check = cuda_check
         self._model = None
@@ -252,21 +349,27 @@ class Transcriber:
         base = [n.strip() for n in (self.hotwords or "").split(",") if n.strip()]
         return command_vocabulary(*base, *names)
 
-    def _run(self, audio: np.ndarray) -> str:
+    def _run(self, audio: np.ndarray, full: bool = False) -> str:
         extra = {"max_new_tokens": self.max_new_tokens} if self.max_new_tokens else {}
-        segments, _info = self._model.transcribe(
-            audio,
-            language=self.language,
-            beam_size=self.beam_size,
-            vad_filter=self.vad_filter,
-            hotwords=self.hotwords_text(),
-            condition_on_previous_text=False,
-            without_timestamps=True,
-            **extra,
-        )
-        # segments is a generator: decoding (and any CUDA error) happens here.
-        text = " ".join(s.text.strip() for s in segments)
-        return fix_names(" ".join(text.split()))
+        window = short_window(audio.size / SAMPLE_RATE) if self.fit_window and not full else contextlib.nullcontext()
+        with window:
+            segments, _info = self._model.transcribe(
+                audio,
+                language=self.language,
+                beam_size=self.beam_size,
+                vad_filter=self.vad_filter,
+                hotwords=self.hotwords_text(),
+                condition_on_previous_text=False,
+                without_timestamps=True,
+                **extra,
+            )
+            # segments is a generator: decoding (and any CUDA error) happens here.
+            text = " ".join(s.text.strip() for s in segments)
+        text = " ".join(text.split())
+        if self.fit_window and not full and looks_looped(text) and audio.size / SAMPLE_RATE < MAX_SHORT_WINDOW_SECONDS:
+            log.info("Whisper repeated itself with a short window; running again with the full one.")
+            return self._run(audio, full=True)
+        return fix_names(text)
 
     def transcribe(self, audio) -> str:
         """16 kHz mono audio -> text. Empty audio gives an empty string."""
