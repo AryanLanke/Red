@@ -108,6 +108,16 @@ def sync_mic_badge(overlay, get_listener, sleep=None, tries: int = 240) -> bool:
     return False
 
 
+def sync_zipped(overlay, app) -> bool:
+    """Red may have been zipped by the last run (mic.json "zipped", read by Conversation): show the zip on
+    the mic button from the start, not an open mic Red then ignores. True if it was zipped."""
+    conversation = getattr(app, "conversation", None)
+    if not getattr(conversation, "zipped", False):
+        return False
+    overlay.window.conv_signal.emit("zipped", True)
+    return True
+
+
 def start_summon_hotkey(overlay, settings, starter=None):
     """Ctrl+Alt+H (RED_SUMMON_HOTKEY): show the companion, which waves, or hide it. The hotkey's own thread
     only emits a queued Qt signal. Returns the hotkey (stop() it), or None when it is off or can't start."""
@@ -139,6 +149,7 @@ def wire_menu(overlay, app) -> MenuActions | None:
         window.actions = actions
         window.on_switch = switch_function(app)
         window.on_conversation = lambda: app.toggle_conversation("button")   # the mic button
+        sync_zipped(overlay, app)
         window.on_quiet = quiet_function(app)
         window.on_settings = settings_function()
         window.on_quit = quit_function()

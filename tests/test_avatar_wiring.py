@@ -132,6 +132,17 @@ def test_the_summon_hotkey_calls_the_windows_queued_signal():
     assert wiring.start_summon_hotkey(overlay, SimpleNamespace(summon_hotkey="x"), broken) is None
 
 
+def test_a_mouth_left_zipped_shows_the_zip_from_the_start():
+    emitted = []
+    overlay = SimpleNamespace(window=SimpleNamespace(conv_signal=SimpleNamespace(
+        emit=lambda kind, on: emitted.append((kind, on)))))
+    assert wiring.sync_zipped(overlay, SimpleNamespace(conversation=SimpleNamespace(zipped=True))) is True
+    assert emitted == [("zipped", True)]
+    assert wiring.sync_zipped(overlay, SimpleNamespace(conversation=SimpleNamespace(zipped=False))) is False
+    assert wiring.sync_zipped(overlay, SimpleNamespace()) is False                # no conversation: nothing
+    assert emitted == [("zipped", True)]
+
+
 def test_a_microphone_left_off_shows_its_badge_once_the_listener_exists():
     emitted = []
     overlay = SimpleNamespace(window=SimpleNamespace(mic_signal=SimpleNamespace(emit=emitted.append)))
