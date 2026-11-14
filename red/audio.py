@@ -26,8 +26,8 @@ BLOCK_SECONDS = 0.03            # 30 ms blocks for silence detection
 # Silence detection (RMS of float32 audio). The noise floor is measured from
 # the first quarter second; speech is anything clearly louder than that.
 CALIBRATION_SECONDS = 0.25
-MIN_SPEECH_RMS = 0.008          # never treat quieter audio as speech
-MAX_NOISE_FLOOR = 0.02          # cap, in case you start talking straight away
+MIN_SPEECH_RMS = 0.005          # never treat quieter audio as speech (the user speaks softly: peaks 0.03-0.1)
+MAX_NOISE_FLOOR = 0.006         # cap, in case you start talking straight away (a follow-up said at once)
 SPEECH_FACTOR = 3.0             # speech must be this many times the noise floor
 SPEECH_START_SECONDS = 0.09     # loud for this long before speech counts (skips clicks)
 PRE_ROLL_SECONDS = 0.3          # keep this much audio from before speech started

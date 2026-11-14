@@ -30,6 +30,7 @@ import argparse
 import functools
 import logging
 import os
+import re
 import shutil
 import sys
 import threading
@@ -46,6 +47,8 @@ from .executor import Executor, run_later
 from .llm import LLMError, connect
 from .router import RouteError, Router
 from .chat import Chat, make_chat
+from .conversation import (ECHO_GUARD_SECONDS, Conversation, OtherAppGuard, addressed_elsewhere, dictation_like,
+                           end_phrase, foreground_title, is_echo)
 from .smalltalk import dismissal_reply, is_filler, is_goodbye, quick_reply, sounds_finished
 from .transcript import clean_transcript
 from .speech import SpeechStream, speaking_to
@@ -212,6 +215,8 @@ def _typed_loop(handle: Callable[[str], None], banner: str) -> None:
 
 # One or two words ("Hope.") might be the start of more: wait this long instead of the quick pause.
 SHORT_REPLY_SILENCE = 0.8
+# In conversation mode these answer a question; they don't end the conversation.
+_JUST_NO = re.compile(r"(?:no|nope|nah|not really|no thanks|no thank you)[.!?]*")
 
 
 @dataclass
@@ -225,6 +230,8 @@ class Voice:
     listener_factory: Callable[..., object]    # listener.Listener
     make_ask: Callable[..., Ask]               # voice_confirm.spoken_ask
     mute_sound: Callable[[bool], None] | None = None   # audio.soft_chime: "microphone off/on"
+    # red.conversation.play_sound: "start" (rising chime), "end" (falling chime and the zipper), "zip"
+    conversation_sound: Callable[[str], None] | None = None
 
 
 def load_voice(settings: Settings) -> Voice:
@@ -253,7 +260,18 @@ def load_voice(settings: Settings) -> Voice:
         listener_factory=Listener,
         make_ask=spoken_ask,
         mute_sound=soft_chime,
+        conversation_sound=functools.partial(_conversation_sound, settings.home),
     )
+
+
+def _conversation_sound(home: Path, kind: str) -> None:
+    """The conversation chimes and the zipper, from the active companion's sound pack when it has one."""
+    from .conversation import play_sound
+    try:
+        pack = companions.active(home).sounds
+    except Exception:  # noqa: BLE001 - no pack: the made zipper
+        pack = None
+    play_sound(kind, pack, home)
 
 
 def make_speaker(settings: Settings):
@@ -345,6 +363,17 @@ class VoiceApp:
         self._stream: SpeechStream | None = None   # what Red is saying right now, if streamed
         self._interrupted = False       # "Hey Red" (or the hotkey) while Red was talking
         self._interruptible = False
+        # Conversation mode and the zipped mouth (red/conversation.py), shared with the mic button.
+        self.conversation = Conversation(settings.cache_dir / "mic.json",
+                                         idle_seconds=getattr(settings, "conversation_idle_seconds", 60.0),
+                                         sound=getattr(voice, "conversation_sound", None))
+        self.mic_guard: OtherAppGuard | None = None
+        self._toggle_lock = threading.Lock()
+        self._in_turn = False           # a trigger is being handled (the button then waits for it)
+        self._recording = False         # the microphone is recording a command right now
+        self._last_said = ""            # Red's last reply, to catch its own echo
+        self._spoke_at = 0.0            # when Red last stopped talking (time.monotonic)
+        self._names: tuple[list[str], list[str]] | None = None   # (companion names, contacts), read once
 
     # --- starting and stopping ------------------------------------------------
 
@@ -387,6 +416,8 @@ class VoiceApp:
     def _wire_interrupt(self, listener) -> None:
         if hasattr(listener, "on_interrupt"):
             listener.on_interrupt = self.interrupt
+        if hasattr(listener, "on_hotkey"):
+            listener.on_hotkey = lambda: self.toggle_conversation("hotkey")   # like the mic button
 
     def interrupt(self) -> None:
         """Hey Red (or the hotkey) while Red is talking: stop talking and listen."""
@@ -453,6 +484,8 @@ class VoiceApp:
         return True
 
     def shutdown(self) -> None:
+        if self.mic_guard is not None:
+            self.mic_guard.stop()
         greeter = getattr(self, "greeter", None)
         if greeter is not None:
             greeter.stop()
@@ -477,6 +510,10 @@ class VoiceApp:
     def run(self, stop: threading.Event) -> None:
         """Start listening and block until `stop` is set (or Ctrl+C)."""
         self.start_listener()
+        listener = self.listener
+        if getattr(self.settings, "mic_guard", False) and hasattr(listener, "pause") and hasattr(listener, "resume"):
+            # Another app has the microphone (Wispr Flow, voice typing, a call): don't listen in.
+            self.mic_guard = OtherAppGuard(self.conversation, listener.pause, listener.resume).start()
         self.reminders = (self._attach or attach_reminders)(self.announce)
         if self.notice:
             self.out(self.notice)
@@ -505,28 +542,177 @@ class VoiceApp:
             self._handle(source)
 
     def _handle(self, source: str) -> None:
-        """One conversation: a command, then follow-ups until you say you're done."""
+        """One trigger. If the mic button was clicked while it ran, conversation mode follows at once."""
+        conv = self.conversation
+        with self._toggle_lock:
+            self._in_turn = True
+        try:
+            while True:
+                self._session(source)
+                with self._toggle_lock:
+                    if conv.start_requested and not conv.active:
+                        source = "conversation"
+                        continue
+                    self._in_turn = False
+                    return
+        finally:
+            with self._toggle_lock:
+                self._in_turn = False
+
+    def _session(self, source: str) -> None:
+        """One conversation: a command, then follow-ups until you say you're done. In conversation mode
+        (the mic button), every sentence is for Red, turn after turn, until it ends."""
+        conv = self.conversation
+        conv.stop.clear()
+        if source == "conversation":
+            conv.begin("button")
+        elif source in ("wakeword", "hotkey"):
+            conv.unzip()                               # "Hey Red" opens a zipped mouth
+        if source == "wakeword":
+            self._switch_to_called()                   # "Hey Asha" brings Asha
         tool = None
         last = ""
         take = getattr(self.listener, "take_wake_audio", None)
         prefix = take() if source == "wakeword" and take is not None else None
         try:
-            for turn in range(MAX_FOLLOW_UPS + 1):
-                last, tool, again = self._exchange(tool, follow_up=bool(turn),
-                                                   prefix=None if turn else prefix)
+            turn = 0
+            while True:
+                talking = conv.active
+                last, tool, again = self._exchange(tool, follow_up=bool(turn) or talking,
+                                                   prefix=None if turn else prefix, conversation=talking)
+                turn += 1
+                if conv.start_requested and not conv.active:
+                    conv.begin("button")               # clicked while Red answered: carry on talking
+                    continue
+                if conv.active:
+                    if not self._wait_while_paused():
+                        break
+                    if conv.idle_left() <= 0:
+                        conv.end("idle")
+                        break
+                    continue
+                if conv.stop.is_set():                 # zipped, or another app took the microphone
+                    break
                 # A debate keeps listening even with follow-ups off: that's the whole point.
                 if not again or not (self.settings.follow_up_seconds > 0 or self.chat.is_debate):
                     break
+                if turn > MAX_FOLLOW_UPS:
+                    break
         except Exception as e:  # noqa: BLE001 - one bad command must not stop Red
             log.exception("Command failed")
+            conv.end("error", zip_mouth=False)
             last = "Sorry, something went wrong."
             self._state("error", f"{last} ({e})")
             self._speak(last)
         finally:
             self._state("idle", last)
 
-    def _record(self, follow_up: bool, prefix=None):
+    # --- conversation mode (the mic button, like Copilot) -------------------------------------
+
+    def toggle_conversation(self, source: str = "button") -> bool:
+        """The companion's mic button, the hotkey or "Talk to me".
+
+        Off: conversation mode starts (a rising chime; every sentence is for Red). On, or while Red is
+        listening: Red zips its mouth (a falling chime and the zipper). Returns True when conversation
+        mode is starting, False when it zipped.
+        """
+        conv = self.conversation
+        if conv.active or self._recording:
+            conv.zip(source)                           # ends conversation mode, or this listening turn
+            self._stop_talking()
+            return False
+        listener = self.listener
+        if getattr(listener, "muted", False) and callable(getattr(listener, "mute", None)):
+            listener.mute(False)                       # the button is a clear "listen to me"
+        with self._toggle_lock:
+            busy = self._in_turn
+            if busy:
+                conv.request_start()                   # the turn running now hands over to it
+                started = True
+            else:
+                trigger = getattr(listener, "trigger", None)
+                started = bool(trigger is not None and trigger("conversation"))
+        if busy:
+            self._stop_talking()                       # Red was answering: stop, and listen
+        if not started:
+            log.warning("Couldn't start conversation mode: Red isn't listening yet")
+        return started
+
+    def _stop_talking(self) -> None:
+        if not self._interruptible and self._stream is None:
+            return
+        stream = self._stream
+        if stream is not None:
+            stream.cancel()
+        try:
+            self.voice.speaker.stop()
+        except Exception:  # noqa: BLE001
+            log.exception("Couldn't stop speaking")
+
+    def _wait_while_paused(self) -> bool:
+        """Another app has the microphone: conversation mode waits (the idle clock stops). False when it
+        ended meanwhile."""
+        conv = self.conversation
+        if not conv.paused:
+            return True
+        self._state("idle", "Paused: another app is using the microphone.")
+        while conv.paused and conv.active:
+            time.sleep(0.25)
+        if conv.active:
+            conv.stop.clear()
+            conv.heard()
+        return conv.active
+
+    def _switch_to_called(self) -> None:
+        """Woken as "Hey Asha" (or "Remy, ..."): that companion takes over."""
+        name = getattr(self.listener, "wake_name", "") or ""
+        if not name:
+            return
+        try:
+            if name != companions.active_id(self.settings.home):
+                companions.set_active(name, self.settings.home)
+                log.info("Woken by name: %s takes over", name)
+        except Exception:  # noqa: BLE001 - an unknown name: whoever is on duty answers
+            log.warning("Couldn't switch to %r", name, exc_info=True)
+
+    def _who(self) -> tuple[list[str], list[str]]:
+        """(the companions' names, the contacts' names), read once."""
+        if self._names is None:
+            own = ["red"]
+            contacts: list[str] = []
+            try:
+                own += [c.name.lower() for c in companions.load_all(self.settings.home).values()]
+            except Exception:  # noqa: BLE001
+                log.debug("No companion names for the addressee check", exc_info=True)
+            try:
+                from .tools.mail import load_contacts
+                contacts = list(load_contacts(self.settings.contacts_path))
+            except Exception:  # noqa: BLE001
+                log.debug("No contacts for the addressee check", exc_info=True)
+            self._names = (sorted(set(own)), contacts)
+        return self._names
+
+    def _not_for_me(self, text: str, conversation: bool) -> str:
+        """Why `text` isn't for Red ("echo", "for claude", "dictation"), or "" when it is."""
+        if self._last_said and is_echo(text, self._last_said):
+            return "echo"
+        own, contacts = self._who()
+        who = addressed_elsewhere(text, contacts=contacts, own_names=own)
+        if who:
+            return f"for {who}"
+        if dictation_like(text, foreground_title(), own_names=own):
+            return "dictation"
+        return ""
+
+    def _echo_guard(self) -> None:
+        """Open the microphone a moment after Red stops talking, so the room's echo isn't heard."""
+        wait = self._spoke_at + ECHO_GUARD_SECONDS - time.monotonic()
+        if 0 < wait <= ECHO_GUARD_SECONDS:
+            time.sleep(wait)
+
+    def _record(self, follow_up: bool, prefix=None, conversation: bool = False):
         """Record one command. `prefix`: speech heard with the wake word, to carry on from.
+        In conversation mode it waits for speech as long as the conversation has left (60 s).
 
         Returns (audio, its transcript if a pause check already made one, what the recording
         measured: how long the pause was, and when the text was ready).
@@ -552,11 +738,21 @@ class VoiceApp:
             if self.chat.is_debate:
                 timeout = max(timeout, DEBATE_FOLLOW_UP_SECONDS)
             kwargs["start_timeout"] = timeout
+        if conversation:
+            wait = max(1.0, self.conversation.idle_left())
+            kwargs["start_timeout"] = wait
+            # The command's own limit counts from when you start talking, not from the wait.
+            kwargs["max_seconds"] = wait + self.settings.max_command_seconds
+        kwargs["stop_event"] = self.conversation.stop      # the mic button (zip) stops it at once
         if self.settings.quick_end_silence_seconds > 0:
             kwargs["is_complete"] = is_complete
         if prefix is not None:
             kwargs["prefix"] = prefix
-        audio = self.voice.record(**kwargs)
+        self._recording = True
+        try:
+            audio = self.voice.record(**kwargs)
+        finally:
+            self._recording = False
         if heard and heard["size"] == getattr(audio, "size", None):
             return audio, heard["text"], stats
         return audio, None, stats
@@ -568,21 +764,30 @@ class VoiceApp:
             log.info("Heard %r, understood %r", text, cleaned)
         return cleaned
 
-    def _exchange(self, tool, *, follow_up: bool, prefix=None):
+    def _exchange(self, tool, *, follow_up: bool, prefix=None, conversation: bool = False):
         """Listen once and answer. Returns (last reply, tool, whether to keep listening).
 
         `prefix`: "Hey Red, open..." said in one breath. You're already talking, so no chime:
         the recording carries on from it, and "Hey Red" is taken off the transcript.
+        `conversation`: conversation mode. No chime each turn (the rising one said it), no "I didn't hear
+        anything", and a sentence that isn't for Red is let go quietly.
         """
+        conv = self.conversation
         self._state("listening", "Listening...")
         if not follow_up:
             self._prime_chat()
-        if prefix is None:
+        if prefix is None and not conversation:
             self.voice.chime()
+        if follow_up or conversation:
+            self._echo_guard()
         timer = Timing(self.settings)
-        audio, early, stats = self._record(follow_up, prefix)
+        audio, early, stats = self._record(follow_up, prefix, conversation)
         timer.recorded(quick=early is not None, stats=stats)
         if getattr(audio, "size", 0) == 0:
+            if conversation and not conv.stop.is_set():
+                conv.end("idle")                       # the 60 s of silence ran out: chime and zip
+            if conversation or conv.stop.is_set():
+                return "", tool, False                 # silence, or zipped: no words
             if follow_up:
                 if self.chat.is_debate:
                     self.chat.end_debate()   # they stopped answering: the debate is over
@@ -601,9 +806,29 @@ class VoiceApp:
                 # Only "Hey Red" after all: ask for the command the usual way.
                 return self._exchange(tool, follow_up=follow_up)
         if not text:
+            if conversation or conv.stop.is_set():
+                return "", tool, conversation
             last = "Sorry, I didn't catch that. Could you say it again?"
             self._say(last)
             return last, tool, True
+        commands_log = logging.getLogger("red.commands")
+        if follow_up or conversation:
+            why = self._not_for_me(text, conversation)
+            if why:
+                # Red's own echo, "Claude, ...", or dictation into the editor in front: let it go.
+                commands_log.info("%r -> not for me (%s)", text, why)
+                if why != "echo":
+                    events.emit("not_for_me", text=text, reason=why)
+                return "", tool, conversation
+        kind = end_phrase(text)
+        if kind == "zip" or (kind == "end" and conversation):
+            # "Zip it", "not now", "that's all": the falling chime and the zipped mouth, no words.
+            commands_log.info("%r -> %s", text, "zip" if kind == "zip" else "end of the conversation")
+            events.emit("heard", text=text)
+            conv.zip("said")
+            return "", tool, False
+        if conversation:
+            conv.heard()
         self.out(f"You said: {text}")
         events.emit("heard", text=text)            # the bubble shows the user's words (plan.md 0.1 item 11)
         if is_filler(text):
@@ -618,6 +843,10 @@ class VoiceApp:
             return last, tool, False
         if follow_up and is_goodbye(text):
             self.chat.end_debate()
+            if conversation and not _JUST_NO.fullmatch(text.strip().lower()):
+                commands_log.info("%r -> end of the conversation", text)
+                conv.zip("said")                   # "stop", "nothing else", "I'm done": the zip
+                return "", tool, False
             last = "Okay."
             self._say(last)
             return last, tool, False
@@ -625,12 +854,15 @@ class VoiceApp:
         if bye is not None:
             logging.getLogger("red.commands").info("%r -> dismissed", text)
             self._say(bye)
+            conv.end("said")
             return bye, tool, False
+        # After every reply Red keeps listening for a follow-up (RED_FOLLOW_UP_SECONDS), even after an
+        # action, so a follow-up said right away is never lost (2026-11-14: 23 of 40 replies lost one).
         named = self.chat.take_name(text)          # "call me Ari" (red/memory.py)
         if named is not None:
             logging.getLogger("red.commands").info("%r -> name", text)
             self._say(named)
-            return named, tool, False
+            return named, tool, True
         stopped = self._stop_own_song(text)
         if stopped is not None:                    # "stop" after a song Red put on by itself
             logging.getLogger("red.commands").info("%r -> stop the idle song", text)
@@ -641,13 +873,13 @@ class VoiceApp:
             logging.getLogger("red.commands").info("%r -> switch companion", text)
             self.chat.remember(text, switched)
             self._say(switched)
-            return switched, tool, False
+            return switched, tool, True
         quick = quick_reply(text, name=self.chat.user_name())
         if quick is not None:
             logging.getLogger("red.commands").info("%r -> small talk", text)
             self.chat.remember(text, quick)
             self._say(quick)
-            return quick, tool, asks_back(quick)
+            return quick, tool, True
         self._state("thinking", f"“{text}”")
         try:
             if talk_only(text, tool, self.settings):
@@ -689,9 +921,8 @@ class VoiceApp:
                     last = f"{last.rstrip()} {question}" if question else last
                     again = True
                 else:
-                    # Done is done: after an action Red goes quiet. It keeps listening
-                    # only if the reply asks you something or the tool failed.
-                    again = asks_back(last) or self.executor.last_status == "error"
+                    # After an action too: "open Spotify" ... "and play something" must not be lost.
+                    again = True
             if stream.used:
                 self._finish_stream(stream, last, question, timer)
             else:
@@ -732,7 +963,7 @@ class VoiceApp:
         last = steps_reply(done, len(steps))
         tools = [route.tool for _, route in steps[:len(done)]]
         failed = done[-1][2] == "error"
-        again = failed or asks_back(last)
+        again = True                      # keep listening for a follow-up, as after one command
         if not failed and done[-1][2] != "cancelled" and any(t in INFO_TOOLS for t in tools):
             question = self._follow_up_question(last)
             last = f"{last} {question}" if question else last
@@ -789,7 +1020,11 @@ class VoiceApp:
         elif question and not stream.cancelled:
             stream.say(question)
         self._state("speaking", f"{last}\n{self.executor.last_details}".strip())
-        stream.finish(timeout=120)
+        try:
+            stream.finish(timeout=120)
+        finally:
+            self._last_said = f"{last} {question}".strip()
+            self._spoke_at = time.monotonic()
         timer.first_word(stream.first_word_at)
 
     def _talk(self, said: str, fallback: str) -> str:
@@ -813,6 +1048,8 @@ class VoiceApp:
         except Exception:  # noqa: BLE001 - no speakers: the text is still shown
             log.exception("Couldn't speak")
         finally:
+            self._last_said = text                  # to catch its own echo (red/conversation.py)
+            self._spoke_at = time.monotonic()
             if interruptible:
                 self._allow_interrupt(False)
 

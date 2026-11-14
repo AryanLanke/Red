@@ -444,7 +444,8 @@ class SilentThenWords:
     @property
     def timeouts(self):
         """The calls without the pause check (VoiceApp always passes one)."""
-        return [{k: v for k, v in kw.items() if k not in ("is_complete", "stats")} for kw in self.calls]
+        return [{k: v for k, v in kw.items() if k not in ("is_complete", "stats", "stop_event")}
+                for kw in self.calls]
 
 
 def follow_app(world, monkeypatch, *texts, speech_calls=None, **kw):
@@ -456,12 +457,13 @@ def follow_app(world, monkeypatch, *texts, speech_calls=None, **kw):
     return app, speaker, overlay, record, out
 
 
-def test_an_action_ends_the_conversation(world, monkeypatch):
-    # Do it, then go quiet: no "Anything else?", no second recording.
+def test_an_action_keeps_listening_for_a_follow_up(world, monkeypatch):
+    # Night 2: "open Spotify" ... "and play something" was lost. Now no "Anything else?", but the
+    # follow-up window stays open after an action too.
     app, speaker, overlay, record, out = follow_app(world, monkeypatch, "Open my downloads.")
     app.handle("wakeword")
     assert speaker.said == ["Opening Downloads."]
-    assert record.timeouts == [{}]
+    assert record.timeouts == [{}, {"start_timeout": 7.0}]
     assert overlay.names[-1] == "idle"
 
 
@@ -480,13 +482,13 @@ def test_says_no_and_red_stops(world, monkeypatch):
     assert len(record.calls) == 2
 
 
-def test_a_command_after_chat_runs_and_then_red_goes_quiet(world, monkeypatch):
+def test_commands_after_chat_each_keep_the_follow_up_open(world, monkeypatch):
     app, speaker, overlay, record, out = follow_app(
         world, monkeypatch, "Hello.", "Open my downloads.", "Check my repos.")
     app.handle("hotkey")
     assert speaker.said[0].endswith(("What's up?", "What's going on?"))   # hello() by the hour
-    assert speaker.said[1:] == ["Opening Downloads."]
-    assert len(record.calls) == 2                            # "Check my repos." is never heard
+    assert speaker.said[1:] == ["Opening Downloads.", "1 of 2 repos needs attention."]
+    assert len(record.calls) == 4                            # then silence ends it
     assert len(world["start"].calls) == 1
 
 
@@ -506,7 +508,7 @@ def test_a_failure_keeps_listening_so_you_can_say_it_again(world, monkeypatch):
     app, speaker, overlay, record, out = follow_app(world, monkeypatch, "Open Spotfy.", "Open my downloads.")
     app.handle("wakeword")
     assert speaker.said == ["I couldn't find an app called Spotfy.", "Opening Downloads."]
-    assert len(record.calls) == 2
+    assert len(record.calls) == 3                            # and one more follow-up, silent
 
 
 class Launcher(Tool):
@@ -569,7 +571,7 @@ def test_a_routing_failure_keeps_listening(world, monkeypatch):
     app.handle("wakeword")
     assert speaker.said == ["Sorry, I didn't understand that. Could you say it another way?",
                             "Opening Downloads."]
-    assert len(record.calls) == 2
+    assert len(record.calls) == 3
 
 
 def test_follow_ups_are_capped(world, monkeypatch):
@@ -647,7 +649,7 @@ def test_filler_runs_nothing_and_listens_once_more(world, monkeypatch):
     app, speaker, overlay, record, out = follow_app(world, monkeypatch, "you know", "Open my downloads.")
     app.handle("wakeword")
     assert speaker.said == ["Opening Downloads."]          # nothing said for "you know"
-    assert record.timeouts == [{}, {"start_timeout": 7.0}]
+    assert record.timeouts == [{}, {"start_timeout": 7.0}, {"start_timeout": 7.0}]
 
 
 def test_filler_in_a_follow_up_just_ends(world, monkeypatch):
@@ -726,13 +728,13 @@ def test_a_failed_answer_has_no_follow_up_question(world, monkeypatch):
     assert speaker.said == ["I couldn't find that."]
 
 
-def test_an_action_still_goes_quiet_after_an_answer(world, monkeypatch):
+def test_an_action_after_an_answer_keeps_listening_too(world, monkeypatch):
     answer_world(world)
     app, speaker, overlay, record, out = follow_app(
         world, monkeypatch, "How tall is Everest?", "Open my downloads.", "Check my repos.")
     app.handle("wakeword")
-    assert speaker.said[1:] == ["Opening Downloads."]
-    assert len(record.calls) == 2                               # "Check my repos." is never heard
+    assert speaker.said[1:] == ["Opening Downloads.", "1 of 2 repos needs attention."]
+    assert len(record.calls) == 4
 
 
 def test_the_conversation_remembers_the_answer_without_the_question(world, monkeypatch):

@@ -216,6 +216,11 @@ class Listener:
         self._interrupt_open = False
         # Speech heard with the wake word ("Hey Red, open..."), for the trigger handler to take.
         self.wake_audio = None
+        # Which companion the last wake word called ("red", "asha"...; "" for the hotkey).
+        self.wake_name = ""
+        # The hotkey's job when set: conversation mode on or off (VoiceApp.toggle_conversation). Called on
+        # a thread of its own. None: the hotkey starts one command, as before.
+        self.on_hotkey: Callable[[], None] | None = None
 
     # --- public API ---------------------------------------------------------
 
@@ -242,7 +247,7 @@ class Listener:
             self._audio_thread.start()
         mapping: dict[str, Callable[[], None]] = {}
         if self.hotkey:
-            mapping[self.hotkey] = lambda: self._fire("hotkey")
+            mapping[self.hotkey] = self._hotkey_pressed
         if self.mute_hotkey:
             # On its own thread: the pynput thread must not wait for the sound.
             mapping[self.mute_hotkey] = lambda: threading.Thread(
@@ -340,7 +345,28 @@ class Listener:
         finally:
             self.resume()
 
+    def trigger(self, source: str) -> bool:
+        """Start a turn as the hotkey would ("menu", "conversation"...). False when Red is busy, muted
+        or stopped (then nothing starts)."""
+        if not self._running or self._muted or self._busy.is_set():
+            return False
+        self._fire(source)
+        return True
+
     # --- internals ----------------------------------------------------------
+
+    def _hotkey_pressed(self) -> None:
+        """From the pynput thread: must return at once."""
+        if self.on_hotkey is None:
+            self._fire("hotkey")
+            return
+        threading.Thread(target=self._run_hotkey, name="red-hotkey-toggle", daemon=True).start()
+
+    def _run_hotkey(self) -> None:
+        try:
+            self.on_hotkey()
+        except Exception:  # noqa: BLE001 - the hotkey must keep working
+            log.exception("Hotkey handler failed")
 
     def _fire(self, source: str) -> None:
         """Called from the hotkey or wake word thread. Must return quickly."""
@@ -357,6 +383,7 @@ class Listener:
         self._busy.set()
         if source != "wakeword":
             self.wake_audio = None
+            self.wake_name = ""
         self._triggers.put(source)
 
     def _work(self) -> None:
@@ -398,6 +425,7 @@ class Listener:
                             if not self._busy.is_set():
                                 # "Hey Red, open YouTube" in one breath: the command's start.
                                 self.wake_audio = getattr(detector, "command_audio", None)
+                                self.wake_name = getattr(detector, "last_name", "") or ""
                             self._fire("wakeword")
                 failures = 0
                 self.last_error = None

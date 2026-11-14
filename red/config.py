@@ -54,9 +54,11 @@ DEFAULT_QUICK_END_SILENCE = 0.5
 # carry on talking the guess is thrown away. 0 turns it off.
 DEFAULT_SPECULATE_AFTER = 0.15
 DEFAULT_MAX_COMMAND = 20.0     # seconds; a command is cut off after this
-# After chat, a question back or a failure, Red keeps listening this long
-# for a reply. 0 turns follow-ups off.
-DEFAULT_FOLLOW_UP = 7.0
+# After every reply (chat, an answer or an action) Red keeps listening this long
+# for a follow-up. 0 turns follow-ups off.
+DEFAULT_FOLLOW_UP = 10.0
+# Conversation mode (the companion's mic button) ends after this long with nothing said.
+DEFAULT_CONVERSATION_IDLE = 60.0
 
 # Values that turn the hotkey or the wake word off.
 _OFF = {"0", "off", "none", "no", "false", "disabled"}
@@ -111,6 +113,9 @@ class Settings:
     speculate_after_seconds: float = DEFAULT_SPECULATE_AFTER
     max_command_seconds: float = DEFAULT_MAX_COMMAND
     follow_up_seconds: float = DEFAULT_FOLLOW_UP
+    conversation_idle_seconds: float = DEFAULT_CONVERSATION_IDLE
+    # Pause listening while another app has the microphone (red/conversation.py OtherAppGuard).
+    mic_guard: bool = True
     # Answer only the owner's voice (red/voice_match.py). Off until tested.
     voice_match: bool = False
     voice_match_threshold: float | None = None    # None: voice-setup's own pick
@@ -237,7 +242,8 @@ def load_settings(home: Path | None = None) -> Settings:
     speculate = _seconds("RED_SPECULATE_AFTER", DEFAULT_SPECULATE_AFTER, 0.0, 1.0)
     max_command = _seconds("RED_MAX_COMMAND_SECONDS", DEFAULT_MAX_COMMAND, 3.0, 120.0)
     follow_up = _seconds("RED_FOLLOW_UP_SECONDS", DEFAULT_FOLLOW_UP, 0.0, 30.0)
-    tts = (_env("RED_TTS") or "kokoro").lower()
+    conversation_idle = _seconds("RED_CONVERSATION_IDLE", DEFAULT_CONVERSATION_IDLE, 10.0, 600.0)
+    tts =(_env("RED_TTS") or "kokoro").lower()
     if tts not in TTS_CHOICES:
         raise ValueError(f"RED_TTS must be one of {TTS_CHOICES}, got {tts!r}")
     speed_text = _env("RED_VOICE_SPEED") or "1.0"
@@ -302,6 +308,8 @@ def load_settings(home: Path | None = None) -> Settings:
         speculate_after_seconds=speculate,
         max_command_seconds=max_command,
         follow_up_seconds=follow_up,
+        conversation_idle_seconds=conversation_idle,
+        mic_guard=(_env("RED_MIC_GUARD") or "on").lower() not in {"off", "0", "false", "no"},
         voice_match=match_text in {"on", "1", "true", "yes"},
         voice_match_threshold=float(match_threshold) if match_threshold is not None else None,
         chattiness=chattiness,

@@ -89,7 +89,8 @@ def test_real_commands_are_not_goodbyes(said):
 
 @pytest.fixture
 def clean_env(monkeypatch):
-    for name in ("RED_OVERLAY", "RED_END_SILENCE", "RED_MAX_COMMAND_SECONDS", "RED_FOLLOW_UP_SECONDS"):
+    for name in ("RED_OVERLAY", "RED_END_SILENCE", "RED_MAX_COMMAND_SECONDS", "RED_FOLLOW_UP_SECONDS",
+                 "RED_CONVERSATION_IDLE", "RED_MIC_GUARD"):
         monkeypatch.delenv(name, raising=False)
     return monkeypatch
 
@@ -99,7 +100,8 @@ def test_new_settings_defaults(clean_env, tmp_path):
     assert s.overlay == DEFAULT_OVERLAY == "companion"
     assert s.end_silence_seconds == DEFAULT_END_SILENCE == 1.5
     assert s.max_command_seconds == DEFAULT_MAX_COMMAND == 20.0
-    assert s.follow_up_seconds == 7.0
+    assert s.follow_up_seconds == 10.0
+    assert s.conversation_idle_seconds == 60.0 and s.mic_guard is True
 
 
 def test_new_settings_from_env(clean_env, tmp_path):
