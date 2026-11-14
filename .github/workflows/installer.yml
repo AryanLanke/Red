@@ -1,0 +1,48 @@
+# Builds Red-Setup.exe and runs the install test on a clean Windows VM: silent install, red doctor,
+# uninstall keeping data, reinstall, uninstall with /DELETEDATA=1 (installer/sandbox_test.ps1 -Mode guest).
+# The PC Red is built on can't do this itself (Windows 11 Home has no Windows Sandbox, and Smart App Control
+# blocks the unsigned installer), so this is the clean-machine check. Runs by hand (Actions tab, "Run
+# workflow") and when the installer or the requirements change on main.
+name: installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "installer/**"
+      - "requirements*.txt"
+      - ".github/workflows/installer.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  install-test:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build Red-Setup.exe
+        shell: powershell
+        run: |
+          $py = (Get-Command python).Source
+          & installer\build.ps1 -Python $py -Work "$env:RUNNER_TEMP\work" -Out "$env:RUNNER_TEMP\out"
+      - name: Install, red doctor, uninstall
+        shell: powershell
+        run: |
+          & installer\sandbox_test.ps1 -Mode guest -Setup "$env:RUNNER_TEMP\out\Red-Setup.exe" -Results "$env:RUNNER_TEMP\result"
+          exit $LASTEXITCODE
+      - name: SHA-256
+        if: always()
+        shell: powershell
+        run: Get-Content "$env:RUNNER_TEMP\out\Red-Setup.exe.sha256" -ErrorAction SilentlyContinue
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: install-test
+          path: ${{ runner.temp }}/result
+          retention-days: 14

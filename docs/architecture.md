@@ -353,9 +353,13 @@ The install folder (read-only to Red) holds the embedded Python, `red`, the ship
 **Uninstall:** removes the program; asks whether to keep memory, settings and downloaded models.
 
 **CI** (GitHub Actions, free for public repos, `windows-latest`):
-- On every push: unit tests and the settings-registry check.
-- On a tag: build the installer, run a silent install plus `red doctor` smoke test, attach the installer and hashes to a GitHub Release.
+- `.github/workflows/installer.yml` (by hand, and on main when `installer/**` or `requirements*.txt` change): build the installer, then `installer/sandbox_test.ps1 -Mode guest` on the clean VM; the result is an artifact. This is the clean-machine install check, because the PC Red is built on can't run one (Windows 11 Home has no Sandbox; Smart App Control blocks the unsigned exe).
+- Planned: unit tests on every push; on a tag, attach the installer and hashes to a GitHub Release.
 - Models aren't downloaded in CI; tests use fakes.
+
+**Install test** (`installer/sandbox_test.ps1`, result in `result.json`): silent install with the start-with-Windows task → program files, Start menu and Startup shortcuts → `red doctor` on the embedded Python (Python, core, voice and overlay packages and RED_HOME must be ok; the missing models are expected) → `plugins list`, the wizard/companion/tray imports → uninstall keeping memory (program and shortcuts gone, memory kept) → install again over it → uninstall with `/DELETEDATA=1` (folder gone). Modes: `guest` (any clean Windows), `host` (starts Windows Sandbox from `installer/sandbox-test.wsb`: offline, no GPU, no mic, results folder the only writable mapping), `staged` (copies the build's staged tree into a test folder instead of running the exe; never touches the Start menu, Startup folder or registry), `auto` (host if Sandbox exists, else staged).
+
+**Nightly** (`red/nightly.py`, `python -m red nightly on|off|run`): a Task Scheduler task "Red nightly" at 03:00 that starts only after 10 idle minutes (waits up to 4 h), never on battery, never wakes the PC, runs as the signed-in user without admin, at most 12 h. A run fetches origin and tests origin/main in a detached worktree (`RED_HOME\worktrees\nightly`), so the user's checkout and the hidden Red are untouched. Steps, each logged to `RED_HOME\cache\nightly\<date>\<step>.log`: `unit`, `replay`, `score`, `sim` (no cap when the user is away, else 10), `installer-build` (work and output in `RED_HOME\cache\installer`), `installer-test` (`-Mode auto`). A step whose file doesn't exist yet is skipped. Then `results.json` and `report.md` (step table, what got worse since the last run, the 5 worst simulator conversations); `morning_line(home)` is the one line the morning greeting says. Contract for `python -m red score`: print `Red Score: <n>/10`; the nightly folder is in `RED_NIGHTLY_DIR`. New layers (voice simulator, soak) are new entries in `STEPS`.
 
 **Publish:** GitHub Releases (source of truth) → SourceForge, itch.io, winget, Scoop, later Chocolatey and the Microsoft Store (plan.md §13).
 
@@ -372,7 +376,7 @@ The install folder (read-only to Red) holds the embedded Python, `red`, the ship
 | **Speech** | wake corpus replay per name (≥ 95% hits, 0 false wakes on 10 min of talk and a TV clip); STT on recorded clips; tag→segment parsing; no tag ever spoken | `red wake-test --replay`, unit | before a release |
 | **Performance** | `scripts/bench_turns.py`: 20 scripted turns through the real pipeline with recorded audio, Timing medians per tier; fails on > 20% regression | real models | nightly on this PC; before a release |
 | **Listening tests** | blind A/B of voices and clip banks, 10 lines each; humour ratings | the user, 15 min | per voice/persona change |
-| **Install** | Windows Sandbox with Smart App Control on: download → wizard → a wake → a reply → uninstall clean; an upgrade over a running Red | manual script `installer/sandbox-test.md` | before a release |
+| **Install** | silent install → `red doctor` → uninstall keeping data → reinstall → uninstall deleting data (§12 Install test); later the wizard, a wake and a reply, and an upgrade over a running Red | `installer/sandbox_test.ps1`: Windows Sandbox, the CI VM, or staged on this PC | nightly (staged here), the CI VM when the installer changes; before a release |
 | **Manual checklist** | 30 steps the user does in 15 minutes (wake each companion, switch, ask the screen, a reminder, a code request, memory story) | `docs/release-checklist.md` | before a release |
 
 Tests never touch the user's memory, plugins, secrets or real windows (`tests/conftest.py` guards, kept current).

@@ -39,6 +39,19 @@ Nothing outside the work and output folders is touched.
 - Uninstall: stops Red, removes the sign-in shortcut and the program files, then **asks whether to keep your
   memory, settings, companions and downloaded models**. A silent uninstall keeps them unless `/DELETEDATA=1`.
 
+## The automatic install test
+
+```powershell
+powershell -ExecutionPolicy Bypass -File installer\sandbox_test.ps1 -Mode auto -Setup <out>\Red-Setup.exe -Stage <work>\stage -Results <folder>
+```
+
+Silent install, the files and shortcuts, `red doctor`, uninstall keeping memory, install again, uninstall
+with `/DELETEDATA=1`; `result.json` lists every check. `-Mode host` runs it inside Windows Sandbox
+(`sandbox-test.wsb`; Windows 11 Pro or better), `-Mode guest` on any clean Windows (the GitHub Actions
+workflow `installer.yml` does this), `-Mode staged` copies the build's staged files instead of running the
+exe (for a PC with Smart App Control on). The nightly run (`python -m red nightly`) builds and runs this
+every night.
+
 ## Test it by hand
 
 ```powershell
