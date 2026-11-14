@@ -47,8 +47,9 @@ from .executor import Executor, run_later
 from .llm import LLMError, connect, keep_ollama_alive
 from .router import RouteError, Router
 from .chat import Chat, make_chat
-from .conversation import (ECHO_GUARD_SECONDS, Conversation, OtherAppGuard, addressed_elsewhere, dictation_like,
-                           end_phrase, foreground_title, is_echo)
+from .conversation import (ECHO_GUARD_SECONDS, Conversation, OtherAppGuard, addressed_elsewhere, asks_red,
+                           dictation_like, end_phrase, for_me_answer, foreground_title, is_echo, same_request,
+                           without_repeat)
 from .smalltalk import dismissal_reply, is_filler, is_goodbye, quick_reply, sounds_finished
 from .transcript import clean_transcript
 from .speech import SpeechStream, speaking_to
@@ -374,6 +375,7 @@ class VoiceApp:
         self._last_said = ""            # Red's last reply, to catch its own echo
         self._spoke_at = 0.0            # when Red last stopped talking (time.monotonic)
         self._names: tuple[list[str], list[str]] | None = None   # (companion names, contacts), read once
+        self._held = ""                 # a sentence Red asked "For me?" about, waiting for the answer
 
     # --- starting and stopping ------------------------------------------------
 
@@ -812,8 +814,33 @@ class VoiceApp:
             self._say(last)
             return last, tool, True
         commands_log = logging.getLogger("red.commands")
+        held, self._held = self._held, ""
+        for_red = False
+        if held:
+            # The answer to "For me?": yes runs the held sentence, saying it again runs it, no lets it go.
+            answer = for_me_answer(text)
+            if answer is False:
+                commands_log.info("%r -> not for me (said so)", held)
+                return "", tool, conversation
+            if answer is True:
+                commands_log.info("%r -> for me (said yes)", held)
+                text, for_red = held, True
+            elif same_request(text, held):
+                for_red = True
+        if asks_red(text, self._who()[0]):
+            for_red = True
+        text = without_repeat(text)                # "I said write a code..." -> "Write a code..."
         if follow_up or conversation:
             why = self._not_for_me(text, conversation)
+            if why == "dictation" and for_red:
+                why = ""                           # "for me", "can you", "I said...": for Red after all
+            if why == "dictation":
+                # Only a guess: never drop it silently (plan.md 1, stage 2). Ask, and keep the sentence.
+                commands_log.info("%r -> for me? (sounds like dictation)", text)
+                self._held = text
+                last = "For me?"
+                self._say(last)
+                return last, tool, True
             if why:
                 # Red's own echo, "Claude, ...", or dictation into the editor in front: let it go.
                 commands_log.info("%r -> not for me (%s)", text, why)

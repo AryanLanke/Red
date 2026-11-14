@@ -18,7 +18,9 @@ to conversation (no follow-ups, no conversation mode) until the button is clicke
   or one of your contacts (`addressed_elsewhere`);
 - in conversation mode, it sounds like dictation (long instruction prose, "make the button blue", "and
   now I want you to install...") while an editor, a terminal or a chat box is in front
-  (`dictation_like`). Saying "Red" in it overrides this. The bubble shows "not for me?" for 3 s.
+  (`dictation_like`). Saying "Red", "for me", "can you ..." or "I said ..." overrides this
+  (`asks_red`). Dictation is a guess, so Red never drops it silently: it asks "For me?" and keeps the
+  sentence; "yes" runs it, saying it again runs it, "no" lets it go (VoiceApp._exchange).
 Word rules and the window title only: no model call.
 
 Events: `conversation(on, reason)`, `zipped(on)`, `paused(on)`, `not_for_me(text)`.
@@ -169,13 +171,87 @@ def dictation_window(title: str) -> bool:
     return any(w in title for w in DICTATION_WINDOWS)
 
 
+# Words that always mean the sentence is for Red (plan.md 1, stage 2): "for me", "can you", a repeat or a
+# correction. 2026-11-14: "Could you write a code for me?" and "I said write a code for me..." were
+# dropped five times as dictation into the editor in front.
+_ASKS_RED = re.compile(
+    r"\bfor me\b|"
+    r"^(?:(?:hey|hi|ok|okay|so|um|uh|and|please|now|no|alright|all right)[ ,]+)*"
+    r"(?:can you|could you|would you|will you|can u|could u)\b")
+_REPEAT = re.compile(
+    r"^(?:(?:no|hey|ok|okay|um|uh|so)[ ,]+)*"
+    r"(?:i said|i just said|i already said|i asked|i asked you|i just asked|i told you|i meant|i mean|"
+    r"no i meant|what i said was|i was saying)\b")
+
+
+def asks_red(text: str, own_names: Iterable[str] = ("red",)) -> bool:
+    """Is this surely meant for Red? A name of Red's, "for me", "can you ...", or a repeat ("I said...",
+    "I meant..."). Such a sentence is never taken for dictation."""
+    said = _norm(text)
+    if not said:
+        return False
+    if any(re.search(rf"\b{re.escape(n.lower())}\b", said) for n in own_names):
+        return True
+    return bool(_ASKS_RED.search(said) or _REPEAT.match(said))
+
+
+_REPEAT_LEAD = re.compile(
+    r"^\s*(?:(?:no|hey|ok|okay|um|uh|so)[\s,]+)*"
+    r"(?:i said|i just said|i already said|i asked you to|i asked you|i told you to|i told you)[\s,:]+(?:that[\s,]+)?",
+    re.I)
+
+
+def without_repeat(text: str) -> str:
+    """ "I said write a code for me" -> "write a code for me": the repeat words off, when what follows is a
+    request of its own (three words or more). Anything else comes back as it was."""
+    m = _REPEAT_LEAD.match(text or "")
+    if not m:
+        return text
+    rest = text[m.end():].strip()
+    if len(rest.split()) < 3:
+        return text
+    return rest[0].upper() + rest[1:]
+
+
+def same_request(a: str, b: str) -> bool:
+    """Are `a` and `b` the same request said twice? Most of the shorter one's words are in the other."""
+    wa, wb = set(_norm(without_repeat(a)).split()), set(_norm(without_repeat(b)).split())
+    if len(wa) < 2 or len(wb) < 2:
+        return False
+    return len(wa & wb) / min(len(wa), len(wb)) >= 0.6
+
+
+_FOR_ME_YES = re.compile(
+    r"(?:(?:yes|yeah|yep|yup|ya|sure|of course|obviously|right|correct|exactly|definitely)[ ,]*)+"
+    r"(?:(?:it'?s|it is|it was|that'?s|that is|that was|i'?m talking|i am talking|i was talking)? ?(?:for you|to you|you))?"
+    r"(?: (?:please|red|remy|asha|go ahead|do it))*|"
+    r"(?:(?:it'?s|it is|it was|that'?s|that is|that was) )?(?:for you|you|to you)(?: (?:please|red|remy|asha))*|"
+    r"(?:go ahead|do it|please)(?: please)?")
+_FOR_ME_NO = re.compile(
+    r"(?:no|nope|nah|not you|not for you|no not you|no not for you|never mind|nevermind|no thanks|"
+    r"(?:it'?s|it is|it was|that'?s|that is|that was) not for you|i wasn'?t talking to you)(?: (?:red|remy|asha|sorry))*")
+
+
+def for_me_answer(text: str) -> bool | None:
+    """The answer to "For me?": True (yes), False (no), or None when it's a new sentence."""
+    said = _norm(text)
+    if not said:
+        return None
+    if _FOR_ME_NO.fullmatch(said):
+        return False
+    if _FOR_ME_YES.fullmatch(said):
+        return True
+    return None
+
+
 def dictation_like(text: str, title: str, own_names: Iterable[str] = ("red",)) -> bool:
     """Does this sound like dictation to another app rather than talk to Red?
 
     Only while an editor, a terminal or a chat box is in front (`title`), and only for prose that reads
     like an instruction to someone else: long (12+ words), or 6+ words that start like an instruction
     ("write a function that...", "make the button blue and...") or talk about code, or a fragment that
-    carries on a dictated sentence ("and now I want you to install..."). Saying Red's name overrides it.
+    carries on a dictated sentence ("and now I want you to install..."). Saying Red's name, "for me",
+    "can you ..." or "I said ..." overrides it (`asks_red`).
     """
     if not dictation_window(title):
         return False
@@ -183,7 +259,7 @@ def dictation_like(text: str, title: str, own_names: Iterable[str] = ("red",)) -
     words = said.split()
     if not words:
         return False
-    if any(re.search(rf"\b{re.escape(n.lower())}\b", said) for n in own_names):
+    if asks_red(said, own_names):
         return False
     if len(words) >= _LONG_WORDS:
         return True
