@@ -8,7 +8,7 @@ This is the only plan file. It lists **everything** that has to be done to ship 
 ## The user's to-do (everything else is automated)
 | When | What | Why |
 |---|---|---|
-| **Day 1** | **Kaggle token:** kaggle.com → your profile → Settings → API → *Create New Token*; save it as `D:\RED\config\secrets\kaggle\kaggle.json`; verify your phone number in Kaggle settings | Training (Day 7) can't run without it |
+| ~~Day 1~~ | ✅ **Kaggle: done.** The access token is in `D:\RED\config\secrets\kaggle\access_token.txt` and the GPU is on | Training (Day 7) |
 | **Day 1** | **Accounts (all free):** SignPath Foundation application (code signing for open source), SourceForge, itch.io, a Microsoft Partner Center developer account (free for individuals; check when signing up), Chocolatey. The track B session prepares every text | Signed installer and the download sites |
 | **Day 3** | Listen to the voice, laugh, whistle and nature-sound sheet (`D:\RED\cache\voice-picks-young\`) and pick | Only you can judge how they sound |
 | **Day 4** | Allow "keep clips Red misheard" (stays on this PC, never uploaded or committed) | Misheard voice gets fed back into the tests |
@@ -247,6 +247,8 @@ So every mishearing becomes a test that has to pass from then on.
 2. **Scrub:** remove emails, phone numbers, addresses and keys.
 3. **Build** a private dataset in `D:\RED\cache\train\`.
 4. **Kaggle:** upload, run the Unsloth LoRA notebook on Qwen3.5-4B (`training/kaggle_lora.ipynb`, every cell explained; free 16 GB GPU, about 1–2 h), poll until done, download the GGUF (q4_K_M).
+   - **The token** is Kaggle's newer API access token, in `D:\RED\config\secrets\kaggle\access_token.txt` (not the old `kaggle.json`). The training script reads it and hands it to the Kaggle CLI or API **for that process only**: `KAGGLE_API_TOKEN`, or an `access_token` file in `KAGGLE_CONFIG_DIR=D:\RED\config\secrets\kaggle`, whichever the installed `kaggle` package supports (checked on Day 7).
+   - The token is never printed, logged or committed.
 5. **Import** it into Red's Ollama as a *candidate*. The current model stays.
 6. **Eval gate:** the simulator, replay, routing and blind-persona tests, old vs. new. The candidate wins only if it's more human, at least as good at tools, and not slower.
 7. **Report**, then the user switches with one click in the app. Never automatically, and `.env` is never touched.
@@ -327,7 +329,7 @@ Each day's exit check must pass before the next day starts. The lines under a ti
 - Exit check: real-work tasks ≥ 90%; dictation ≤ 1 s and exactly what was said in VS Code, a browser and Word; climbs to every corner without teleporting.
 
 ### Day 7: training, and a lively body
-- [ ] **A7.** Training: dataset → Kaggle run → candidate → eval gate → report (section 4). Without `kaggle.json`: build the dataset and notebook, and write the question here.
+- [ ] **A7.** Training: dataset → Kaggle run → candidate → eval gate → report (section 4). First a 1-minute check: `kaggle kernels list --mine` works with the token.
 - [ ] **B7.** Handling reactions per companion (pickup moods, dizzy, pout, fling-and-grab, poke squash); quiet life and proactive chat timing; the tray update check; the 8 h soak in the nightly run.
 - Exit check: training report written; soak with 0 crashes; a reaction sheet for every companion.
 
