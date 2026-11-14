@@ -575,7 +575,11 @@ def main(argv: list[str], home: Path, task: NightlyTask | None = None) -> int:
             night = nightly_root(home) / r["date"]
             print(render(r, night))
             return 0 if all(s["status"] != "fail" for s in r["steps"]) else 1
-        task = task or NightlyTask(home)
+        if task is None:
+            # The task starts from the nightly worktree, which every run moves to origin/main, so the
+            # nightly code itself is always main's (the user's checkout is only pulled by track A).
+            workdir = prepare_tree(home)[0] if a.action == "on" else REPO
+            task = NightlyTask(home, workdir=workdir)
         print({"on": task.on, "off": task.off}.get(a.action, task.status)())
     except NightlyError as e:
         print(f"error: {e}", file=sys.stderr)
