@@ -64,7 +64,7 @@ def test_red_is_the_man_remy_and_asha_have_their_looks_bruno_and_winston_are_tex
     loaded = companions.load_all(tmp_path)
     assert loaded["red"].voice_id.startswith(("am_", "bm_")) and loaded["red"].avatar == "red"
     assert loaded["remy"].avatar == "remy" and loaded["remy"].likes_music()
-    assert loaded["asha"].avatar == "asha" and loaded["asha"].voice_id == "af_kore"
+    assert loaded["asha"].avatar == "asha" and loaded["asha"].voice_id == "af_heart"
     assert loaded["bruno"].text_only and loaded["winston"].text_only
     assert loaded["red"].chattiness == "companion" and loaded["red"].likes_music()
     assert loaded["bruno"].temper == "high" and loaded["remy"].temper == "low"

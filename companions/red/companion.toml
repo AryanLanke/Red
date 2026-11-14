@@ -5,6 +5,8 @@ name = "Red"
 wake = ["hey red"]
 tagline = "Dry, quick, loves music. Gets annoyed fast when ignored."
 hello = "Red here. What do you need?"
+# scripts/voice_pick.py (2026-11-13): every am_*/bm_* voice is under 165 Hz and understood by Whisper;
+# am_adam and bm_fable clip (peak over 1.0) so they are not offered. am_michael: calm and steady, 116 Hz.
 voice = { engine = "kokoro", id = "am_michael", speed = 1.0 }
 voices = ["am_michael", "am_onyx", "am_puck", "am_fenrir", "bm_george"]
 sounds = "jp-male-1"

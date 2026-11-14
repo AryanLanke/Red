@@ -210,3 +210,72 @@ def test_phonemes_match_kokoro_onnx():
 ])
 def test_speakable(written, said):
     assert speakable(written) == said
+
+
+# --- the companion's voice (night 1) ---------------------------------------------------------
+
+@pytest.fixture
+def no_voice_env(monkeypatch):
+    for name in ("RED_VOICE", "RED_VOICE_SPEED", "RED_COMPANION", "RED_TTS"):
+        monkeypatch.delenv(name, raising=False)
+    yield
+    from red import events
+    events.clear()
+
+
+def test_red_speaks_with_a_mans_voice_by_default(no_voice_env, tmp_path):
+    from red.tts_kokoro import companion_voice
+    voice, speed = companion_voice(load_settings(tmp_path))
+    assert voice == "am_michael" and speed == 1.0
+    assert make_speaker(load_settings(tmp_path)).voice_name == "am_michael"
+
+
+def test_remy_and_asha_speak_with_women_voices(no_voice_env, monkeypatch, tmp_path):
+    from red.tts_kokoro import companion_voice
+    monkeypatch.setenv("RED_COMPANION", "remy")
+    assert companion_voice(load_settings(tmp_path)) == ("af_bella", 1.05)
+    monkeypatch.setenv("RED_COMPANION", "asha")
+    assert companion_voice(load_settings(tmp_path))[0].startswith("af_")
+
+
+def test_a_voice_the_user_pinned_wins(no_voice_env, monkeypatch, tmp_path):
+    from red.tts_kokoro import companion_voice
+    monkeypatch.setenv("RED_VOICE", "bm_george")
+    monkeypatch.setenv("RED_VOICE_SPEED", "0.9")
+    assert companion_voice(load_settings(tmp_path)) == ("bm_george", 0.9)
+
+
+def test_the_users_own_companion_file_changes_the_voice(no_voice_env, tmp_path):
+    from red.tts_kokoro import companion_voice
+    folder = tmp_path / "companions" / "red"
+    folder.mkdir(parents=True)
+    (folder / "companion.toml").write_text('voice = { id = "bm_george", speed = 0.95 }\n', encoding="utf-8")
+    assert companion_voice(load_settings(tmp_path)) == ("bm_george", 0.95)
+
+
+def test_switching_companion_switches_the_voice(no_voice_env, monkeypatch, tmp_path):
+    from red import companions, events
+    speaker = make_speaker(load_settings(tmp_path))
+    assert speaker.voice_name == "am_michael"
+    monkeypatch.setenv("RED_COMPANION", "remy")          # set_active keeps this in step
+    events.emit("companion", id="remy")
+    assert speaker.voice_name == "af_bella" and speaker.speed == 1.05
+    events.emit("companion", id="red")
+    assert speaker.voice_name == "am_michael" and speaker.speed == 1.0
+
+
+def test_an_unknown_voice_is_not_taken(no_voice_env, tmp_path):
+    speaker = make_speaker(load_settings(tmp_path), follow_companion=False)
+    speaker.set_voice("xx_nobody")
+    assert speaker.voice_name == "am_michael"
+
+
+def test_british_voices_use_an_espeak_voice_that_exists():
+    from red.tts_kokoro import _language
+    assert _language("bm_george") == "en-gb-x-rp" and _language("am_michael") == "en-us"
+
+
+def test_british_phonemes_really_work_with_pipers_espeak():
+    pytest.importorskip("piper")
+    from red.tts_kokoro import _language, phonemize
+    assert phonemize("Hello there.", _language("bm_george"))      # raised "Failed to set voice: en-gb" before

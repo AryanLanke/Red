@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import threading
 from pathlib import Path
@@ -147,6 +148,15 @@ class KokoroSpeaker(Speaker):
         self._engine_loader = engine_loader
         self.using_fallback = False
 
+    def set_voice(self, voice: str, speed: float | None = None) -> None:
+        """Speak with another Kokoro voice from the next sentence on (the companion changed)."""
+        if voice not in VOICES:
+            log.warning("Unknown Kokoro voice %r; keeping %s", voice, self.voice_name)
+            return
+        self.voice_name = voice
+        if speed is not None:
+            self.speed = speed
+
     @property
     def model_path(self) -> Path:
         return self.voice_dir / MODEL_FILE
@@ -208,13 +218,45 @@ class KokoroSpeaker(Speaker):
             self._speaking.clear()
 
 
-def make_speaker(settings) -> Speaker:
-    """Red's speaker from its settings: Kokoro with Piper behind it, or Piper alone."""
+def companion_voice(settings, companion_id: str | None = None) -> tuple[str, float]:
+    """(Kokoro voice, speed) to speak with: the user's own RED_VOICE / RED_VOICE_SPEED if they set
+    them, else the active companion's voice (companions/<id>/companion.toml, plus the user's edits).
+    Red is a man (am_michael), Remy and Asha women."""
+    explicit_voice = (os.environ.get("RED_VOICE") or "").strip()
+    explicit_speed = bool((os.environ.get("RED_VOICE_SPEED") or "").strip())
+    voice, speed = settings.voice, settings.voice_speed
+    try:
+        from red import companions
+        who = companions.load(companion_id, settings.home) if companion_id else companions.active(settings.home)
+        if who.voice.get("engine", "kokoro") == "kokoro" and who.voice_id in VOICES:
+            voice = who.voice_id if not explicit_voice else voice
+            if not explicit_speed:
+                speed = float(who.voice.get("speed", 1.0))
+    except Exception:  # noqa: BLE001 - a broken companion file must not silence Red
+        log.warning("Couldn't read the companion's voice; using %s", voice, exc_info=True)
+    return voice, speed
+
+
+def make_speaker(settings, *, follow_companion: bool = True) -> Speaker:
+    """Red's speaker from its settings: Kokoro with Piper behind it, or Piper alone.
+
+    Kokoro speaks with the active companion's voice, and switches voice when the companion does
+    (the `companion` event, red/companions.py), unless the user pinned one with RED_VOICE.
+    """
     piper = Speaker(settings.models_dir / "piper", settings.piper_voice)
     if settings.tts != "kokoro":
         return piper
-    return KokoroSpeaker(settings.models_dir / "kokoro", settings.voice, speed=settings.voice_speed,
-                         fallback=piper)
+    voice, speed = companion_voice(settings)
+    speaker = KokoroSpeaker(settings.models_dir / "kokoro", voice, speed=speed, fallback=piper)
+    if follow_companion:
+        from red import events
+
+        def switch(id: str = "", **_):
+            new_voice, new_speed = companion_voice(settings, id or None)
+            speaker.set_voice(new_voice, new_speed)
+
+        events.on("companion", switch)
+    return speaker
 
 
 # --- Text the way it is said --------------------------------------------------
