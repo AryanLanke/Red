@@ -115,7 +115,12 @@ class KokoroEngine:
         self.voices = np.load(voices_path)
 
     def create(self, text: str, voice: str, speed: float = 1.0) -> np.ndarray:
-        tokens = [VOCAB[c] for c in phonemize(text, _language(voice))][:MAX_TOKENS]
+        return self.create_phonemes(phonemize(text, _language(voice)), voice, speed)
+
+    def create_phonemes(self, phonemes: str, voice: str, speed: float = 1.0) -> np.ndarray:
+        """Speak Kokoro phonemes as they are (the Japanese reaction sounds are written in them,
+        because Japanese text needs a phonemizer with native code that Smart App Control may block)."""
+        tokens = [VOCAB[c] for c in phonemes if c in VOCAB][:MAX_TOKENS]
         if not tokens:
             return np.zeros(0, dtype=np.float32)
         styles = self.voices[voice]

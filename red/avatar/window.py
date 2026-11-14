@@ -706,7 +706,7 @@ def _window_class():
                 self.fall_y = self.geometry().top()
                 area = self._area_for(pos.x())
                 self.side = side_for(pos.x(), area.left(), area.right(), CORNER_SNAP, pos.y(), area.top())
-                self._sound(self.drop_clips)
+                self._sound(self.drop_clips, "drop")
                 self._speed(FAST)
                 if self.side in TOP_SIDES:               # it grabs the top edge or corner: no falling
                     self.look.falling = False
@@ -733,7 +733,7 @@ def _window_class():
             self.last_drag = (QPointF(pos), self.clock())
             self.swing = 0.0
             self.animate("pop")
-            self._sound(self.pickup_clips)
+            self._sound(self.pickup_clips, "pickup")
             # Hold it by the top of the head: the grab point is above the head mark.
             body_head = self.mark_point("body_drag_1")
             self.grab_offset = QPointF(body_head.x(), body_head.y() - 0.16 * SIZES[self.size_name])
@@ -773,7 +773,33 @@ def _window_class():
             g = self.geometry()
             self.setGeometry(g.left(), round(self.fall_y), g.width(), g.height())
 
-        def _sound(self, clips: list[Path]) -> None:
+        def _react(self, kind: str, every: float = 0.0) -> bool:
+            """A sound of the companion's own pack (companion.toml `sounds`, red/sounds.py) for `kind`
+            (pickup, drop, hover...). False when there is none, so the caller can fall back."""
+            try:
+                from .. import companions, sounds
+                now = self.clock()
+                last = self.__dict__.setdefault("_react_at", {})
+                if every and now - last.get(kind, -1e9) < every:
+                    return True                                   # too soon: say nothing, not the old clip
+                if self.meter.level() != 0.0 or sounds.red_speaking():
+                    return True                                   # never over Red's own voice
+                home = Path(self.state_file).parent.parent if self.state_file else None
+                path = sounds.pick(companions.load(self.companion, home=home).sounds, kind, home=home,
+                                   avoid=self.__dict__.get("_react_last"))
+                if path is None:
+                    return False
+                last[kind] = now
+                self._react_last = path
+                sounds.play(path)
+                return True
+            except Exception:  # noqa: BLE001 - sounds are a nicety
+                log.debug("Reaction sound failed", exc_info=True)
+                return False
+
+        def _sound(self, clips: list[Path], kind: str | None = None) -> None:
+            if kind and self._react(kind):
+                return
             existing = [p for p in clips if p.exists()]
             if existing and self.meter.level() == 0.0:          # never over Red's own voice
                 play_clip(random.choice(existing))
@@ -800,8 +826,10 @@ def _window_class():
                 self.look.state = "idle"
                 self.until["notice"] = now + NOTICE_SECONDS
                 self.animate("jolt")
+                self._react("surprised", every=20.0)      # woken by the mouse
             elif self.look.state == "idle":
                 self.until["hover"] = now + HOVER_SECONDS
+                self._react("hover", every=12.0)
                 if self.anim_age("hop", now, 1.5) is None:      # not again while it's still hopping
                     self.animate("hop")
             self.last_activity = now
@@ -975,6 +1003,7 @@ def _window_class():
             self.show()
             self.perch()
             self.animate("land")
+            self._react("happy")                          # it is glad to be called
             self._speed(FAST)
             self.tick()
 

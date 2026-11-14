@@ -335,6 +335,8 @@ class VoiceApp:
             bind = getattr(tool, "bind_announce", None)
             if callable(bind):
                 bind(self.announce)         # notify_when_done speaks when the app finishes
+        from . import sounds
+        sounds.watch_voice(lambda: bool(getattr(voice.speaker, "speaking", False)))   # no reaction over Red's voice
         self.listener = None
         self.notice = ""        # why the wake word is off, if it is
         self.reminders = None   # red.scheduler's Scheduler, when it exists
