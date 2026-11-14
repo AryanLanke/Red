@@ -29,6 +29,7 @@ from pathlib import Path
 
 REPLAY_DIR = Path(__file__).resolve().parents[1] / "tests" / "replay"
 EDITOR_TITLE = "plan.md - red - visual studio code code.exe"     # the window in front while replaying
+DESKTOP_TITLE = "program manager explorer.exe"                   # nothing in front (the real-model replay)
 KINDS = ("talk", "noise", "zip")
 
 
@@ -279,24 +280,28 @@ def run_model(lines: list[Line], llm, *, real_home: Path | None = None, on_resul
     from .sim import rules
     from .sim.harness import SimWorld
     results: list[Result] = []
-    for line in lines:
-        with SimWorld(llm, real_home=real_home, confirm="no") as world:
-            if line.after:
-                world.say(line.after)
-            turn = world.say(line.said, follow_up=bool(line.after))
-            res = Result(line=line, via=turn.via, tool=turn.tool or "none", reply=turn.reply or "",
-                         first_word=turn.first_word)
-            res.outcome = _outcome(world, turn)
-            exp = expectation(line)
-            fails = rules.grade(turn, exp)
-            res.failures = [str(f) for f in fails if f.code != "slow"]
-            if line.kind == "zip" and res.outcome != "zipped":
-                res.failures.append(f"wrong_tool: should zip, got {res.outcome}")
-            res.problems = [f for f in res.failures if f.split(":", 1)[0] in CORRECT_CODES | TEXT_CODES]
-            results.append(res)
+    with _editor_in_front(DESKTOP_TITLE):          # the gate is run_offline's job; this one grades the model
+        for line in lines:
+            results.append(_model_line(line, llm, real_home, rules, SimWorld))
             if on_result is not None:
-                on_result(res)
+                on_result(results[-1])
     return results
+
+
+def _model_line(line: Line, llm, real_home, rules, SimWorld) -> Result:
+    """One line (after its `after` line) in a fresh world, graded by rule."""
+    with SimWorld(llm, real_home=real_home, confirm="no") as world:
+        if line.after:
+            world.say(line.after)
+        turn = world.say(line.said, follow_up=bool(line.after))
+        res = Result(line=line, via=turn.via, tool=turn.tool or "none", reply=turn.reply or "",
+                     first_word=turn.first_word)
+        res.outcome = _outcome(world, turn)
+    res.failures = [str(f) for f in rules.grade(turn, expectation(line)) if f.code != "slow"]
+    if line.kind == "zip" and res.outcome != "zipped":
+        res.failures.append(f"wrong_tool: should zip, got {res.outcome}")
+    res.problems = [f for f in res.failures if f.split(":", 1)[0] in CORRECT_CODES | TEXT_CODES]
+    return res
 
 
 def summarize(offline: list[Result] | None = None, model: list[Result] | None = None) -> dict:

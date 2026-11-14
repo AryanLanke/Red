@@ -42,7 +42,10 @@ python -m red route "open Downloads"  # print the tool call for one command
 python -m red.overlay                 # overlay demo through every state
 python -m red wake-test               # 30 s of live "Hey Red" checks: words heard, score, loudness
 python -m red plugins list            # plugins, on or off, and why one was skipped (on NAME / off NAME)
+python -m red score                   # the Red Score (red/score.py): replay + 10 real-model lines; --offline, --big, --persona
 ```
+
+**Replay tests** (`tests/test_replay.py`, `red/replay.py`): every real sentence from `logs\commands.jsonl` is labelled once in `tests/replay/*.toml` (the tool it should reach, `talk`, `noise` or `zip`; no private details) and played through the real turn loop with no model on every commit. A new real sentence gets a label there (`replay.unlabelled(log)` lists them).
 
 There is no build step, linter or formatter set up. Dependencies are pinned exactly in `requirements*.txt`.
 
@@ -106,4 +109,4 @@ The voice and UI modules are imported lazily, through `load_voice()` and inside 
 - The wake phrase is "Hey Red" (`RED_WAKEWORD=hey_red`). Never use "Jarvis" as a wake word, default, prompt or user-facing text.
 - Red never calls a cloud model. Voice, screen and the AI stay on the PC. Red talks only to accounts the user signs into through Red: Google (after `python -m red google-login`, `red/google_auth.py`: mail and calendar text for the Gmail and Calendar tools) and plugins such as Spotify or other mail. Each service gets only what it needs. Tokens are encrypted with DPAPI and never go into git. Trading and financial automation are out of scope.
 - Windows Smart App Control blocks unsigned binaries. Exit code `0xC0E90002` from llama-server means it was blocked; Ollama is the default for this reason.
-- **Conversation mode** (`red/conversation.py`): the companion's mic button, Ctrl+Alt+R or "Talk to me" starts it (`VoiceApp.toggle_conversation`); every sentence is for Red until a click, "that's all", "zip it" or `RED_CONVERSATION_IDLE`. A zipped mouth (mic.json `zipped`) ignores conversation until a click or "Hey Red". After every reply the follow-up window (`RED_FOLLOW_UP_SECONDS`, 10) stays open. Not for Red: its own echo, "Claude, ...", dictation with an editor in front, and any time another app has the mic (`OtherAppGuard`). The wake stage knows every companion's name (`wakeword.NAMES`).
+- **Conversation mode** (`red/conversation.py`): the companion's mic button, Ctrl+Alt+R or "Talk to me" starts it (`VoiceApp.toggle_conversation`); every sentence is for Red until a click, "that's all", "zip it" or `RED_CONVERSATION_IDLE`. A zipped mouth (mic.json `zipped`) ignores conversation until a click or "Hey Red". After every reply the follow-up window (`RED_FOLLOW_UP_SECONDS`, 10) stays open. Not for Red: its own echo, "Claude, ...", and any time another app has the mic (`OtherAppGuard`). "For me", "can you ...", a name or "I said ..." always reach Red (`asks_red`); what only sounds like dictation with an editor in front gets "For me?" and is kept for a yes or a repeat, never dropped silently. The wake stage knows every companion's name (`wakeword.NAMES`).
