@@ -56,7 +56,11 @@ def test_every_persona_is_written_and_short_enough_to_stay_fast(cid, tmp_path):
     assert "A:" in text and "B:" in text, "with example exchanges, labelled as other people's chats"
     assert "other people's chats" in text.lower()
     # Every 1000 characters of system prompt cost ~0.14 s before the first word (night 1 measurement).
-    assert len(text) < 1100
+    # The voice examples moved from the shared prompt into each persona (night 2), so a persona may be
+    # longer, but the whole system prompt stays about the size it was (4,500 characters).
+    assert len(text) < 1250
+    system = chatmod.Chat(None, persona=lambda: c).system()
+    assert len(system) < 5100
     assert not chatmod.invented_life(text) and not chatmod.written_laughter(text)
 
 
@@ -233,7 +237,7 @@ def test_switching_changes_the_next_prompt(tmp_path):
 
 def test_a_companion_without_a_persona_still_gets_its_name(tmp_path):
     chat = chatmod.Chat(None, persona=lambda: companions.load("kira", tmp_path))
-    assert "Your name is Kira, not Red." in chat.system()
+    assert "Your name is Kira." in chat.system()
 
 
 def test_a_broken_persona_callable_does_not_break_chat():

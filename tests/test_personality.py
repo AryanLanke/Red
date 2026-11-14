@@ -29,7 +29,9 @@ def test_the_character_is_a_friend_not_a_help_desk():
                  "tease lightly"):
         assert line in CHAT_SYSTEM
     # Examples are other people's chats, so the model doesn't take them for this user's history.
-    assert CHAT_SYSTEM.count("\nA: ") >= 4 and CHAT_SYSTEM.count("\nB: ") >= 4
+    # The shared prompt keeps two that show the rules; each companion's voice is in its persona.
+    assert CHAT_SYSTEM.count("\nA: ") >= 2 and CHAT_SYSTEM.count("\nB: ") >= 2
+    assert "You are Red" not in CHAT_SYSTEM, "the shared rules belong to every companion"
     assert "\nUser: " not in CHAT_SYSTEM and "None of this happened with this user" in CHAT_SYSTEM
     assert "Don't bring up their meetings, mail or to-dos" in CHAT_SYSTEM
     assert "Jarvis" not in CHAT_SYSTEM + DEBATE_SYSTEM + ANSWER_SYSTEM
