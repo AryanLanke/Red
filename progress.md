@@ -570,6 +570,30 @@ Every command writes a `Timing` line to `red.log`: listen, transcribe, route, ac
 - **Also found:** Kokoro's British voices (`bm_*`, `bf_*`) never worked: `en-gb` is not an espeak voice in Piper's data (Red fell back to Piper). Now `en-gb-x-rp`.
 - GPU Whisper stays off: cuBLAS isn't installed, and the 6 GB card is shared with the model.
 
+#### Voices by measurement (2026-11-13, plan.md 0.3 lane 1 task 3, night 1)
+
+`scripts/voice_pick.py` renders three of Red's lines with each Kokoro voice (WAVs in `RED_HOME\cacheoice-picks`, not in git) and measures the median pitch (autocorrelation), pitch spread, loudness, peak, pace, and the words Whisper base.en gets wrong when it listens back (all 0%: every voice is understood). Men's voices, lowest first (f0 Hz, spread in semitones, dB, peak, seconds for the 3 lines, characters per second):
+
+```
+am_onyx          86    6.5  -22.4  0.68  10.4    15.8   0.0
+bm_lewis         97    9.3  -23.1  0.78  10.3    16.0   0.0
+am_echo         107    9.6  -21.9  0.67  10.5    15.7   0.0
+am_puck         112    8.1  -18.4  0.84   8.6    19.3   0.0
+am_michael      116    6.6  -23.8  0.87  10.5    15.8   0.0
+am_liam         121   11.6  -21.2  0.74   8.6    19.2   0.0
+bm_fable        121   11.6  -22.7  1.29  11.0    15.0   0.0
+am_adam         121    6.1  -18.1  1.19   8.6    19.2   0.0
+bm_daniel       127    6.1  -20.8  0.57   9.2    18.0   0.0
+am_fenrir       139   10.7  -18.9  1.00   8.5    19.5   0.0
+bm_george       143    8.6  -20.7  0.60  10.6    15.6   0.0
+am_eric         160    9.3  -20.8  0.53   8.5    19.3   0.0
+```
+
+- Every man's voice is under 165 Hz (the highest, `am_eric`, is 160). `am_adam` and `bm_fable` clip (peak over 1.0) and are not offered.
+- **Red's choices:** `am_michael` (default, 116 Hz, the steadiest: dry fits), `am_onyx` (86 Hz, the deepest), `am_puck` (112 Hz, livelier), `am_fenrir` (139 Hz), `bm_george` (143 Hz, British). **Remy:** `af_bella` (200 Hz, speed 1.05). **Asha:** `af_heart` (203 Hz, the best-rated voice; `af_kore`, plan's pick, is 149 Hz, lower than most women's voices, so it is only a choice now).
+- `make_speaker` speaks with the active companion's voice (`tts_kokoro.companion_voice`): `RED_VOICE` / `RED_VOICE_SPEED` win if the user set them, else the companion's `voice` (their edits in `RED_HOME\companions\<id>\` count). Switching companion (the `companion` event) changes the voice from the next sentence.
+- Bug found on the way: the British voices never worked (see "Hearing fast").
+
 ### 7.3 Overlay (Track C)
 
 - PySide6. Frameless, always on top, translucent, and doesn't take keyboard focus. Sits in the bottom-right corner of the primary screen.
