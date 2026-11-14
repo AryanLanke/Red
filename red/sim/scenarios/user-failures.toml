@@ -1,0 +1,125 @@
+# The user's real failures, 2026-11-13 22:45-22:51 (logs/commands.jsonl, red.log), as scenarios.
+# Each one failed on the day. "fix" says who owns the repair; testing verifies it.
+
+# --- "It's on you, whatever song you wanna play" went to play_online with the query "whatever song" ---
+# fix: personality (the music choice). "Whatever / anything / your favourite / one you like / surprise me"
+# must make the active companion pick a real song from its own taste, say what it picked, then play it.
+[[scenario]]
+id = "uf-whatever-song"
+category = "music-choice"
+tags = ["user-failure", "regress"]
+companion = "*"
+turns = [
+  { say = "It's on you, whatever song you wanna play", expect = { tool = "play_online", args_forbid = ["whatever"], args_match = "[a-z]{3,}.* [a-z]{2,}" } },
+]
+
+[[scenario]]
+id = "uf-music-vague-forms"
+category = "music-choice"
+tags = ["user-failure", "regress"]
+companion = ["red", "remy"]
+turns = [
+  { say = "Play anything you like", expect = { tool = "play_online", args_forbid = ["anything", "you like"] } },
+  { say = "Play your favourite song", expect = { tool = "play_online", args_forbid = ["favou?rite"] } },
+  { say = "Surprise me with a song", expect = { tool = "play_online", args_forbid = ["surprise"] } },
+  { say = "Play one you like", expect = { tool = "play_online", args_forbid = ["one you like"] } },
+  { say = "Play any song of my favorite", expect = { tool = "play_online", args_forbid = ["any song", "my favou?rite"] } },
+]
+
+[[scenario]]
+id = "uf-music-named-still-works"
+category = "music-choice"
+tags = ["user-failure", "regress"]
+turns = [
+  { say = "Play Believer by Imagine Dragons", expect = { tool = "play_online", args_match = "believer" } },
+  { say = "Stop the music", expect = { tool = "stop_music" } },
+]
+
+# --- "Switch to Rennel" was Whisper mishearing "Remy"; Red answered "I can't do that" ---
+# fix: personality (fuzzy names). Only after "switch to / talk to / give me / bring".
+[[scenario]]
+id = "uf-switch-rennel"
+category = "switch-fuzzy"
+tags = ["user-failure", "regress"]
+turns = [
+  { say = "Switch to Remy", heard = "Switch to Rennel.", expect = { companion = "remy" } },
+]
+
+[[scenario]]
+id = "uf-switch-remy-variants"
+category = "switch-fuzzy"
+tags = ["user-failure", "regress"]
+turns = [
+  { say = "Switch to Remy", heard = "Switch to Remmy.", expect = { companion = "remy" } },
+  { say = "Switch to Red", heard = "Switch to Red.", expect = { companion = "red" } },
+  { say = "Talk to Remy", heard = "Talk to Rémi.", expect = { companion = "remy" } },
+  { say = "Switch to Red", expect = { companion = "red" } },
+  { say = "Bring in Remy", heard = "Bring in Remy.", expect = { companion = "remy" } },
+  { say = "Give me Red", heard = "Give me Red.", expect = { companion = "red" } },
+]
+
+[[scenario]]
+id = "uf-switch-asha-variants"
+category = "switch-fuzzy"
+tags = ["user-failure", "regress"]
+turns = [
+  { say = "Switch to Asha", heard = "Switch to Asia.", expect = { companion = "asha" } },
+  { say = "Switch to Red", expect = { companion = "red" } },
+  { say = "Talk to Asha", heard = "Talk to Usha.", expect = { companion = "asha" } },
+  { say = "Switch to Red", expect = { companion = "red" } },
+  { say = "Switch to Asha", heard = "Switch to Aysha.", expect = { companion = "asha" } },
+  { say = "Switch to Red", expect = { companion = "red" } },
+  { say = "Switch to Asha", heard = "Switch to Asha.", expect = { companion = "asha" } },
+]
+
+[[scenario]]
+id = "uf-switch-must-not-match"
+category = "switch-fuzzy"
+tags = ["user-failure", "regress"]
+turns = [
+  { say = "I need to talk to my mom later", expect = { companion = "red", chat = true } },
+  { say = "Switch to dark mode", expect = { companion = "red" } },
+  { say = "Switch the lights off", expect = { companion = "red" } },
+  { say = "Can you bring me a coffee", expect = { companion = "red" } },
+  { say = "Give me a minute", expect = { companion = "red" } },
+  { say = "Talk to you tomorrow", expect = { companion = "red" } },
+]
+
+# --- "They don't listen": the user said "Switch to Remy" and expected Remy to hear it ---
+# (waking on a companion's name is voice mode: see voice-wake.toml; here the text side of it)
+[[scenario]]
+id = "uf-switch-then-voice-of-new-companion"
+category = "switch"
+tags = ["user-failure", "regress"]
+turns = [
+  { say = "Switch to Remy", expect = { companion = "remy", reply_forbid = ["can't do that"] } },
+  { say = "How's it going?", expect = { chat = true, companion = "remy" } },
+  { say = "Go back to Red", expect = { companion = "red" } },
+]
+
+# --- Chat replies logged as "Sorry, I lost my train of thought" (the router's placeholder, not what was said) ---
+# The user said these; the reply must be a real one (the log fix is tested in tests/test_sim_log.py).
+[[scenario]]
+id = "uf-chat-not-placeholder"
+category = "chat-basic"
+tags = ["user-failure", "regress"]
+companion = "*"
+turns = [
+  { say = "What's up?", expect = { chat = true } },
+  { say = "You so mean", expect = { chat = true } },
+  { say = "Should I tell you what did you do?", expect = { chat = true } },
+  { say = "How are you?", expect = { chat = true } },
+]
+
+# --- The mind-reading questions: invented life, 2026-11-13 ---
+[[scenario]]
+id = "uf-whats-on-your-mind"
+category = "chat-basic"
+tags = ["user-failure", "regress"]
+companion = "*"
+turns = [
+  { say = "What's going on your mind right now?", expect = { chat = true } },
+  { say = "Are you listening to me?", expect = { chat = true } },
+  { say = "Were you just sleeping?", expect = { chat = true } },
+  { say = "Are you crazy?", expect = { chat = true } },
+]
