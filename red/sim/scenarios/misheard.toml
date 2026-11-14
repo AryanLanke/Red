@@ -1,0 +1,48 @@
+# What Whisper really made of the user's words. `say` is what they meant, `heard` is what Red got.
+# Seen in red.log and commands.jsonl; the right behaviour is the same as for the clean sentence, or a
+# natural "what?" for a line that makes no sense (never a wrong action).
+
+[[scenario]]
+id = "mis-names"
+category = "misheard-names"
+tags = ["regress", "user-real"]
+turns = [
+  { say = "Switch to Remy", heard = "Switch to Rennel", expect = { companion = "remy" } },
+  { say = "Switch to Red", heard = "Switch to Rad", expect = { companion = "red" } },
+  { say = "Talk to Asha", heard = "Talk to Asia", expect = { companion = "asha" } },
+]
+
+[[scenario]]
+id = "mis-commands"
+category = "misheard-command"
+tags = ["regress"]
+turns = [
+  { say = "Open Edge", heard = "Opened edge", expect = { tool = "open_app", args_match = "edge" } },
+  { say = "Open YouTube", heard = "open you tube", expect = { tool = "open_url", args_match = "youtube" } },
+  { say = "Set a timer for ten minutes", heard = "set a time for 10 minute", expect = { tool = "set_timer" } },
+  { say = "Play Believer", heard = "play be lever", expect = { tool = "play_online" } },
+  { say = "What's the weather in Mumbai?", heard = "what's the whether in Mumbai", expect = { tool = "weather" } },
+  { say = "What's on my screen", heard = "what's on my scream", expect = { tool = "describe_screen" } },
+]
+
+[[scenario]]
+id = "mis-user-real"
+category = "misheard-user-real"
+tags = ["regress", "user-real"]
+turns = [
+  { say = "What's up, Red?", heard = "What's up Cop?", expect = { chat = true } },
+  { say = "Hey Red", heard = "Hey, Luca.", expect = { chat = true } },
+  { say = "Can you compare Hey Copilot with Hey Siri?", heard = "Can you compare Heiko Pilot with Hey CD", expect = { tool = ["look_up", "answer", "none"] } },
+  { say = "Yes Master", heard = "Master, Master, Master, Master, Master", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "mis-garbled"
+category = "misheard-garbled"
+tags = ["regress", "user-real"]
+companion = ["red", "asha"]
+turns = [
+  { say = "(unclear)", heard = "Limit Rich at the fog.", expect = { chat = true } },
+  { say = "(unclear)", heard = "So good signal mask, Cartman is a thumb.", expect = { chat = true } },
+  { say = "(unclear)", heard = "Open up your server, and you'll be able to sleep one day.", expect = { chat = true } },
+]

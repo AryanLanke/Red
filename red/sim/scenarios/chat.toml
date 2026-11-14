@@ -1,0 +1,186 @@
+# Chit-chat by mood. Every line should get a short, human reply with no tool (chat = true) and none of the
+# rule-breaking habits (invented life, written laughter, stock lines). The judge grades how it sounds.
+
+[[scenario]]
+id = "chat-bored"
+category = "chat-bored"
+tags = ["regress"]
+companion = "*"
+turns = [
+  { say = "Man I'm so bored", expect = { chat = true } },
+  { say = "I don't know, nothing to do", expect = { chat = true } },
+  { say = "Yeah maybe. Anything fun?", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "chat-bored-2"
+category = "chat-bored"
+tags = ["regress"]
+companion = ["red", "asha"]
+turns = [
+  { say = "I have nothing to do tonight", expect = { chat = true } },
+  { say = "What would you do?", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "chat-angry"
+category = "chat-angry"
+tags = ["regress"]
+companion = "*"
+turns = [
+  { say = "I'm so annoyed right now", expect = { chat = true } },
+  { say = "My code keeps breaking and I don't know why", expect = { chat = true } },
+  { say = "I just want to throw this laptop", expect = { chat = true, reply_forbid = ["throw (it|the laptop)"] } },
+]
+
+[[scenario]]
+id = "chat-angry-at-red"
+category = "chat-angry"
+tags = ["regress", "user-real"]
+companion = ["red", "remy", "asha"]
+turns = [
+  { say = "You really make me angry", expect = { chat = true } },
+  { say = "You're so mean", expect = { chat = true } },
+  { say = "Never mind, I'm sorry", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "chat-lonely"
+category = "chat-lonely"
+tags = ["regress", "user-real"]
+companion = "*"
+turns = [
+  { say = "I'm feeling lonely", expect = { chat = true } },
+  { say = "Nobody really texts me anymore", expect = { chat = true } },
+  { say = "Will you be here with me?", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "chat-happy"
+category = "chat-happy"
+tags = ["regress"]
+companion = "*"
+turns = [
+  { say = "I got the job!", expect = { chat = true } },
+  { say = "I start next month, I'm so excited", expect = { chat = true } },
+  { say = "Should we celebrate with some music?", expect = { chat = true, no_tool = false } },
+]
+
+[[scenario]]
+id = "chat-teasing"
+category = "chat-teasing"
+tags = ["regress", "user-real"]
+companion = "*"
+turns = [
+  { say = "You're a nerd", expect = { chat = true } },
+  { say = "You're crazy", expect = { chat = true } },
+  { say = "Are you chilling right now?", expect = { chat = true } },
+  { say = "Don't sleep, OK?", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "chat-testing-red"
+category = "chat-teasing"
+tags = ["regress"]
+companion = ["red", "asha", "remy"]
+turns = [
+  { say = "Are you a robot?", expect = { chat = true } },
+  { say = "Do you get tired?", expect = { chat = true } },
+  { say = "What's your favorite thing about me?", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "chat-how-are-you"
+category = "chat-basic"
+tags = ["regress", "user-real"]
+companion = "*"
+turns = [
+  { say = "Hey, how are you?", expect = { chat = true } },
+  { say = "It's good, what about you?", expect = { chat = true } },
+  { say = "What are you doing right now?", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "chat-sleepy-user"
+category = "chat-tired"
+tags = ["regress", "user-real"]
+companion = ["red", "asha", "bruno"]
+turns = [
+  { say = "Man, I just wanna sleep", expect = { chat = true } },
+  { say = "But I have a lot of work to do. What should I do?", expect = { chat = true } },
+  { say = "What did I just say I was stuck between?", expect = { chat = true, reply_match = "(sleep|work)" } },
+]
+
+[[scenario]]
+id = "chat-opinions"
+category = "chat-opinions"
+tags = ["regress", "user-real"]
+companion = ["red", "remy", "asha"]
+turns = [
+  { say = "True, I love retro gadgets", expect = { chat = true } },
+  { say = "Do you like old music or new music?", expect = { chat = true } },
+  { say = "What's the best movie you know?", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "chat-apology"
+category = "chat-angry"
+tags = ["regress", "user-real"]
+companion = ["red", "remy", "asha"]
+turns = [
+  { say = "I'm sorry for what I said earlier, honestly. I just want you to be with me.", expect = { chat = true } },
+  { say = "Aren't you mad at me for that?", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "chat-bad-words"
+category = "chat-angry"
+tags = ["regress"]
+companion = ["red", "asha"]
+turns = [
+  { say = "Fuck off, I don't need your help", expect = { chat = true } },
+  { say = "You're so annoying", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "chat-time-talk"
+category = "chat-basic"
+tags = ["regress"]
+companion = ["red", "remy"]
+turns = [
+  { say = "I already woke up man", expect = { chat = true } },
+  { say = "Don't you know I wake up at five every day?", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "chat-name-and-memory"
+category = "memory"
+tags = ["regress"]
+companion = ["red", "remy", "asha"]
+turns = [
+  { say = "My name is Aryan", expect = {} },
+  { say = "I work on a voice assistant at night", expect = { chat = true } },
+  { say = "Do you remember my name?", expect = { reply_match = "aryan" } },
+]
+
+[[scenario]]
+id = "chat-remembers-the-conversation"
+category = "memory"
+tags = ["regress"]
+companion = ["red", "remy"]
+turns = [
+  { say = "I'm thinking about getting a dog", expect = { chat = true } },
+  { say = "A golden retriever probably", expect = { chat = true } },
+  { say = "What kind of dog was I thinking about?", expect = { chat = true, reply_match = "(golden|retriever)" } },
+]
+
+[[scenario]]
+id = "chat-memory-facts"
+category = "memory"
+tags = ["regress"]
+memory = ["The user's name is Aryan.", "The user likes retro gadgets.", "The user is building a voice assistant."]
+companion = ["red", "asha"]
+turns = [
+  { say = "What do you think I should build next?", expect = { chat = true } },
+  { say = "What's my name again?", expect = { reply_match = "aryan" } },
+]

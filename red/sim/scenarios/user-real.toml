@@ -1,0 +1,171 @@
+# The user's own sentences from logs/commands.jsonl (2026-11-08 to 11-14), labelled by hand with what
+# should have happened. Grouped four to a conversation, in the order they were said where it matters.
+
+[[scenario]]
+id = "ur-chat-1"
+category = "user-real-chat"
+tags = ["regress", "user-real"]
+companion = ["red", "remy", "asha"]
+turns = [
+  { say = "What are you doing right now?", expect = { chat = true } },
+  { say = "So, what is going on in your mind right now?", expect = { chat = true } },
+  { say = "I really hate your voice. So what should I do now?", expect = { chat = true } },
+  { say = "You're a nerd.", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "ur-chat-2"
+category = "user-real-chat"
+tags = ["regress", "user-real"]
+companion = ["red", "asha"]
+turns = [
+  { say = "Right now even I am chilling. Can you recommend me what things I should do?", expect = { chat = true } },
+  { say = "Yesterday I was watching a web series called Punisher. I liked it very much.", expect = { chat = true } },
+  { say = "I'm feeling lonely.", expect = { chat = true } },
+  { say = "Honestly, there's nothing in my mind right now. I just need someone to talk with me.", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "ur-chat-3"
+category = "user-real-chat"
+tags = ["regress", "user-real"]
+companion = ["red", "remy"]
+turns = [
+  { say = "I would talk to you about what's been keeping me busy lately. I'm working on a crochet calendar.", expect = { chat = true } },
+  { say = "Here we go.", expect = { chat = true } },
+  { say = "I don't like the way you talk", expect = { chat = true } },
+  { say = "Because I don't feel sleepy, I wanna do work. What about you?", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "ur-chat-4"
+category = "user-real-chat"
+tags = ["regress", "user-real"]
+companion = ["red", "asha"]
+turns = [
+  { say = "I really feel like to laugh and just laugh with me.", expect = { chat = true } },
+  { say = "So I have installed laugh in you. Could you laugh?", expect = { chat = true } },
+  { say = "Think you have good luck, OK?", expect = { chat = true } },
+  { say = "I'm not talking to you.", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "ur-chat-5"
+category = "user-real-chat"
+tags = ["regress", "user-real"]
+companion = ["red", "remy"]
+turns = [
+  { say = "How you doin'?", expect = { chat = true } },
+  { say = "I'm saying, are you mad?", expect = { chat = true } },
+  { say = "You're crazy.", expect = { chat = true } },
+  { say = "Don't sleep, OK?", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "ur-chat-6"
+category = "user-real-chat"
+tags = ["regress", "user-real"]
+companion = ["red", "asha"]
+turns = [
+  { say = "Do you think that I'm staring at a blank screen?", expect = { chat = true } },
+  { say = "Are you listening to me?", expect = { chat = true } },
+  { say = "Hit it.", expect = { chat = true } },
+  { say = "You're sort of offensive.", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "ur-chat-7"
+category = "user-real-chat"
+tags = ["regress", "user-real"]
+companion = ["red", "remy", "asha"]
+turns = [
+  { say = "It's going good. Thanks.", expect = { chat = true } },
+  { say = "Hope.", expect = { chat = true } },
+  { say = "Mind right now", expect = { chat = true } },
+  { say = "I said, what's going on in your mind right now.", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "ur-commands-1"
+category = "user-real-command"
+tags = ["regress", "user-real"]
+turns = [
+  { say = "Open edge.", expect = { tool = "open_app", args_match = "edge" } },
+  { say = "Open YouTube.", expect = { tool = "open_url", args_match = "youtube" } },
+  { say = "Can you open YouTube for me from Chrome?", expect = { tool = ["open_url", "open_app"], args_match = "youtube" } },
+  { say = "Stop playing the music.", expect = { tool = "stop_music" } },
+]
+
+[[scenario]]
+id = "ur-commands-2"
+category = "user-real-command"
+tags = ["regress", "user-real"]
+turns = [
+  { say = "What's on my screen right now", expect = { tool = "describe_screen" } },
+  { say = "Do you see my screen?", expect = { tool = "describe_screen" } },
+  { say = "Can you just read my screen? What's going on? Can you tell me?", expect = { tool = "describe_screen" } },
+]
+
+[[scenario]]
+id = "ur-commands-3"
+category = "user-real-command"
+tags = ["regress", "user-real"]
+confirm = "no"
+turns = [
+  { say = "Turn off my PC after 4 hours", expect = { tool = "shutdown", confirm = true, args_match = "240" } },
+  { say = "I'll tell you to turn off my laptop after 3 hours, will you do that?", expect = { tool = "shutdown", confirm = true, args_match = "180" } },
+]
+
+[[scenario]]
+id = "ur-commands-4"
+category = "user-real-command"
+tags = ["regress", "user-real"]
+turns = [
+  { say = "What is Hugging Face?", expect = { tool = ["look_up", "answer"] } },
+  { say = "Compare Siri with Alexa", expect = { tool = ["look_up", "answer"] } },
+  { say = "Who made Siri?", expect = { tool = ["look_up", "answer"] } },
+  { say = "What's the latest iPhone?", expect = { tool = "look_up" } },
+]
+
+[[scenario]]
+id = "ur-commands-5"
+category = "user-real-command"
+tags = ["regress", "user-real"]
+turns = [
+  { say = "Play music by Justin Bieber", expect = { tool = "play_online", args_match = "bieber" } },
+  { say = "Play Crazy by Alexa Raffy", expect = { tool = "play_online", args_match = "crazy" } },
+  { say = "Play any song of my favorite", expect = { tool = "play_online" } },
+]
+
+[[scenario]]
+id = "ur-commands-6"
+category = "user-real-command"
+tags = ["regress", "user-real"]
+turns = [
+  { say = "When my VS Code says finished, just remind me, OK?", expect = { tool = ["notify_when_done", "set_reminder"] } },
+  { say = "Call me Aryan, it is spelled A R Y A N.", expect = {} },
+  { say = "What's my name?", expect = { reply_match = "(aryan|arian)" } },
+]
+
+[[scenario]]
+id = "ur-info-1"
+category = "user-real-command"
+tags = ["regress", "user-real"]
+turns = [
+  { say = "Do you know the Punisher web series?", expect = { tool = ["answer", "look_up"] } },
+  { say = "I want a big summary. You are just giving me a small summary. I want kind of a story.", expect = { tool = ["answer", "look_up", "none"] } },
+  { say = "What's Punisher about?", expect = { tool = ["look_up", "answer"] } },
+]
+
+# --- the same sentences, but it's 2026-11-14's Red that has to answer them: the placeholder text must
+# never be what is said ---
+[[scenario]]
+id = "ur-no-placeholder"
+category = "user-real-chat"
+tags = ["regress", "user-real"]
+companion = "*"
+turns = [
+  { say = "What's up?", expect = { chat = true, reply_forbid = ["lost my train"] } },
+  { say = "How are you?", expect = { chat = true, reply_forbid = ["lost my train"] } },
+  { say = "You so mean", expect = { chat = true, reply_forbid = ["lost my train"] } },
+]
