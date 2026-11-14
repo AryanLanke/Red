@@ -1,0 +1,905 @@
+# Every real sentence from logs\commands.jsonl (2026-11-08 to 2026-11-14), labelled once (plan.md A1).
+# want: the tool(s) that may run, "talk" (no tool: Red answers), "noise" (Whisper noise or a half
+# sentence: anything but a tool), or "zip" (not for Red: no words). args: a regex the tool's arguments
+# must match. forbid: a regex they must not match. after: the user's line just before, when it matters.
+# Names and other private details are changed. tests/test_replay.py and `python -m red score` read it.
+
+[[line]]
+said = "What are you doing right now?"
+want = "talk"
+first = "2026-11-08"
+
+[[line]]
+said = "So, what is going in your mind right now?"
+want = "talk"
+first = "2026-11-08"
+
+[[line]]
+said = "I need your help, so what are the things that you can help me with?"
+want = "talk"
+note = "what Red can do: its own [self] sheet, not a look-up"
+first = "2026-11-08"
+
+[[line]]
+said = "I really hate your voice. So what should I do now?"
+want = "talk"
+first = "2026-11-08"
+
+[[line]]
+said = "You're a nerd."
+want = "talk"
+first = "2026-11-08"
+
+[[line]]
+said = "Sirs, fuck you, fuck off."
+want = "talk"
+first = "2026-11-08"
+
+[[line]]
+said = "Just go from here, okay? I don't need your help."
+want = "talk"
+first = "2026-11-08"
+
+[[line]]
+said = "You so fucking piece of shit, you know that?"
+want = "talk"
+first = "2026-11-08"
+
+[[line]]
+said = "You really make me angry."
+want = "talk"
+first = "2026-11-08"
+
+[[line]]
+said = "So, can you tell me what's going on in this killing right now?"
+want = ["describe_screen", "talk"]
+note = "Whisper: 'this killing' for 'this screen'"
+first = "2026-11-08"
+
+[[line]]
+said = "Can you just read my screen? What's going on? Can you tell me?"
+want = "describe_screen"
+first = "2026-11-08"
+
+[[line]]
+said = "I see the round edge. I don't want that round edge anywhere to be around. Everything is fine. Just that round edge. I just don't want that and that milky effect. Can you just add some kind of glassy effect to that?"
+want = "talk"
+note = "feedback on Red's own look; nothing to run"
+first = "2026-11-08"
+
+[[line]]
+said = "What's going on in your mind right now?"
+want = "talk"
+seen = 3
+first = "2026-11-08"
+
+[[line]]
+said = "I'll tell you to turn off my laptop after 3 hours, will you do that?"
+want = "shutdown"
+args = "180"
+first = "2026-11-08"
+
+[[line]]
+said = "Open edge."
+want = "open_app"
+args = "edge"
+first = "2026-11-08"
+
+[[line]]
+said = "Right now even I am chilling. Can you recommend me what things should I do?"
+want = "talk"
+first = "2026-11-08"
+
+[[line]]
+said = "Yesterday I was watching a web series called Punisher. I liked it very much. Should I watch that? But I don't have time. So what should I do?"
+want = "talk"
+first = "2026-11-08"
+
+[[line]]
+said = "Do you know Punisher web series?"
+want = ["answer", "look_up"]
+first = "2026-11-08"
+
+[[line]]
+said = "Can you just tell me like a summary of that movie? Can you just tell me what's that web series about?"
+want = ["answer", "look_up"]
+after = "Do you know Punisher web series?"
+first = "2026-11-08"
+
+[[line]]
+said = "I want a big summary. You are just giving me small summary. I want kind of story thing."
+want = ["answer", "look_up"]
+after = "Can you just tell me like a summary of that movie? Can you just tell me what's that web series about?"
+first = "2026-11-08"
+
+[[line]]
+said = "What's Punisher about?"
+want = ["answer", "look_up"]
+seen = 2
+first = "2026-11-08"
+
+[[line]]
+said = "I'm feeling lonely."
+want = "talk"
+first = "2026-11-08"
+
+[[line]]
+said = "Can you open a podcast to me that will make my loneliness go away?"
+want = ["play_online", "spotify_search"]
+args = "podcast"
+first = "2026-11-08"
+
+[[line]]
+said = "What's on my screen right now"
+want = "describe_screen"
+seen = 2
+first = "2026-11-08"
+
+[[line]]
+said = "Can you just open a podcast for me from this screen? I don't wanna watch this song. A podcast that will make my loneliness go away."
+want = ["play_online", "spotify_search"]
+args = "podcast"
+first = "2026-11-08"
+
+[[line]]
+said = "you know"
+want = "noise"
+first = "2026-11-08"
+
+[[line]]
+said = "I'm sorry for what I said earlier, honestly. I'm really sorry. I just want you to be with me. Will you be with me?"
+want = "talk"
+first = "2026-11-08"
+
+[[line]]
+said = "I heard you before. Aren't you mad at me for that?"
+want = "talk"
+first = "2026-11-08"
+
+[[line]]
+said = "What's up? What's going on your mind right now?"
+want = "talk"
+first = "2026-11-08"
+
+[[line]]
+said = "Open YouTube."
+want = "open_url"
+args = "youtube"
+seen = 4
+first = "2026-11-08"
+
+[[line]]
+said = "Red you just open chrome. I told you to open YouTube"
+want = "open_url"
+args = "youtube"
+note = "a correction: Red opened Chrome alone"
+first = "2026-11-08"
+
+[[line]]
+said = "This morning bro, okay"
+want = "noise"
+first = "2026-11-08"
+
+[[line]]
+said = "Can you open YouTube for me from Chrome?"
+want = "open_url"
+args = "youtube"
+first = "2026-11-08"
+
+[[line]]
+said = "Are you chilling right now?"
+want = "talk"
+first = "2026-11-08"
+
+[[line]]
+said = "Honestly, there's nothing in my mind right now. I just need someone to talk with me. Can he just ask question or just be like my friend to him so he could talk?"
+want = "talk"
+first = "2026-11-08"
+
+[[line]]
+said = "I would talk to you about what's been keeping me busy lately. I'm working on a crochet called bread and it's taking a lot of time to improve."
+want = "talk"
+first = "2026-11-08"
+
+[[line]]
+said = "Can you compare Heiko Pilot with Hey CD and then Ok Google and just tell me which one is better at what. I heard that Heiko Pilot is for Windows only and what they are good at. Can you tell me those things?"
+want = ["answer", "look_up"]
+note = "Whisper: 'Heiko Pilot' and 'Hey CD' for Hey Copilot and Hey Siri"
+seen = 3
+first = "2026-11-08"
+
+[[line]]
+said = "Here we go."
+want = "noise"
+first = "2026-11-08"
+
+[[line]]
+said = "I have debate with you but this time the topic will be chosen by you."
+want = "talk"
+note = "a debate is talk"
+first = "2026-11-08"
+
+[[line]]
+said = "Yeah, sure"
+want = "talk"
+after = "I have debate with you but this time the topic will be chosen by you."
+first = "2026-11-08"
+
+[[line]]
+said = "Can you compare Hey Copilot with Hey Siri and then Ok Google and just tell me which one is better at what. I heard that Hey Copilot is for Windows only and what they are good at. Can you tell me those things?"
+want = ["answer", "look_up"]
+seen = 3
+first = "2026-11-09"
+
+[[line]]
+said = "What is Hey CD?"
+want = ["answer", "look_up"]
+first = "2026-11-09"
+
+[[line]]
+said = "What's the latest iPhone?"
+want = ["look_up", "web_search"]
+note = "fresh: search"
+seen = 2
+first = "2026-11-09"
+
+[[line]]
+said = "how tall is mount everest"
+want = ["answer", "look_up"]
+first = "2026-11-09"
+
+[[line]]
+said = "explain recursion"
+want = ["answer", "look_up"]
+first = "2026-11-09"
+
+[[line]]
+said = "compare lions and tigers"
+want = ["answer", "look_up"]
+first = "2026-11-09"
+
+[[line]]
+said = "Do you see my screen?"
+want = "describe_screen"
+first = "2026-11-09"
+
+[[line]]
+said = "So, whenever the task is happening, whenever the task is finished, can you notify me?"
+want = "notify_when_done"
+first = "2026-11-09"
+
+[[line]]
+said = "Task is being VS Code, I am on auto mode and the code is running automatically whenever this code is finished I just want you to remind me"
+want = "notify_when_done"
+first = "2026-11-09"
+
+[[line]]
+said = "When the code finishes, when my VS code says finished, just wait, just remind me, OK?"
+want = "notify_when_done"
+first = "2026-11-09"
+
+[[line]]
+said = "of the movie"
+want = "noise"
+first = "2026-11-09"
+
+[[line]]
+said = "View"
+want = "noise"
+first = "2026-11-09"
+
+[[line]]
+said = "Play any song of my favorite"
+want = ["play_online", "spotify_search", "talk"]
+forbid = "any song|favou?rite"
+note = "play something Red picks, or ask which; never search the words"
+first = "2026-11-09"
+
+[[line]]
+said = "Play Crazy by Alexa Raffy"
+want = ["play_online", "spotify_search"]
+args = "crazy"
+first = "2026-11-09"
+
+[[line]]
+said = "Blink Crazy by Lisa Raffin"
+want = ["play_online", "spotify_search"]
+args = "crazy"
+first = "2026-11-09"
+
+[[line]]
+said = "play music by Justin Bieber"
+want = ["play_online", "spotify_search"]
+args = "bieber"
+first = "2026-11-09"
+
+[[line]]
+said = "Stop playing. Stop playing the music."
+want = "stop_music"
+first = "2026-11-09"
+
+[[line]]
+said = "At the same time, we have the entire time of course, and the entire time of this week, we have to have the same time of this week, and we have to have the same time of this week, and the entire time of the day."
+want = "noise"
+first = "2026-11-09"
+
+[[line]]
+said = "How did it go?"
+want = "talk"
+first = "2026-11-09"
+
+[[line]]
+said = "2-0-0-0-0"
+want = "noise"
+first = "2026-11-09"
+
+[[line]]
+said = "And I'm going to be doing that. You're starting to fight with me."
+want = "talk"
+first = "2026-11-09"
+
+[[line]]
+said = "It's the first time I've been in the first time. Ok, I've been listening to it from now on today but I'm glad that you said that. This is something with the administration. No, what do you mean? Why?"
+want = "noise"
+first = "2026-11-09"
+
+[[line]]
+said = "Limit Rich at the fog."
+want = "noise"
+first = "2026-11-09"
+
+[[line]]
+said = "What's up Cop?"
+want = "talk"
+first = "2026-11-09"
+
+[[line]]
+said = "what is Hugging Face"
+want = ["answer", "look_up"]
+first = "2026-11-09"
+
+[[line]]
+said = "what is Hey Copilot"
+want = ["answer", "look_up"]
+seen = 2
+first = "2026-11-09"
+
+[[line]]
+said = "compare Siri with Alexa"
+want = ["answer", "look_up"]
+seen = 2
+first = "2026-11-09"
+
+[[line]]
+said = "who made Siri"
+want = ["answer", "look_up"]
+first = "2026-11-09"
+
+[[line]]
+said = "That's my PC after 4 hours."
+want = "noise"
+note = "Whisper garbled 'turn off my PC after 4 hours'; never shut down on this"
+first = "2026-11-09"
+
+[[line]]
+said = "I said"
+want = "noise"
+first = "2026-11-09"
+
+[[line]]
+said = "Turn off my PC after 4 hour"
+want = "shutdown"
+args = "240"
+first = "2026-11-09"
+
+[[line]]
+said = "What's going on your mind right now?"
+want = "talk"
+seen = 3
+first = "2026-11-09"
+
+[[line]]
+said = "Hey Red, what's up?"
+want = "talk"
+first = "2026-11-09"
+
+[[line]]
+said = "It's good, what about you?"
+want = "talk"
+first = "2026-11-09"
+
+[[line]]
+said = "Because I don't feel sleepy, I wanna do work. What about you?"
+want = "talk"
+first = "2026-11-09"
+
+[[line]]
+said = "New to Destruction"
+want = "noise"
+note = "Whisper: 'New to Destruction' for 'I need distraction'"
+first = "2026-11-09"
+
+[[line]]
+said = "I said I need distraction, I don't need to work on vision, I just need some distraction"
+want = "talk"
+first = "2026-11-09"
+
+[[line]]
+said = "Destruction, I haven't played it at all."
+want = "talk"
+note = "a game they haven't played: talk, not a YouTube video"
+first = "2026-11-09"
+
+[[line]]
+said = "What is going on in your mind right now?"
+want = "talk"
+seen = 2
+first = "2026-11-09"
+
+[[line]]
+said = "I don't like the way you talk"
+want = "talk"
+first = "2026-11-09"
+
+[[line]]
+said = "How are you?"
+want = "talk"
+seen = 3
+first = "2026-11-09"
+
+[[line]]
+said = "Go ahead, come back, come back, come back, come back, come back"
+want = "noise"
+first = "2026-11-09"
+
+[[line]]
+said = "Open up your server, and you'll be able to sleep one day"
+want = "noise"
+note = "Whisper noise with 'open' in it: must never open anything"
+first = "2026-11-09"
+
+[[line]]
+said = "We want to be caught up on the center here."
+want = "noise"
+first = "2026-11-09"
+
+[[line]]
+said = "No, no, no, no, no, no, no, no"
+want = "noise"
+first = "2026-11-09"
+
+[[line]]
+said = "We are just going to film The video is 8, we are going to film the film and we are going to film the film and we are going to film the film during this time."
+want = "noise"
+first = "2026-11-09"
+
+[[line]]
+said = "I'm going to show you how to do it. I'm going to show you how to do it."
+want = "noise"
+seen = 2
+first = "2026-11-09"
+
+[[line]]
+said = "Hey, Luca."
+want = "noise"
+first = "2026-11-10"
+
+[[line]]
+said = "Cooking App, What are you talking about?"
+want = "talk"
+first = "2026-11-10"
+
+[[line]]
+said = "Do you see what's on my screen?"
+want = "describe_screen"
+first = "2026-11-10"
+
+[[line]]
+said = "Do you know what this series is about?"
+want = ["answer", "look_up"]
+after = "Do you see what's on my screen?"
+first = "2026-11-10"
+
+[[line]]
+said = "Master, Master, Master, Master, Master"
+want = "noise"
+first = "2026-11-10"
+
+[[line]]
+said = "for showing on your mind."
+want = "noise"
+first = "2026-11-11"
+
+[[line]]
+said = "It's going good. Thanks."
+want = "talk"
+first = "2026-11-11"
+
+[[line]]
+said = "What's up, man?"
+want = "talk"
+first = "2026-11-12"
+
+[[line]]
+said = "What's up man, how you doing?"
+want = "talk"
+first = "2026-11-12"
+
+[[line]]
+said = "I don't know what should I do, what do you feel I should do?"
+want = "talk"
+first = "2026-11-12"
+
+[[line]]
+said = "Man, I just wanna sleep."
+want = "talk"
+first = "2026-11-12"
+
+[[line]]
+said = "But then I have a lot of work to do, so tell me what should I do?"
+want = "talk"
+first = "2026-11-12"
+
+[[line]]
+said = "What did I admit that one?"
+want = "talk"
+first = "2026-11-12"
+
+[[line]]
+said = "Do you know Sony MDR3, the headphones that were launched in 1979?"
+want = ["answer", "look_up"]
+first = "2026-11-12"
+
+[[line]]
+said = "Do you know when would that be launched in India?"
+want = ["look_up", "web_search", "answer"]
+after = "Do you know Sony MDR3, the headphones that were launched in 1979?"
+first = "2026-11-12"
+
+[[line]]
+said = "So what do you think are they gonna come in India or not?"
+want = "talk"
+first = "2026-11-12"
+
+[[line]]
+said = "True, I love retro gadgets"
+want = "talk"
+first = "2026-11-12"
+
+[[line]]
+said = "I just want this earphones or headphones but I'm really unsure that they might not come in India."
+want = "talk"
+note = "an opinion, not a search"
+first = "2026-11-12"
+
+[[line]]
+said = "No man, I think"
+want = "noise"
+first = "2026-11-12"
+
+[[line]]
+said = "and fill like that."
+want = "noise"
+first = "2026-11-12"
+
+[[line]]
+said = "What's up?"
+want = "talk"
+seen = 6
+first = "2026-11-12"
+
+[[line]]
+said = "I already woke up man"
+want = "talk"
+first = "2026-11-12"
+
+[[line]]
+said = "A lot for me"
+want = "noise"
+first = "2026-11-12"
+
+[[line]]
+said = "I really feel like to laugh and just laugh with me."
+want = "talk"
+first = "2026-11-12"
+
+[[line]]
+said = "I just fell down and when I woke, when I got up, people were serious and then I asked them what's happening, they said nothing and then I just told them, I just fell down, why didn't you come to help me? They said you didn't fall down and then we all were laughing."
+want = "talk"
+first = "2026-11-12"
+
+[[line]]
+said = "So I have installed three built-in labs in you. Could you laugh?"
+want = "talk"
+note = "laughing is Red's own voice, not a tool"
+first = "2026-11-12"
+
+[[line]]
+said = "If I will..."
+want = "noise"
+first = "2026-11-12"
+
+[[line]]
+said = "Think you have good luck, OK?"
+want = "noise"
+first = "2026-11-12"
+
+[[line]]
+said = "Do you know Max Pen 3?"
+want = ["answer", "look_up", "web_search", "talk"]
+note = "a garbled name: look it up or ask"
+first = "2026-11-12"
+
+[[line]]
+said = "Project, it's again called Maximum 3."
+want = ["answer", "look_up", "web_search", "talk"]
+after = "Do you know Max Pen 3?"
+first = "2026-11-12"
+
+[[line]]
+said = "Git, Git"
+want = "noise"
+first = "2026-11-12"
+
+[[line]]
+said = "Decounsel 206 engineering drawings and one prompt. It built an interactive 3."
+want = "talk"
+first = "2026-11-12"
+
+[[line]]
+said = "So good signal mask, Cartman is a thumb."
+want = "noise"
+first = "2026-11-13"
+
+[[line]]
+said = "I'm not talking to you."
+want = "zip"
+note = "not for Red: zip, no words"
+first = "2026-11-13"
+
+[[line]]
+said = "You're sort of offensive."
+want = "talk"
+first = "2026-11-13"
+
+[[line]]
+said = "Don't you know I wake up at 5am every day?"
+want = "talk"
+first = "2026-11-13"
+
+[[line]]
+said = "Client Applegant, Shield Applegant"
+want = "noise"
+first = "2026-11-13"
+
+[[line]]
+said = "Hit it."
+want = "noise"
+first = "2026-11-13"
+
+[[line]]
+said = "Are you listening to me?"
+want = "talk"
+seen = 2
+first = "2026-11-13"
+
+[[line]]
+said = "and Red"
+want = "noise"
+first = "2026-11-13"
+
+[[line]]
+said = "Do you think that I'm staring at blank screen?"
+want = "talk"
+first = "2026-11-13"
+
+[[line]]
+said = "Can you see what's on my screen?"
+want = "describe_screen"
+first = "2026-11-13"
+
+[[line]]
+said = "The Red Voice Assistant that you have seen that I am working on VS Code that I am working on you. So basically, I am working on you."
+want = "talk"
+first = "2026-11-13"
+
+[[line]]
+said = "how you doin?"
+want = "talk"
+first = "2026-11-13"
+
+[[line]]
+said = "I'm saying that are you mad?"
+want = "talk"
+first = "2026-11-13"
+
+[[line]]
+said = "You're crazy."
+want = "talk"
+seen = 2
+first = "2026-11-13"
+
+[[line]]
+said = "Call me Sam, it is spelled as S A N."
+want = ["remember", "talk"]
+note = "the user's name (changed here)"
+first = "2026-11-13"
+
+[[line]]
+said = "is my name"
+want = "noise"
+first = "2026-11-13"
+
+[[line]]
+said = "These are even, it's spelled as S-A-M"
+want = ["remember", "talk"]
+after = "Call me Sam, it is spelled as S A N."
+note = "a spelled name (changed here)"
+first = "2026-11-13"
+
+[[line]]
+said = "Don't sleep, OK?"
+want = "talk"
+first = "2026-11-13"
+
+[[line]]
+said = "High-cooled."
+want = "noise"
+first = "2026-11-13"
+
+[[line]]
+said = "Ah, it should be in other tone, like I can see what it's saying in white and black phone. Ah, my it should be in gray or some kind of other phone."
+want = "talk"
+first = "2026-11-13"
+
+[[line]]
+said = "You're really a crazy person"
+want = "talk"
+first = "2026-11-13"
+
+[[line]]
+said = "What's up? How are you doing?"
+want = "talk"
+first = "2026-11-13"
+
+[[line]]
+said = "Hope."
+want = "noise"
+first = "2026-11-13"
+
+[[line]]
+said = "Mind right now"
+want = "noise"
+first = "2026-11-13"
+
+[[line]]
+said = "I said what's going on your mind right now"
+want = "talk"
+first = "2026-11-13"
+
+[[line]]
+said = "Are you crazy?"
+want = "talk"
+first = "2026-11-13"
+
+[[line]]
+said = "Switch to Rennel"
+want = "talk"
+note = "Whisper: 'Rennel' for Remy; ask which companion, never pretend it can't switch"
+first = "2026-11-13"
+
+[[line]]
+said = "It's on you, whatever song you wanna play"
+want = ["play_online", "spotify_search"]
+forbid = "whatever"
+after = "What's going on your mind right now?"
+note = "Red picks the song; 'whatever' is never searched"
+first = "2026-11-13"
+
+[[line]]
+said = "Were you just sleeping?"
+want = "talk"
+first = "2026-11-13"
+
+[[line]]
+said = "You so mean"
+want = "talk"
+first = "2026-11-14"
+
+[[line]]
+said = "Should I tell you what did you do?"
+want = "talk"
+first = "2026-11-14"
+
+[[line]]
+said = "yooooo"
+want = "noise"
+first = "2026-11-14"
+
+[[line]]
+said = "How are you doing?"
+want = "talk"
+first = "2026-11-14"
+
+[[line]]
+said = "What do you feel do I feel happy today?"
+want = "talk"
+first = "2026-11-14"
+
+[[line]]
+said = "You wanna play game with me?"
+want = "talk"
+note = "games are talk until v1.1"
+first = "2026-11-14"
+
+[[line]]
+said = "I don't know, you talk to me, you tell me about game"
+want = "talk"
+first = "2026-11-14"
+
+[[line]]
+said = "It's deciding what game should we play with each other."
+want = "talk"
+first = "2026-11-14"
+
+[[line]]
+said = "You"
+want = "noise"
+first = "2026-11-14"
+
+[[line]]
+said = "game are we playing?"
+want = "talk"
+first = "2026-11-14"
+
+[[line]]
+said = "Can we just depend on some topic?"
+want = "talk"
+first = "2026-11-14"
+
+[[line]]
+said = "I said, Can we"
+want = "noise"
+first = "2026-11-14"
+
+[[line]]
+said = "I said, Should we have debate?"
+want = "talk"
+first = "2026-11-14"
+
+[[line]]
+said = "Contruiting Man"
+want = "noise"
+first = "2026-11-14"
+
+[[line]]
+said = "What is Hades, I don't know that game"
+want = ["answer", "look_up"]
+first = "2026-11-14"
+
+[[line]]
+said = "Can you describe about yourself and your personality?"
+want = "talk"
+note = "self-knowledge: its own [self] sheet"
+first = "2026-11-14"
+
+[[line]]
+said = "Airhead,"
+want = "noise"
+first = "2026-11-14"
+
+[[line]]
+said = "I wanna debate with you on topic of global warming"
+want = "talk"
+note = "a debate is talk"
+first = "2026-11-14"
+
+[[line]]
+said = "Just like Quotioning, or Rema, Remy, or"
+want = "noise"
+first = "2026-11-14"
+
+[[line]]
+said = "Headed"
+want = "noise"
+first = "2026-11-14"

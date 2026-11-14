@@ -104,6 +104,10 @@ def needs_router(text: str) -> bool:
         return True
     if _FACT_QUESTION.search(words):
         return True
+    # "Blink Crazy by Lisa Raffin": a short "<title> by <artist>" is a song (2026-11-09, said after a
+    # misheard "play ...").
+    if len(words.split()) <= 8 and re.search(r"^[\w' -]{2,40}\bby [a-z]", words):
+        return True
     # "Can you X?", "could you X", "please X": a request for something, unless X is talk.
     if re.search(r"\b(?:can|could|would|will) you (?!be\b|stay\b|talk\b|listen\b|laugh\b|chill\b|"
                  r"just be\b|hear me\b|forgive\b|calm\b|relax\b|believe\b)\w+", words):
