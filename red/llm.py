@@ -22,12 +22,13 @@ import secrets
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, Protocol
+from typing import Callable, Iterator, Protocol
 
 from .config import Settings
 from .downloads import download, safe_extract
@@ -36,6 +37,8 @@ from .process import ManagedServer, ServerExited, child_env, free_port, http_ok
 log = logging.getLogger(__name__)
 
 SAC_BLOCKED = 0xC0E90002  # STATUS_SYSTEM_INTEGRITY_POLICY_VIOLATION
+WARM_TIMEOUT_SECONDS = 90.0       # a model load takes 6-25 s on this PC; longer means stuck
+RESTART_GAP_SECONDS = 180.0       # OllamaKeeper starts Ollama again at most this often
 
 
 class LLMError(RuntimeError):
@@ -236,6 +239,22 @@ def _stream_lines(url: str, body: dict, headers: dict | None = None, *, sse: boo
         raise LLMError(f"The LLM server stopped answering ({e})") from e
 
 
+def is_stall(error: BaseException | None) -> bool:
+    """True when a request was taken and never answered (a read or connect timeout).
+
+    A refused connection or an HTTP error is not a stall: the server said something.
+    """
+    seen: set[int] = set()
+    while error is not None and id(error) not in seen:
+        seen.add(id(error))
+        if isinstance(error, TimeoutError):             # socket.timeout is TimeoutError
+            return True
+        if isinstance(error, urllib.error.URLError) and isinstance(error.reason, TimeoutError):
+            return True
+        error = error.__cause__ or error.__context__
+    return False
+
+
 def _messages(system: str, user: str) -> list[dict]:
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
@@ -250,6 +269,15 @@ class OllamaClient:
         self.thinking = thinking          # a model that thinks unless told not to
         self.vision = vision              # it can look at images (describe_screen)
         self.options = dict(options or {})   # extra Ollama options, e.g. {"num_gpu": 0}
+        # Called with the reason when a request times out (OllamaKeeper starts Ollama again).
+        self.on_stall: Callable[[str], object] | None = None
+
+    def _stalled(self, error: BaseException) -> None:
+        if self.on_stall is not None and is_stall(error):
+            try:
+                self.on_stall(str(error) or type(error).__name__)
+            except Exception:  # noqa: BLE001 - the caller's own error is the one to report
+                log.exception("Ollama stall handler failed")
 
     def _body(self, system: str, user: str, schema: dict, temperature: float,
               max_tokens: int | None, images: list[str] | None, stream: bool) -> dict:
@@ -272,7 +300,11 @@ class OllamaClient:
     def complete_json(self, system: str, user: str, schema: dict, temperature: float = 0.0,
                       max_tokens: int | None = None, images: list[str] | None = None) -> str:
         body = self._body(system, user, schema, temperature, max_tokens, images, stream=False)
-        data = _post_json(f"{self.base_url}/api/chat", body)
+        try:
+            data = _post_json(f"{self.base_url}/api/chat", body)
+        except Exception as e:
+            self._stalled(e)
+            raise
         try:
             return data["message"]["content"]
         except (KeyError, TypeError) as e:
@@ -285,14 +317,18 @@ class OllamaClient:
         Closing the generator early closes the connection, and Ollama stops writing.
         """
         body = self._body(system, user, schema, temperature, max_tokens, images, stream=True)
-        for msg in _stream_lines(f"{self.base_url}/api/chat", body):
-            if "error" in msg:
-                raise LLMError(f"Ollama error: {str(msg['error'])[:300]}")
-            piece = (msg.get("message") or {}).get("content") or ""
-            if piece:
-                yield piece
-            if msg.get("done"):
-                return
+        try:
+            for msg in _stream_lines(f"{self.base_url}/api/chat", body):
+                if "error" in msg:
+                    raise LLMError(f"Ollama error: {str(msg['error'])[:300]}")
+                piece = (msg.get("message") or {}).get("content") or ""
+                if piece:
+                    yield piece
+                if msg.get("done"):
+                    return
+        except Exception as e:
+            self._stalled(e)
+            raise
 
     def warm(self) -> None:
         """Load the model into memory now, and keep it there for keep_alive.
@@ -306,10 +342,17 @@ class OllamaClient:
         command, at the router's 8,192, reloaded it and read the whole prompt again:
         that was the 4 to 32 s "route" on 2026-11-13 after the plugins made the
         prompt longer.
+
+        It gives up after WARM_TIMEOUT_SECONDS: a load takes 6 to 25 s here, and a
+        server that hasn't answered in 90 s is stuck (OllamaKeeper starts it again).
         """
-        _post_json(f"{self.base_url}/api/generate",
-                   {"model": self.model, "keep_alive": self.keep_alive,
-                    "options": {"num_ctx": 4096, **self.options}}, timeout=300)
+        try:
+            _post_json(f"{self.base_url}/api/generate",
+                       {"model": self.model, "keep_alive": self.keep_alive,
+                        "options": {"num_ctx": 4096, **self.options}}, timeout=WARM_TIMEOUT_SECONDS)
+        except Exception as e:
+            self._stalled(e)
+            raise
 
     def has_model(self) -> bool:
         try:
@@ -522,6 +565,91 @@ def start_ollama(settings: Settings) -> tuple[str, ManagedServer | None]:
                     gpu_env["OLLAMA_LLM_LIBRARY"])
         server.stop()
     return base_url, server
+
+
+class OllamaKeeper:
+    """Starts Red's own Ollama again when it stops answering.
+
+    On 2026-11-14 Red's Ollama hung at 03:04: it still answered /api/tags, but no
+    chat request reached the model again. Every warm-up waited 300 s and every
+    reply 120 s ("Sorry, I lost my train of thought") for five hours, until Red was
+    quit. Now the first timed-out request (a reply, a route or the keep-warm ping)
+    calls `stalled()`: the old server is stopped (its Job Object ends the runner
+    too), a fresh one starts, the client points at it and the model loads again,
+    all on a background thread, at most once every RESTART_GAP_SECONDS.
+
+    Only for the Ollama Red started. Someone else's Ollama is never restarted.
+    It has a `stop()`, so it stands in for the server wherever Red stops that.
+    """
+
+    def __init__(self, settings: Settings, client: OllamaClient, server: ManagedServer, *,
+                 start: Callable[[Settings], tuple[str, ManagedServer | None]] | None = None,
+                 clock: Callable[[], float] = time.monotonic,
+                 min_gap: float = RESTART_GAP_SECONDS):
+        self.settings, self.client, self.server = settings, client, server
+        self._start = start or start_ollama
+        self._clock, self._min_gap = clock, min_gap
+        self._lock = threading.Lock()
+        self._last: float | None = None
+        self._busy = self._stopped = False
+        self.restarts = 0
+        client.on_stall = self.stalled
+
+    def stalled(self, reason: str) -> threading.Thread | None:
+        """Start Ollama again in the background. Returns the thread, or None if not now."""
+        with self._lock:
+            now = self._clock()
+            if self._stopped or self._busy or (
+                    self._last is not None and now - self._last < self._min_gap):
+                return None
+            self._busy, self._last = True, now
+        thread = threading.Thread(target=self._restart, args=(reason,), name="red-ollama-restart",
+                                  daemon=True)
+        thread.start()
+        return thread
+
+    def _restart(self, reason: str) -> None:
+        began = time.perf_counter()
+        try:
+            log.warning("Ollama stopped answering (%s): starting it again", reason)
+            with self._lock:
+                old, self.server = self.server, None
+            if old is not None:
+                old.stop()
+            base_url, server = self._start(self.settings)
+            with self._lock:
+                if self._stopped:              # Red is quitting
+                    if server is not None:
+                        server.stop()
+                    return
+                self.server = server
+            self.client.base_url = base_url.rstrip("/")
+            self.restarts += 1
+            try:
+                self.client.warm()
+            except Exception as e:  # noqa: BLE001 - the next command loads it instead
+                log.warning("Ollama started again but the model didn't load: %s", e)
+            log.info("Ollama is back at %s, %.1f s after the restart began", base_url,
+                     time.perf_counter() - began)
+        except Exception:  # noqa: BLE001 - try again on the next stall
+            log.exception("Couldn't start Ollama again")
+        finally:
+            with self._lock:
+                self._busy = False
+
+    def stop(self) -> None:
+        with self._lock:
+            self._stopped = True
+            server, self.server = self.server, None
+        if server is not None:
+            server.stop()
+
+
+def keep_ollama_alive(settings: Settings, client, server):
+    """Wrap Red's own Ollama in an OllamaKeeper; anything else comes back as it was."""
+    if server is None or not isinstance(client, OllamaClient):
+        return server
+    return OllamaKeeper(settings, client, server)
 
 
 # --- llama.cpp backend -------------------------------------------------------

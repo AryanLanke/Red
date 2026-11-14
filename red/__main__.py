@@ -44,7 +44,7 @@ from .allowlist import AllowlistError, load_allowlist
 from .confirm import Ask, typed_ask, with_fallback
 from .config import Settings, load_settings
 from .executor import Executor, run_later
-from .llm import LLMError, connect
+from .llm import LLMError, connect, keep_ollama_alive
 from .router import RouteError, Router
 from .chat import Chat, make_chat
 from .conversation import (ECHO_GUARD_SECONDS, Conversation, OtherAppGuard, addressed_elsewhere, dictation_like,
@@ -1479,6 +1479,7 @@ def main(argv: list[str] | None = None) -> int:
     except LLMError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
+    server = keep_ollama_alive(settings, llm, server)   # a stuck Ollama of Red's own starts again
     web = None
     if args.cmd is None and not args.dry_run:
         # Voice, background and typed mode: Red's own SearXNG, started in the
