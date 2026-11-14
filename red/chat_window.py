@@ -139,6 +139,7 @@ def typed_turn(app, text: str) -> str:
 
     `app` is the running VoiceApp. The reply isn't spoken; confirmations still ask.
     """
+    from . import companions
     from .executor import run_later
     from .smalltalk import dismissal_reply, is_filler, quick_reply
     main = sys.modules[type(app).__module__]          # red.__main__ (or __main__ under -m)
@@ -150,6 +151,10 @@ def typed_turn(app, text: str) -> str:
         named = chat.take_name(text)
         if named is not None:
             return named
+        switched = companions.handle_switch(text, getattr(getattr(app, "settings", None), "home", None))
+        if switched is not None:                                # "switch to Remy"
+            chat.remember(text, switched)
+            return switched
         quick = dismissal_reply(text) or quick_reply(text, name=chat.user_name())
         if quick is not None:
             chat.remember(text, quick)

@@ -92,7 +92,7 @@ def test_make_chat_reads_the_file_each_time(tmp_path):
     chat.reply("hey")
     write_personality(tmp_path, "Be calm.")
     chat.reply("hey again")
-    assert llm.calls[0][0] == CHAT_SYSTEM and llm.calls[1][0].endswith("Be calm.")
+    assert llm.calls[0][0].startswith(CHAT_SYSTEM) and llm.calls[1][0].endswith("Be calm.")   # Red's persona follows the rules
 
 
 def test_the_general_page_edits_the_personality(tmp_path, monkeypatch):

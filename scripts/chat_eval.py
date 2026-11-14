@@ -108,6 +108,8 @@ def main() -> int:
                     break
             reply = " ".join(out)
             problems = check(reply, examples, today)
+            if not reply:
+                problems.append("dropped everything")      # Chat would say its stock fallback line
             raw_bad += bool(check(" ".join(raw), examples, today))
             bad += bool(problems)
             firsts.append(first or 0.0)

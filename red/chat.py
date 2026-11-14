@@ -140,6 +140,26 @@ def write_personality(home: Path, text: str) -> Path:
     return path
 
 
+def persona_prompt(companion) -> str:
+    """persona.md as prompt text: the headings out, the rest as written."""
+    lines = [line for line in companion.persona.splitlines() if not line.lstrip().startswith("#")]
+    return "\n".join(lines).strip()
+
+
+def with_persona(system: str, companion) -> str:
+    """The fixed rules first (so Ollama reuses its cache), then who the active companion is.
+
+    Red's own persona is added too: it says what makes Red Red (music, the short fuse).
+    """
+    if companion is None:
+        return system
+    text = persona_prompt(companion)
+    if not text:
+        return system if companion.name == "Red" else f"{system}\nYour name is {companion.name}, not Red."
+    return (f"{system}\nWho you are now. This is your character: where it differs from the one above, "
+            f"this wins. The rules above about how you talk and what you never make up still apply.\n{text}")
+
+
 def with_personality(system: str, personality: str) -> str:
     """The fixed prompt first (so Ollama reuses its cache), then the user's tuning."""
     if not personality.strip():
@@ -162,7 +182,14 @@ _INVENTED_LIFE = re.compile(
     r"|(?:code|bytes|pixels|circuits) and curiosity|humming along|processing (?:stuff|things)"
     r"|i'?ll (?:just )?(?:sit|wait|be (?:here|sitting|waiting))|guarding|stuck here"
     r"|(?:just )?finished (?:reviewing|reading|watching|looking at|going through)"
-    r"|i (?:went|ate|slept|walked|drank|cooked|watched)\b)", re.IGNORECASE)
+    r"|i (?:went|ate|slept|walked|drank|cooked|watched)\b"
+    # A music lover's version of the same thing: a playlist running, a song in their head.
+    r"|\bvibin(?:g|')?(?!\w)|\bon repeat\b|stuck on a loop|(?:in|inside) my (?:head|ears|speakers)"
+    r"|just (?:waiting|thinking about|existing) (?:for|about|here)|my circuits|running (?:a bit |a little )?hot|open tabs"
+    r"|my (?:speakers|headphones|playlists?|ears|head)\b"
+    r"|(?:i'?m|i am|just|been) (?:listening|jamming|grooving|humming|spinning) to\b"
+    r"|(?:listening|jamming|grooving) to (?:a|an|some|the|this|that|my) (?:playlist|song|track|album|music|beat|tune|mix)"
+    r")", re.IGNORECASE)
 _LAUGHTER = re.compile(r"\b(?:ha(?:ha)+|he(?:he)+|lol|lmao|rofl)\b|\*[^*]{1,30}\*|\((?:laughs|chuckles|grins)\)",
                        re.IGNORECASE)
 
@@ -212,11 +239,13 @@ class Chat:
     def __init__(self, llm, clock: Callable[[], float] = time.monotonic,
                  max_turns: int = MAX_TURNS, forget_after: float = FORGET_AFTER,
                  now: Callable[[], datetime] = datetime.now,
-                 personality: Callable[[], str] | None = None, memory=None, learner=None):
+                 personality: Callable[[], str] | None = None, memory=None, learner=None,
+                 persona: Callable[[], object] | None = None):
         self.llm = llm
         self._clock = clock
         self._now = now
         self._personality = personality or (lambda: "")
+        self.persona = persona            # -> red.companions.Companion: who is on duty (None: Red as written)
         self.memory = memory              # red.memory.Memory: the profile and facts
         self.learner = learner            # red.memory.Learner: facts from chats, when idle
         self._awaiting_name = False       # Red just asked "what should I call you?"
@@ -262,7 +291,8 @@ class Chat:
         self._last = self._clock()
 
     def prompt(self, said: str) -> str:
-        lines = [f"{who}: {text}" for who, text in self.turns]
+        me = self.my_name()
+        lines = [f"{me if who == 'Red' else who}: {text}" for who, text in self.turns]
         history = "\n".join(lines) if lines else "(this is the start of the conversation)"
         clock = ""
         if _TIME_TALK.search(said):
@@ -363,8 +393,23 @@ class Chat:
         lines = list(self.turns)[-max_lines:]
         return "\n".join(f"{who}: {text[:400]}" for who, text in lines)
 
+    def companion(self):
+        """The companion on duty (red.companions), or None."""
+        if self.persona is None:
+            return None
+        try:
+            return self.persona()
+        except Exception:  # noqa: BLE001 - Red as written beats no reply
+            log.exception("Couldn't read the companion pack")
+            return None
+
+    def my_name(self) -> str:
+        c = self.companion()
+        return c.name if c is not None else "Red"
+
     def system(self) -> str:
-        """The system prompt: the fixed character first, then the user's own tuning."""
+        """The system prompt: the fixed rules first, then the companion's character, then the
+        user's own tuning, then what Red knows about them."""
         if self.is_debate:
             return DEBATE_SYSTEM
         try:
@@ -372,7 +417,7 @@ class Chat:
         except Exception:  # noqa: BLE001 - Red without the tuning beats no reply
             log.exception("Couldn't read the custom personality")
             personality = ""
-        return with_personality(CHAT_SYSTEM, personality) + self._profile()
+        return with_personality(with_persona(CHAT_SYSTEM, self.companion()), personality) + self._profile()
 
     def prime(self) -> None:
         """Have the model read the chat prompt now, while the user is still talking.
@@ -471,7 +516,9 @@ def make_chat(llm, settings, *, learn: bool = True) -> Chat:
     from .memory import Learner, Memory
     home = settings.home
     memory = Memory(home)
-    chat = Chat(llm, personality=lambda: read_personality(home), memory=memory)
+    from . import companions
+    chat = Chat(llm, personality=lambda: read_personality(home), memory=memory,
+                persona=lambda: companions.active(home))
     chat.learner = Learner(memory, llm, quiet=chat.quiet_for)
     if learn:
         chat.learner.start()

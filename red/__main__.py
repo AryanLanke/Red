@@ -38,7 +38,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import events
+from . import companions, events
 from .allowlist import AllowlistError, load_allowlist
 from .confirm import Ask, typed_ask, with_fallback
 from .config import Settings, load_settings
@@ -118,6 +118,12 @@ def _run(router: Router, executor: Executor, command: str, chat: Chat | None = N
     named = chat.take_name(command) if chat is not None else None   # "call me Ari" (red/memory.py)
     if named is not None:
         print(f"  Red: {named}")
+        return
+    switched = companions.handle_switch(command)           # "switch to Remy"
+    if switched is not None:
+        print(f"  {switched}")
+        if chat is not None:
+            chat.remember(command, switched)
         return
     quick = dismissal_reply(command) or quick_reply(command, name=chat.user_name() if chat else None)
     if quick is not None:
@@ -568,6 +574,12 @@ class VoiceApp:
             logging.getLogger("red.commands").info("%r -> name", text)
             self._say(named)
             return named, tool, False
+        switched = companions.handle_switch(text, self.settings.home)   # "switch to Remy"
+        if switched is not None:
+            logging.getLogger("red.commands").info("%r -> switch companion", text)
+            self.chat.remember(text, switched)
+            self._say(switched)
+            return switched, tool, False
         quick = quick_reply(text, name=self.chat.user_name())
         if quick is not None:
             logging.getLogger("red.commands").info("%r -> small talk", text)
