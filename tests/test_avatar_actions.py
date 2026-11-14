@@ -50,7 +50,7 @@ class FakeScheduler:
 
 def actions(tmp_path, **kw):
     sched = FakeScheduler()
-    return MenuActions(tmp_path, scheduler=lambda: sched, now=lambda: NOW, clock=lambda: 1000.0, **kw), sched
+    return MenuActions(tmp_path, scheduler=lambda: sched, now=lambda: NOW, **kw), sched
 
 
 def test_a_reminder_goes_to_the_scheduler_like_the_tool_does(tmp_path):
@@ -80,14 +80,15 @@ def test_the_real_scheduler_limits_apply(tmp_path):
         a.remind("far away", "in 200 hours")
 
 
-def test_tasks_are_kept_in_memory_tasks_json(tmp_path):
+def test_tasks_are_kept_in_the_todo_plugins_file(tmp_path):
     a, _ = actions(tmp_path)
     assert a.list_tasks() == []
     first = a.add_task("  buy   milk ")
     second = a.add_task("send the invoice")
     assert [t.text for t in a.list_tasks()] == ["buy milk", "send the invoice"]
-    path = tmp_path / "memory" / "tasks.json"
-    assert json.loads(path.read_text(encoding="utf-8"))[0]["text"] == "buy milk"
+    path = tmp_path / "memory" / "todo.json"
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    assert stored[0]["text"] == "buy milk" and stored[0]["done"] is False and "added" in stored[0]
     assert a.set_done(first.id) and [t.text for t in a.list_tasks(include_done=False)] == ["send the invoice"]
     assert a.set_done(first.id, False) and len(a.list_tasks(include_done=False)) == 2
     assert not a.set_done("nope")
@@ -105,7 +106,7 @@ def test_task_text_is_checked(tmp_path):
 
 
 def test_a_broken_tasks_file_is_an_empty_list(tmp_path):
-    path = tmp_path / "memory" / "tasks.json"
+    path = tmp_path / "memory" / "todo.json"
     path.parent.mkdir(parents=True)
     path.write_text("{not json", encoding="utf-8")
     a, _ = actions(tmp_path)
@@ -121,3 +122,37 @@ def test_talk_and_music_use_what_the_voice_loop_hands_in(tmp_path):
     assert a.play_music() == "Putting on Back in Black."
     bare, _ = actions(tmp_path)
     assert not bare.talk() and bare.play_music() is None
+
+
+def test_the_menu_and_the_todo_plugin_share_one_list(tmp_path, monkeypatch):
+    # a task added by voice (the plugin's own code) shows in the menu, and one added in the menu in the plugin
+    monkeypatch.setenv("RED_HOME", str(tmp_path))
+    import importlib.util
+    from red.plugins import __name__ as _unused  # noqa: F401
+    spec = importlib.util.spec_from_file_location("todo_tools", "red/plugins/todo/tools.py")
+    todo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(todo)
+    todo.Todo().run(action="add", text="finish the slides")
+    a, _ = actions(tmp_path)
+    assert [t.text for t in a.list_tasks()] == ["finish the slides"]
+    a.add_task("call the dentist")
+    assert todo.Todo().run(action="list") == "2 left: finish the slides; call the dentist."
+    mine = a.list_tasks()[0]
+    assert a.set_done(mine.id)
+    assert todo.Todo().run(action="list") == "1 left: call the dentist."
+    stored = json.loads((tmp_path / "memory" / "todo.json").read_text(encoding="utf-8"))
+    assert stored[0]["done"] and "finished" in stored[0]
+
+
+def test_a_handed_in_remind_function_is_used_and_its_errors_become_messages(tmp_path):
+    from red.tools.base import ToolError
+    seen = []
+    a, sched = actions(tmp_path, remind=lambda text, when: seen.append((text, when)) or "Okay, ringing at 3 PM.")
+    assert a.remind("call mom", "3pm") == "Okay, ringing at 3 PM." and seen == [("call mom", "3pm")]
+    assert sched.added == []
+
+    def refuse(text, when):
+        raise ToolError("That time has already passed.")
+    b, _ = actions(tmp_path, remind=refuse)
+    with pytest.raises(ValueError, match="already passed"):
+        b.remind("x", "9am")

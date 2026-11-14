@@ -96,8 +96,12 @@ def wire_menu(overlay, app) -> MenuActions | None:
     """Give a CompanionOverlay its menu back end. Never raises: the menu just stays greyed out."""
     try:
         window = overlay.window
+        try:
+            from ..actions import remind              # lane 2's: the set_reminder tool, richer times
+        except ImportError:
+            remind = None
         actions = MenuActions(app.settings.home, talk=talk_function(lambda: app.listener),
-                              music=music_function(app))
+                              music=music_function(app), remind=remind)
         window.actions = actions
         window.on_switch = switch_function(app)
         window.on_quiet = quiet_function(app)
