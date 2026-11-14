@@ -1280,6 +1280,25 @@ def test_the_mic_button_starts_and_zips_and_shows_each_state(window):
     assert w.convo is False
 
 
+def test_not_for_me_sits_above_the_head_never_on_the_face(window):
+    w = window.window
+    for side in ("right", "top"):
+        w.place(side)
+        w.tick()
+        w.heard_text, w.heard_until = "an older line", 1e12          # the tag wins over an older "you: ..."
+        w._on_conv("not_for_me", True)
+        w.not_for_me_at = None
+        w.grab()
+        rect, head = w.not_for_me_at
+        assert not rect.isEmpty()
+        gap = 0.2 * avatar.SIZES[w.size_name]                         # well clear of the head mark
+        if w.hanging:
+            assert rect.top() >= head.y() + gap
+        else:
+            assert rect.bottom() <= head.y() - gap
+        w.not_for_me_until = 0.0
+
+
 def test_render_mic_states_for_eyes(window, tmp_path):
     import os
     out = os.environ.get("RED_MIC_RENDER")

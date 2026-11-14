@@ -146,6 +146,7 @@ def _window_class():
             self.zipped = False                          # the mouth is zipped: deaf until clicked or Hey Red
             self.paused = False                          # another app has the microphone
             self.not_for_me_until = 0.0                  # not for me? in grey on the bubble
+            self.not_for_me_at = (QRectF(), QPointF())   # where it was last painted, and the head (tests)
             self.on_conversation: Callable[[], bool] | None = None   # VoiceApp.toggle_conversation
             self.mic_rect = QRectF()                     # where the mic button was painted (for clicks)
             self.rng = random.Random()
@@ -1130,8 +1131,6 @@ def _window_class():
                 self._paint_heart(p, head, age, unit)
             self._paint_bubbles(p, head, now)
             self._paint_mic_badge(p, QRectF(left + dx, top + dy, w, h), unit)
-            if now < self.not_for_me_until:
-                self._paint_not_for_me(p, head)
             p.end()
 
         def _paint_heart(self, p, head: QPointF, age: float, unit: float) -> None:
@@ -1228,7 +1227,9 @@ def _window_class():
                 shown = self.bubble_text[: max(0, self._typed(now))]
                 if shown:
                     reach += self._paint_bubble(p, head, now, shown, reach) + 8
-            if self.heard_text and now < self.heard_until:
+            if now < self.not_for_me_until:          # newer than any "you: ..." (a let-go line is never heard)
+                self.not_for_me_at = (self._paint_not_for_me(p, head, reach), QPointF(head))
+            elif self.heard_text and now < self.heard_until:
                 self._paint_heard(p, head, now, reach)
 
         def _paint_heard(self, p, head: QPointF, now: float, reach: float) -> None:
@@ -1305,22 +1306,27 @@ def _window_class():
                     p.drawEllipse(QPointF(c.x() + i * r * 0.34, c.y() + r * 0.72), r * 0.09, r * 0.09)
             p.restore()
 
-        def _paint_not_for_me(self, p, head: QPointF) -> None:
-            """'not for me?' in grey, a small tag by the head, for 3 s after a sentence Red let go."""
+        def _paint_not_for_me(self, p, head: QPointF, reach: float) -> QRectF:
+            """'not for me?' in grey, a small tag in the bubbles' place (above the head, below it when
+            hanging, never over the face), for 3 s after a sentence Red let go. Returns where it went."""
             font = QFont("Segoe UI", 9)
             font.setItalic(True)
             p.save()
             p.setFont(font)
-            width = 82.0
+            width, height = 82.0, 22.0
             x = min(max(head.x() - width / 2, 4.0), self.width() - width - 4)
-            y = head.y() + 14 if self.hanging else max(4.0, head.y() - 34)
-            rect = QRectF(x, y, width, 22)
+            if self.hanging:
+                y = min(self.height() - height - 4.0, head.y() + reach)
+            else:
+                y = max(4.0, head.y() - reach - height)
+            rect = QRectF(x, y, width, height)
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QColor(236, 238, 242, 200))
             p.drawRoundedRect(rect, 9, 9)
             p.setPen(QColor(120, 122, 130))
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, "not for me?")
             p.restore()
+            return rect
 
         def _paint_bubble(self, p, head: QPointF, now: float, shown: str, reach: float) -> float:
             """Red's speech bubble, `reach` away from the head. Returns its height."""
