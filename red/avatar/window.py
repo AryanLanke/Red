@@ -25,11 +25,12 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from . import (FALLBACK, SIDE_OF, SIDES, SIZES, TOP_SIDES, SLEEP_AFTER_SECONDS, Look, MouthMeter, Sprites, available_companions,
-               clip_paths, companion_folder, emotion_from_text, frame_for_side, kokoro_synthesizer,
-               load_sprites, make_clips, mark_for, meter_speaker, pick_frame, play_clip, side_for)
+from . import (CLIMBING_SETS, FALLBACK, FRAME_SETS, SIDE_SIDES, SIDES, SIZES, TOP_SIDES, SLEEP_AFTER_SECONDS,
+               Look, MouthMeter, Sprites, available_companions, clip_paths, companion_folder, emotion_from_text,
+               frame_in_set, kokoro_synthesizer, load_sprites, make_clips, mark_for, meter_speaker, pick_frame,
+               play_clip, side_for)
 from .. import events
-from . import dialogs, idle
+from . import climb, dialogs, idle
 from ..overlay import STATES, Overlay, _check_state, _clean
 
 log = logging.getLogger(__name__)
@@ -53,6 +54,33 @@ FAST, NORMAL, SLOW = 33, 100, 500      # timer intervals (ms): animating, awake,
 SIDE_PAD = 24
 CORNER_SNAP = 180          # dropped this close to a side (or the top) of the screen: it goes there
 ANIM_SECONDS = 1.2         # the longest of the little animations below
+MODES = ("everywhere", "desktop")       # RED_COMPANION_MODE: on top of apps, or only on the desktop
+WINDOW_CHECK_MS = 500      # how often app windows and the desktop are looked at
+TITLE_BUTTONS = 160        # logical pixels at a window's top right kept clear (minimise, maximise, close)
+SEAT_MIN_WIDTH = 360       # a window narrower than this is no seat
+SEAT_DROP = 0.07           # metres from the hips mark down to the seat (the bottom of the thighs)
+AWAY_SECONDS = 600.0       # no input for this long: the user is away; it lives quietly
+SOUND_GAP = 1.0            # at most one reaction sound a second
+DIZZY_SECONDS = 2.0
+FLAIL_SPEED = 1500.0       # carried faster than this (pixels a second): legs flail
+SLIP_SECONDS = 0.45        # desktop-only: slipping away behind the edge, or peeking back in
+
+
+def _cursor_pos() -> tuple[float, float] | None:
+    try:
+        from PySide6.QtGui import QCursor
+        p = QCursor.pos()
+        return float(p.x()), float(p.y())
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _user_idle() -> float:
+    try:
+        from ..greeter import idle_seconds
+        return float(idle_seconds())
+    except Exception:  # noqa: BLE001
+        return 0.0
 
 
 def fullscreen_app_in_front() -> bool:
@@ -85,6 +113,48 @@ def fullscreen_app_in_front() -> bool:
         return False
 
 
+class _Pixmaps:
+    """Frame name -> scaled QPixmap, made on first use and then kept."""
+
+    def __init__(self, sprites: Sprites, scale: float, dpr: float):
+        self.sprites, self.scale, self.dpr = sprites, scale, dpr
+        self._made: dict = {}
+
+    def __contains__(self, name) -> bool:
+        return name in self.sprites.frames
+
+    def get(self, name, default=None):
+        if name not in self.sprites.frames:
+            return default
+        pm = self._made.get(name)
+        if pm is None:
+            from PySide6.QtCore import Qt
+            from PySide6.QtGui import QPixmap
+            pm = QPixmap(str(self.sprites.frames[name].path))
+            if pm.isNull():
+                return default
+            pm = pm.scaled(round(pm.width() * self.scale * self.dpr), round(pm.height() * self.scale * self.dpr),
+                           Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            pm.setDevicePixelRatio(self.dpr)
+            self._made[name] = pm
+        return pm
+
+    def __getitem__(self, name):
+        pm = self.get(name)
+        if pm is None:
+            raise KeyError(name)
+        return pm
+
+    def __len__(self) -> int:
+        return len(self.sprites.frames)
+
+    def keys(self):
+        return self.sprites.frames.keys()
+
+    def __iter__(self):
+        return iter(self.sprites.frames)
+
+
 @functools.cache
 def _window_class():
     from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
@@ -100,12 +170,16 @@ def _window_class():
         summon_signal = Signal()              # the summon/hide hotkey (pynput's thread -> Qt)
         companion_signal = Signal(str)        # event "companion": switched by a voice command or the app
         idle_signal = Signal(str)             # event "idle_action": look around, yawn, doze, wander...
+        quiet_idle_signal = Signal(str)       # the same while the user is away: silently
+        flag_signal = Signal(str, bool)       # events "conversation" and "zipped"
         finished = Signal()
 
         def __init__(self, sprites: Sprites, *, size: str = "medium", models_dir: Path | None = None,
                      companion: str = "red", state_file: Path | None = None,
                      clock: Callable[[], float] = time.monotonic, meter: MouthMeter | None = None,
-                     check_fullscreen: Callable[[], bool] = fullscreen_app_in_front):
+                     check_fullscreen: Callable[[], bool] = fullscreen_app_in_front,
+                     mode: str = "everywhere", desktop=None, cursor: Callable[[], tuple] | None = None,
+                     user_idle: Callable[[], float] | None = None):
             super().__init__(None)
             self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
                                 | Qt.WindowType.Tool | Qt.WindowType.WindowDoesNotAcceptFocus)
@@ -167,8 +241,35 @@ def _window_class():
             self.pickup_clips: list[Path] = []
             self.drop_clips: list[Path] = []
             self.x_center: float | None = None
+            self.y_center: float | None = None           # on a side of the screen: the middle's height
             self.side = "right"                          # edge, left, right (bottom corners) or top
             self.anims: dict[str, float] = {}
+            # The climbing frame (red/avatar/climb.py): a route round the edges, a jump, a fling, a seat.
+            self.mode = mode if mode in MODES else "everywhere"
+            self._mode_chosen = False
+            self.desktop = desktop                        # foreground(), windows(), info(hwnd), screen_locked()
+            self.cursor = cursor or _cursor_pos
+            self.user_idle = user_idle or _user_idle
+            self.route: climb.Route | None = None
+            self.arc: climb.Arc | None = None
+            self.arc_then: Callable[[], None] | None = None
+            self.flight: climb.Flight | None = None
+            self.flight_at = 0.0
+            self.moving_set: str | None = None            # the frame set while moving (climbR, bars...)
+            self.moving_frame: str | None = None
+            self.seat: dict | None = None                 # sitting on a window: hwnd, offset, its rect
+            self.hidden_for_desktop = False               # desktop-only mode with an app in front
+            self.slip_at: float | None = None             # waved; slips away at this moment
+            self.locked = False                           # the lock screen is up: no idle life
+            self.away = False                             # no input for 10 minutes: no sounds at all
+            self.conversation = False                     # conversation mode: a listening ring
+            self.zipped = False                           # told to be quiet: a zip across the mouth
+            self.shake = climb.Shake()
+            self.drag_v = (0.0, 0.0)
+            self.drag_fast = False
+            self.lean = 0.0                               # hover: leaning away from the cursor (-1..1)
+            self._sound_at = -1e9
+            self._free_offset: tuple[float, float] | None = None   # sprite's place in a free layout
             self.load(sprites)
             self._restore()
             self._state_seen = self._state_stamp()
@@ -181,42 +282,53 @@ def _window_class():
             self.idle_signal.connect(self._on_idle_action, Qt.ConnectionType.QueuedConnection)
             self.companion_signal.connect(self._on_companion, Qt.ConnectionType.QueuedConnection)
             self.summon_signal.connect(self.summon, Qt.ConnectionType.QueuedConnection)
+            self.flag_signal.connect(self._on_flag, Qt.ConnectionType.QueuedConnection)
+            self.quiet_idle_signal.connect(self._on_quiet_idle, Qt.ConnectionType.QueuedConnection)
             self.timer = QTimer(self)
             self.timer.timeout.connect(self.tick)
             self.timer.start(NORMAL)
             self.full_timer = QTimer(self)
             self.full_timer.timeout.connect(self._slow_checks)
             self.full_timer.start(2000)
+            self.win_timer = QTimer(self)                  # app windows and the desktop: every 0.5 s
+            self.win_timer.timeout.connect(self._check_windows)
+            self.win_timer.start(WINDOW_CHECK_MS)
 
         # --- pictures --------------------------------------------------------
 
         def load(self, sprites: Sprites) -> None:
+            """Use these sprites. Pictures are read and scaled the first time each one is shown (the
+            climbing sets are whole-body pictures: loading all of them up front costs ~90 MB)."""
             self.sprites = sprites
             dpr = max(1.0, self.devicePixelRatioF())
             self.scale = SIZES[self.size_name] / sprites.px_per_metre
-            self.pixmaps: dict[str, QPixmap] = {}
-            for name, frame in sprites.frames.items():
-                pm = QPixmap(str(frame.path))
-                if pm.isNull():
-                    continue
-                pm = pm.scaled(round(pm.width() * self.scale * dpr), round(pm.height() * self.scale * dpr),
-                               Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
-                pm.setDevicePixelRatio(dpr)
-                self.pixmaps[name] = pm
-            peek = self.pixmaps["peek_idle"]
+            self.pixmaps = _Pixmaps(sprites, self.scale, dpr)
+            self.pixmaps["peek_idle"]                    # must exist and load
             self.set_size = {}                           # frame set -> (width, height) on screen
-            for set_name in ("peek", "cornerR", "cornerL", "top", "topL", "topR", "body"):
-                pm = next((p for n, p in self.pixmaps.items() if n.startswith(set_name + "_")), None)
-                if pm is not None:
-                    self.set_size[set_name] = (pm.width() / dpr, pm.height() / dpr)
+            for set_name in FRAME_SETS:
+                size = sprites.sizes.get(set_name)
+                if size and any(f.set == set_name for f in sprites.frames.values()):
+                    w, h = size
+                    self.set_size[set_name] = (round(w * self.scale * dpr) / dpr, round(h * self.scale * dpr) / dpr)
             self.body_w, self.body_h = self.set_size.get("body", self.set_size["peek"])
 
         def has(self, name: str) -> bool:
             return name in self.pixmaps
 
         @property
+        def can_climb(self) -> bool:
+            """The model has the climbing frame's pictures (sides, the climb, the bars)."""
+            return all(s in self.set_size for s in ("sideL", "sideR", "climbL", "climbR", "bars"))
+
+        @property
+        def can_sit(self) -> bool:
+            return "sit" in self.set_size
+
+        @property
         def prefix(self) -> str:
-            """The frame set for where it sits; a corner the model has no frames for is the edge."""
+            """The frame set for where it sits (or moves); a corner the model has no frames for is the edge."""
+            if self.moving_set and self.moving_set in self.set_size:
+                return self.moving_set
             prefix = SIDES.get(self.side, "peek")
             while prefix not in self.set_size and prefix in FALLBACK:
                 prefix = FALLBACK[prefix]
@@ -236,7 +348,12 @@ def _window_class():
 
         def perch(self) -> None:
             """Sit in a bottom corner (side left/right, flush with the screen's side) or on the bottom
-            edge at x_center (the middle of the character)."""
+            edge at x_center (the middle of the character); the whole-body sets (a side of the screen,
+            the bars, a window seat) have their own layout."""
+            if self.prefix in CLIMBING_SETS:
+                self._perch_free()
+                return
+            self._free_offset = None
             area = QGuiApplication.primaryScreen().availableGeometry() if self.x_center is None \
                 else self._area_for(self.x_center)
             w, h = self.perch_size
@@ -262,16 +379,76 @@ def _window_class():
                 top = area.top()                         # hanging: the picture's top on the top edge
             self.setGeometry(round(left), top, round(width), round(height))
 
+        def _area(self) -> climb.Area:
+            g = self._area_for(self.x_center if self.x_center is not None else
+                               QGuiApplication.primaryScreen().availableGeometry().center().x())
+            return climb.Area(g.left(), g.top(), g.right() + 1, g.bottom() + 1)
+
+        def _perch_free(self) -> None:
+            """Where a whole-body picture goes: clinging to a side (y_center), on the bars or walking the
+            top (x_center), or sitting on a window's top edge (the seat)."""
+            area = self._area()
+            prefix = self.prefix
+            w, h = self.set_size[prefix]
+            if prefix in ("sideR", "climbR", "sideL", "climbL"):
+                y = self.y_center if self.y_center is not None else area.top + area.height * 0.45
+                y = min(max(y, area.top + h / 2), area.bottom - h / 2)
+                self.y_center = y
+                left = area.right - w if prefix.endswith("R") else area.left
+                top = y - h / 2
+            elif prefix == "bars":
+                x = self.x_center if self.x_center is not None else (area.left + area.right) / 2
+                x = min(max(x, area.left + w / 2), area.right - w / 2)
+                self.x_center = x
+                left, top = x - w / 2, area.top
+            else:                                          # sit: the hips (plus the seat) on the window's edge
+                seat_x, seat_y = self._seat_point()
+                left, top = seat_x - w / 2, seat_y - self._hips_y()
+            self._put_sprite(left, top, w, h, area)
+
+        def _hips_y(self) -> float:
+            """From the top of a sit picture down to the seat."""
+            return self.mark_point("sit_idle", "hips").y() + SEAT_DROP * SIZES[self.size_name]
+
+        def _seat_point(self) -> tuple[float, float]:
+            seat = self.seat or {}
+            rect = seat.get("rect")
+            if rect is None:
+                area = self._area()
+                return (self.x_center or (area.left + area.right) / 2), area.bottom
+            return rect[0] + seat.get("dx", 0.0), rect[1]
+
+        def _put_sprite(self, left: float, top: float, w: float, h: float, area: climb.Area) -> None:
+            """The window round a picture at (left, top), with room for the bubbles above it (below it
+            when it is at the top of the screen), kept on screen sideways."""
+            room = max(w, BUBBLE_WIDTH) + 2 * SIDE_PAD
+            wl = min(max(left + w / 2 - room / 2, area.left), area.right - room)
+            wl = min(wl, left)
+            wr = max(wl + room, left + w)
+            at_top = self.hanging
+            wt = top if at_top else top - BUBBLE_SPACE
+            self._free_offset = (left - wl, top - wt)
+            self.setGeometry(round(wl), round(wt), round(wr - wl), round(h + BUBBLE_SPACE))
+
         @property
         def hanging(self) -> bool:
-            """Upside down from the top edge: the picture is at the top and the bubble below it."""
+            """The picture is at the top of the screen and the bubble below it: upside down from the top
+            edge, or on the bars."""
+            return self.prefix in ("top", "topL", "topR", "bars")
+
+        @property
+        def upside_down(self) -> bool:
             return self.prefix in ("top", "topL", "topR")
 
         def sprite_top(self, h: float) -> float:
+            if self._free_offset is not None:
+                return self._free_offset[1]
             return 0.0 if self.hanging else self.height() - h
 
         def sprite_left(self, w: float) -> float:
             """Where the picture starts inside the window: flush with the screen side in a corner."""
+            if self._free_offset is not None:
+                return self._free_offset[0]
             if self.prefix in ("cornerR", "topR"):
                 return self.width() - w
             if self.prefix in ("cornerL", "topL"):
@@ -279,7 +456,10 @@ def _window_class():
             return (self.width() - w) / 2
 
         def place(self, side: str) -> None:
-            self.side = side if side in SIDES else "edge"
+            self._end_motion()
+            self.side = side if side in SIDES and side != "window-top" else "edge"
+            if self.side != "window-top":
+                self.seat = None
             self.perch()
             self._save()
             self.until["notice"] = self.clock() + NOTICE_SECONDS
@@ -312,7 +492,13 @@ def _window_class():
             try:
                 saved = json.loads(Path(self.state_file).read_text(encoding="utf-8")) if self.state_file else {}
                 self.x_center = float(saved["x"]) if saved.get("x") is not None else None
+                self.y_center = float(saved["y"]) if saved.get("y") is not None else None
                 self.side = saved.get("side", "right") if saved.get("side") in SIDES else "right"
+                if self.side == "window-top":            # the window it sat on is gone after a restart
+                    self.side = "edge"
+                if saved.get("mode") in MODES:
+                    self.mode = saved["mode"]             # the menu's last choice wins over the setting
+                    self._mode_chosen = True
             except (OSError, ValueError, KeyError, TypeError):
                 self.x_center = None
             self.perch()
@@ -328,8 +514,15 @@ def _window_class():
                     data = data if isinstance(data, dict) else {}
                 except (OSError, ValueError):
                     data = {}
-                data.update({"x": self.x_center, "side": self.side, "companion": self.companion,
+                side, x, y = self.side, self.x_center, self.y_center
+                if self.route is not None:                # moving: where it is going
+                    side = self.route.then
+                    end = self.route.end
+                    x, y = (end.at, y) if end.edge in ("bottom", "top") else (x, end.at)
+                data.update({"x": x, "y": y, "side": side, "companion": self.companion,
                              "size": self.size_name})
+                if self._mode_chosen:                     # only a choice made in the menu or the app is kept
+                    data["mode"] = self.mode
                 path.write_text(json.dumps(data), encoding="utf-8")
                 self._state_seen = self._state_stamp()          # our own write is not news
             except OSError:
@@ -494,6 +687,7 @@ def _window_class():
             """Nothing is going on that an idle action would get in the way of."""
             look = self.look
             return (look.state == "idle" and not look.dragging and not look.falling and self.isVisible()
+                    and not self.flying and not self.locked
                     and not self.until and not (self.bubble_text and now < self.bubble_until)
                     and not (self.heard_text and now < self.heard_until))
 
@@ -503,6 +697,8 @@ def _window_class():
             if self.walk is not None:
                 self.walk = None
                 self._save()
+            if self.route is not None:
+                self._stop_route()
 
         def _on_idle_action(self, name: str) -> None:
             now = self.clock()
@@ -515,8 +711,14 @@ def _window_class():
             name = idle.EVENT_ALIASES.get(name, name)
             if self.quiet or name not in idle.SWITCH or not self.allows(name) or not self._calm(now):
                 return False
-            if self.script is not None or self.walk is not None:
+            if self.script is not None or self.walk is not None or self.route is not None:
                 return False
+            if name == "perch":
+                return self.jump_to_seat()
+            if name in ("wander", "corner") and self.side == "window-top":
+                return self.hop_off()                     # off the window, back to the screen's edges
+            if name == "wander" and self.prefix in ("sideL", "sideR") and self.can_climb:
+                return self._climb_along_side()
             if name == "wander" and self.prefix not in ("peek", "top"):
                 name = "corner"                           # in a corner it can't walk: it moves instead
             if name == "wander":
@@ -527,10 +729,15 @@ def _window_class():
                     return False
                 self.walk = idle.Walk(self.x_center, target, now)
             elif name == "corner":
-                places = [s for s in SIDES if s != self.side and SIDES[s] in self.set_size]
+                places = [s for s in SIDES if s not in (self.side, "window-top") and SIDES[s] in self.set_size
+                          and not self._near_cursor(s)]
                 if not places:
                     return False
-                self.place(self.rng.choice(places))
+                target = self.rng.choice(places)
+                if self.can_climb:
+                    self.start_route(target)              # there and back by the edges, hand over hand
+                else:
+                    self.place(target)                    # a model without the climbing frames pops over
             elif name == "hum":
                 self.turn_emotion = "happy"
                 self.until["emotion"] = now + 3.5
@@ -544,11 +751,13 @@ def _window_class():
 
         def _idle_life(self, now: float) -> None:
             if not self._calm(now):
-                if self.script is not None or self.walk is not None:
+                if self.script is not None or self.walk is not None or self.route is not None:
                     self.cancel_idle()
                 self.idle_frame = None
                 return
-            if self.walk is not None:
+            if self.route is not None:
+                self._move_on_route(now)
+            elif self.walk is not None:
                 self.x_center = self.walk.x_at(now)
                 self.perch()
                 self.idle_frame = self.walk.direction
@@ -568,10 +777,453 @@ def _window_class():
             else:
                 self.idle_frame = None
                 if now >= self.idle_next and now >= self.idle_events_until:
-                    name = idle.choose(now - self.last_activity, self.rng, self.allows, self.side)
+                    name = idle.choose(now - self.last_activity, self.rng, self.allows, self.side,
+                                       can_sit=self.mode == "everywhere" and self.can_sit
+                                       and self.side != "window-top",
+                                       can_climb=self.can_climb)
                     self.idle_next = now + idle.next_gap(self.rng)
                     if name:
                         self.start_idle(name)
+
+        # --- the climbing frame (red/avatar/climb.py) ------------------------------------
+        # Routes round the screen's edges (walk the bottom, climb a side hand over hand, cross the top on
+        # the bars), a jump onto an app window's top edge and a hop off it, and flings.
+
+        @property
+        def flying(self) -> bool:
+            return self.arc is not None or self.flight is not None
+
+        def _unit(self) -> float:
+            return SIZES[self.size_name] / 300.0
+
+        def _halves(self) -> dict[str, float]:
+            peek_w = self.set_size["peek"][0]
+            bars_w = self.set_size.get("bars", self.set_size["peek"])[0]
+            side_h = self.set_size.get("climbR", self.set_size.get("sideR", self.set_size["peek"]))[1]
+            return {"bottom": peek_w / 2, "top": bars_w / 2, "right": side_h / 2, "left": side_h / 2}
+
+        def _near_cursor(self, side: str) -> bool:
+            """A placement under (or right next to) the mouse cursor: never go there by itself."""
+            cursor = self.cursor()
+            if cursor is None or side == "window-top":
+                return False
+            area = self._area()
+            spot = climb.spot_of(side, self.x_center, self.y_center, climb.limits(area, self._halves()))
+            px, py = climb.point(spot, area)
+            return math.hypot(px - cursor[0], py - cursor[1]) < climb.CURSOR_CLEAR
+
+        def start_route(self, target: str, x: float | None = None, y: float | None = None) -> bool:
+            """Go to `target` (a placement) by the edges, at a natural pace. False if it can't."""
+            if target not in SIDES or target == "window-top" or self.side == "window-top":
+                return False
+            area = self._area()
+            half = self._halves()
+            lims = climb.limits(area, half)
+            if x is None and y is None and target in ("edge", "top", "side-left", "side-right"):
+                lo, hi = lims[climb.EDGE_OF[target]]
+                pick = self.rng.uniform(lo, hi)
+                x, y = (pick, None) if target in ("edge", "top") else (None, pick)
+            start = climb.spot_of(self.side, self.x_center, self.y_center, lims)
+            end = climb.spot_of(target, x, y, lims)
+            self.script = self.walk = None
+            self.route = climb.plan(start, end, area, half, self.clock(), target, self.cursor(), self._unit())
+            self._speed(FAST)
+            return True
+
+        def _climb_along_side(self) -> bool:
+            area = self._area()
+            lo, hi = climb.limits(area, self._halves())[climb.EDGE_OF[self.side]]
+            here = self.y_center if self.y_center is not None else (lo + hi) / 2
+            options = [y for y in (self.rng.uniform(lo, hi) for _ in range(10)) if abs(y - here) >= 120]
+            cursor = self.cursor()
+            if cursor is not None:
+                edge_x = area.right if self.side == "side-right" else area.left
+                options = [y for y in options if math.hypot(edge_x - cursor[0], y - cursor[1]) >= climb.CURSOR_CLEAR]
+            return bool(options) and self.start_route(self.side, y=options[0])
+
+        def _move_on_route(self, now: float) -> None:
+            route = self.route
+            leg, coord, _ = route.at(now)
+            set_name, frame = route.frame(now)
+            if leg.edge == "bottom":                     # the old hop-walk along the bottom edge
+                self.moving_set, self.moving_frame = None, None
+                self.side, self.x_center, self.idle_frame = "edge", coord, frame
+            else:
+                self.moving_set, self.moving_frame = set_name, frame
+                if leg.edge == "top":
+                    self.x_center = coord
+                else:
+                    self.y_center = coord
+                self.idle_frame = None
+            self.perch()
+            if route.done(now):
+                self._finish_route()
+
+        def _finish_route(self) -> None:
+            route, self.route = self.route, None
+            self.moving_set = self.moving_frame = self.idle_frame = None
+            end = route.end
+            self.side = route.then
+            if end.edge in ("bottom", "top"):
+                self.x_center = end.at
+            else:
+                self.y_center = end.at
+            self.perch()
+            self._save()
+            self.animate("land")
+
+        def _stop_route(self) -> None:
+            """Interrupted on the way: stay where it is, holding on to that edge."""
+            route, self.route = self.route, None
+            leg, coord, _ = route.at(self.clock())
+            self.moving_set = self.moving_frame = self.idle_frame = None
+            side = {"bottom": "edge", "top": "top", "right": "side-right", "left": "side-left"}[leg.edge]
+            if side in SIDE_SIDES and SIDES[side] not in self.set_size:
+                side = "right" if side == "side-right" else "left"
+            self.side = side
+            if leg.edge in ("bottom", "top"):
+                self.x_center = coord
+            else:
+                self.y_center = coord
+            self.perch()
+            self._save()
+
+        def _end_motion(self) -> None:
+            self.route = self.arc = self.flight = None
+            self.arc_then = None
+            self.moving_set = self.moving_frame = None
+
+        # where the dangling picture's grab point (the top of the head) is now, in screen pixels
+        def _grab_point(self) -> QPointF:
+            frame = self.frame_name if self.frame_name in self.sprites.frames else "peek_idle"
+            head = self.mark_point(frame)
+            g = self.geometry()
+            left = self.sprite_left(self.set_size.get(self.prefix, self.perch_size)[0])
+            top = self.sprite_top(self.set_size.get(self.prefix, self.perch_size)[1])
+            lift = -0.16 * SIZES[self.size_name] if not self.upside_down else 0.16 * SIZES[self.size_name]
+            return QPointF(g.left() + left + head.x(), g.top() + top + head.y() + lift)
+
+        def _hold_body(self) -> None:
+            """The grab point for the whole-body pictures (as when it is picked up)."""
+            body_head = self.mark_point("body_drag_1")
+            self.grab_offset = QPointF(body_head.x(), body_head.y() - 0.16 * SIZES[self.size_name])
+
+        # --- sitting on an app window's top edge -------------------------------------------------
+
+        def _logical(self, rect) -> tuple[float, float, float, float]:
+            d = QGuiApplication.primaryScreen().devicePixelRatio() or 1.0
+            return rect[0] / d, rect[1] / d, rect[2] / d, rect[3] / d
+
+        def seat_candidate(self) -> dict | None:
+            """A spot on the front app window's top edge: wide enough, low enough for the body to fit
+            above, never over the title bar's buttons, away from the cursor. None if there is none."""
+            from ..windows import SHELL_CLASSES
+            if self.desktop is None or not self.can_sit or self.mode != "everywhere":
+                return None
+            try:
+                w = self.desktop.foreground()
+            except Exception:  # noqa: BLE001
+                return None
+            if w is None or w.rect is None or w.minimised or w.maximised or w.cls in SHELL_CLASSES:
+                return None
+            l, t, r, b = self._logical(w.rect)
+            area = self._area()
+            if l <= area.left and t <= area.top and r >= area.right and b >= area.bottom:
+                return None                               # full screen (or as good as)
+            sw, _ = self.set_size["sit"]
+            if r - l < SEAT_MIN_WIDTH or t - self._hips_y() < area.top + 4 or t > area.bottom - 120:
+                return None
+            lo, hi = max(l, area.left) + sw / 2 + 8, min(r - TITLE_BUTTONS, area.right) - sw / 2
+            if hi < lo:
+                return None
+            cursor = self.cursor()
+            for _ in range(8):
+                x = self.rng.uniform(lo, hi)
+                if cursor is None or abs(cursor[0] - x) > 150 or abs(cursor[1] - t) > 200:
+                    return {"hwnd": w.hwnd, "dx": x - l, "rect": (l, t, r, b)}
+            return None
+
+        def jump_to_seat(self) -> bool:
+            """Jump onto the front app window's top edge and sit there."""
+            if self.side == "window-top" or self.flying:
+                return False
+            seat = self.seat_candidate()
+            if seat is None:
+                return False
+            start = self._grab_point()
+            self._end_motion()
+            self.script = self.walk = None
+            sw, _ = self.set_size["sit"]
+            l, t = seat["rect"][0], seat["rect"][1]
+            head = self.mark_point("sit_idle")
+            x1 = l + seat["dx"] - sw / 2 + head.x()
+            y1 = t - self._hips_y() + head.y() - 0.16 * SIZES[self.size_name]
+            self._hold_body()
+            self.arc = climb.Arc(start.x(), start.y(), x1, y1, self.clock(), 0.75,
+                                 climb.GRAVITY * self._unit())
+            self.arc_then = lambda: self._sit(seat)
+            self._speed(FAST)
+            return True
+
+        def _sit(self, seat: dict) -> None:
+            self.seat = seat
+            self.side = "window-top"
+            self._seat_checked = self.clock()
+            self.perch()
+            self._save()
+            self.until["notice"] = self.clock() + NOTICE_SECONDS
+            self.animate("land")
+
+        def _seat_window(self):
+            info = getattr(self.desktop, "info", None)
+            if info is None or self.seat is None:
+                return None
+            try:
+                return info(self.seat["hwnd"])
+            except Exception:  # noqa: BLE001
+                return None
+
+        def _follow_seat(self, now: float) -> None:
+            """Sitting: follow the window when it moves; drop off when it closes, minimises, maximises or
+            goes full screen. Looked at every tick (one cheap call), so a moved window has no lag."""
+            if self.side != "window-top" or self.flying or self.look.dragging:
+                return
+            if now - getattr(self, "_seat_checked", -1e9) < 0.09:
+                return
+            self._seat_checked = now
+            w = self._seat_window()
+            area = self._area()
+            rect = self._logical(w.rect) if w is not None and w.rect else None
+            full = rect is not None and rect[0] <= area.left and rect[1] <= area.top \
+                and rect[2] >= area.right and rect[3] >= area.bottom
+            if w is None or rect is None or w.minimised or w.maximised or full:
+                self.drop_off()
+                return
+            if rect != self.seat["rect"]:
+                self.seat["rect"] = rect
+                sw = self.set_size["sit"][0]
+                hi = rect[2] - TITLE_BUTTONS - sw / 2 - rect[0]
+                self.seat["dx"] = max(sw / 2, min(self.seat["dx"], hi))
+                if rect[1] - self._hips_y() < area.top:       # pushed up against the top: it can't sit there
+                    self.drop_off()
+                    return
+                self.perch()
+
+        def drop_off(self) -> None:
+            """The seat is gone: a little fall, then it grabs the nearest edge."""
+            if self.side != "window-top":
+                return
+            start = self._grab_point()
+            self.seat = None
+            self.side = "edge"
+            self._launch(start, 0.0, -260.0 * self._unit(), thrown=False)
+            self._react_soon("surprised")
+
+        def hop_off(self) -> bool:
+            """Off the window by itself: a small hop down to the screen's bottom edge."""
+            if self.side != "window-top":
+                return False
+            start = self._grab_point()
+            self.seat = None
+            self.side = "edge"
+            self._launch(start, self.rng.choice((-1, 1)) * 160.0 * self._unit(), -520.0 * self._unit(),
+                         thrown=False)
+            return True
+
+        # --- flying: a fling, or falling off a window ---------------------------------------------
+
+        def _launch(self, grab: QPointF, vx: float, vy: float, thrown: bool) -> None:
+            self._end_motion()
+            self.script = self.walk = None
+            self._hold_body()
+            mid = self.body_h * 0.45
+            self.flight = climb.Flight(grab.x(), grab.y() + mid, vx, vy, gravity=climb.GRAVITY * self._unit())
+            self.flight_thrown = thrown
+            self.flight_at = self.clock()
+            self.drag_pos = QPointF(grab)
+            self.look.falling = False
+            self._place_dragged()
+            self._speed(FAST)
+
+        def _fly(self, now: float) -> None:
+            f = self.flight
+            dt = min(0.05, max(0.0, now - self.flight_at))
+            self.flight_at = now
+            f.step(dt)
+            mid = self.body_h * 0.45
+            self.drag_pos = QPointF(f.x, f.y - mid)
+            self.swing_speed = max(-2500.0, min(2500.0, f.vx))
+            hit = f.hit(self._area(), self.body_w * 0.25, mid)
+            if hit is None:
+                self._place_dragged()
+                return
+            self.flight = None
+            self._grab_edge(hit, now)
+
+        def _grab_edge(self, hit: climb.Spot, now: float) -> None:
+            """Flying, it reached an edge: grab a side or the top, or land on the bottom."""
+            thrown = getattr(self, "flight_thrown", False)
+            self.moving_set = None
+            if hit.edge in ("left", "right"):
+                side = "side-" + hit.edge
+                if SIDES[side] in self.set_size:
+                    self.side, self.y_center = side, hit.at
+                else:
+                    self.side = hit.edge                     # a bottom corner, without the frames
+                self._react_soon("surprised")
+            elif hit.edge == "top":
+                self.side, self.x_center = "top", hit.at
+                self._react_soon("surprised")
+            else:
+                self.side, self.x_center = "edge", hit.at
+                self.animate("bounce")
+                if thrown:
+                    self._pout(now)
+            self.until["notice"] = now + NOTICE_SECONDS
+            self.perch()
+            self._save()
+            self.animate("land")
+
+        def _pout(self, now: float) -> None:
+            """Dropped: a pout (annoyed face) and its sound."""
+            self.turn_emotion = "angry"
+            self.until["emotion"] = now + 1.8
+            self._reaction("pout")
+
+        # --- app windows and the desktop, every 0.5 s ---------------------------------------------
+
+        def _check_windows(self) -> None:
+            if self.look.dragging:
+                return
+            now = self.clock()
+            locked = False
+            check = getattr(self.desktop, "screen_locked", None)
+            if check is not None:
+                try:
+                    locked = bool(check())
+                except Exception:  # noqa: BLE001
+                    locked = False
+            if locked and not self.locked:
+                self.cancel_idle()
+            self.locked = locked
+            self.away = self.user_idle() >= AWAY_SECONDS
+            if self.mode == "desktop":
+                self._check_desktop(now)
+            elif self.hidden_for_desktop or self.slip_at is not None:
+                self._peek_back(now)
+            if self.side == "window-top" and not self.flying and self.seat is not None:
+                try:
+                    fg = self.desktop.foreground() if self.desktop is not None else None
+                except Exception:  # noqa: BLE001
+                    fg = None
+                if fg is not None and fg.hwnd != self.seat["hwnd"] and fg.rect is not None:
+                    l, t, r, b = self._logical(fg.rect)
+                    x, y = self._seat_point()
+                    if l <= x <= r and t <= y <= b:          # another window came over the seat
+                        self.drop_off()
+
+        def desktop_in_front(self) -> bool:
+            if self.desktop is None:
+                return True
+            from ..windows import desktop_in_front
+            try:
+                return desktop_in_front(self.desktop.foreground(), self.desktop.windows())
+            except Exception:  # noqa: BLE001 - can't tell: stay where it is
+                return not self.hidden_for_desktop
+
+        def _check_desktop(self, now: float) -> None:
+            """Desktop only: an app comes up, it waves and slips away; the desktop is back, it peeks in."""
+            front = self.desktop_in_front()
+            if not front:
+                if self.isVisible() and self.slip_at is None and not self.hidden_for_desktop:
+                    self.cancel_idle()
+                    if self.side == "window-top":
+                        self.seat, self.side = None, "edge"
+                        self.perch()
+                    self.until["greeting"] = now + 0.9
+                    self.slip_at = now + 0.9
+                    self._speed(FAST)
+            elif self.hidden_for_desktop or self.slip_at is not None:
+                self._peek_back(now)
+
+        def _peek_back(self, now: float) -> None:
+            was_hidden = self.hidden_for_desktop
+            self.slip_at = None
+            self.anims.pop("slip", None)
+            self.hidden_for_desktop = False
+            if was_hidden and not self.hidden_for_fullscreen:
+                self.perch()
+                self.show()
+                self.animate("peekin")
+                self.until["notice"] = now + NOTICE_SECONDS
+                self._speed(FAST)
+
+        def _slip(self, now: float) -> None:
+            if self.slip_at is None or now < self.slip_at:
+                return
+            age = self.anim_age("slip", now, SLIP_SECONDS + 0.2)
+            if "slip" not in self.anims:
+                self.animate("slip")
+            elif age is None or age >= SLIP_SECONDS:
+                self.slip_at = None
+                self.anims.pop("slip", None)
+                self.hidden_for_desktop = True
+                self.hide()
+
+        def set_mode(self, mode: str) -> None:
+            """Everywhere (on top of apps) or desktop only, from the menu or the app."""
+            if mode not in MODES:
+                return
+            self.mode = mode
+            self._mode_chosen = True
+            if mode == "desktop" and self.side == "window-top":
+                self.drop_off()
+            self._save()
+            self._check_windows()
+
+        def _outward(self) -> tuple[float, float]:
+            """Which way is behind the edge it holds (for slipping away and peeking back)."""
+            p = self.prefix
+            if p in ("sideR", "climbR"):
+                return 1.0, 0.0
+            if p in ("sideL", "climbL"):
+                return -1.0, 0.0
+            if p in ("top", "topL", "topR", "bars"):
+                return 0.0, -1.0
+            return 0.0, 1.0
+
+        # --- funny reactions --------------------------------------------------------------------------
+
+        def _reaction(self, kind: str, every: float = 0.0) -> bool:
+            """A reaction sound (red/sounds.py via _react), at most one a second, never in quiet mode or
+            while the user is away."""
+            if self.quiet or self.away:
+                return False
+            now = self.clock()
+            if now - self._sound_at < SOUND_GAP:
+                return True
+            played = self._react(kind, every)
+            if played:
+                self._sound_at = now
+            return played
+
+        def _react_soon(self, kind: str) -> None:
+            self._reaction(kind)
+
+        def _on_flag(self, name: str, on: bool) -> None:
+            """Events from the conversation session: conversation mode (a listening ring) and zipped
+            (told to keep quiet: a zip across the mouth)."""
+            if name == "conversation":
+                self.conversation = bool(on)
+            elif name == "zipped":
+                self.zipped = bool(on)
+            self._speed(FAST)
+            self.update()
+
+        def _on_quiet_idle(self, name: str) -> None:
+            """An idle action while the user is away: the same moves, silently."""
+            self.away = True
+            self._on_idle_action(name)
 
         # --- the clock --------------------------------------------------------
 

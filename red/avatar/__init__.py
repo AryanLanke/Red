@@ -115,36 +115,57 @@ def available_companions(models_dir: Path) -> dict[str, str]:
 # Where the companion sits, and the frame set for it: the bottom edge, a bottom corner, or hanging
 # upside down from the top edge.
 SIDES = {"edge": "peek", "left": "cornerL", "right": "cornerR", "top": "top",
-         "top-left": "topL", "top-right": "topR"}
+         "top-left": "topL", "top-right": "topR",
+         # the climbing frame: clinging to a side of the screen, or sitting on an app window's top edge
+         "side-left": "sideL", "side-right": "sideR", "window-top": "sit"}
 SIDE_OF = {prefix: side for side, prefix in SIDES.items()}       # frame set -> placement
 TOP_SIDES = ("top", "top-left", "top-right")        # the placements that hang upside down
-# A model without the frames for a placement uses the next best: a top corner is the top edge, then the edge.
-FALLBACK = {"topL": "top", "topR": "top", "top": "peek", "cornerL": "peek", "cornerR": "peek"}
+SIDE_SIDES = ("side-left", "side-right")            # clinging to a side of the screen
+# Whole-body sets for climbing (scripts/avatar_render/frames.js): a frame they lack is their own idle,
+# never a peek frame (which is a different shape).
+CLIMBING_SETS = ("sideL", "sideR", "climbL", "climbR", "bars", "sit")
+FRAME_SETS = ("peek", "cornerR", "cornerL", "top", "topL", "topR", "body") + CLIMBING_SETS
+# A model without the frames for a placement uses the next best: a top corner is the top edge, then the edge;
+# a side is that bottom corner.
+FALLBACK = {"topL": "top", "topR": "top", "top": "peek", "cornerL": "peek", "cornerR": "peek",
+            "sideL": "cornerL", "sideR": "cornerR", "sit": "peek"}
 
 
 def frame_for_side(name: str, side: str, available: Callable[[str], bool] = lambda n: True) -> str:
     """A peek_* frame turned into the same frame for a corner, if the model has it."""
-    prefix = SIDES.get(side, "peek")
+    return frame_in_set(name, SIDES.get(side, "peek"), available)
+
+
+def frame_in_set(name: str, prefix: str, available: Callable[[str], bool] = lambda n: True) -> str:
+    """A peek_* frame turned into the same frame of another set (cornerR_idle, sideL_happy...). A corner
+    without it keeps the peek frame (as before); a whole-body set falls back to its own idle frame."""
     if prefix == "peek" or not name.startswith("peek_"):
         return name
-    corner = prefix + name[len("peek"):]
-    return corner if available(corner) else name
+    wanted = prefix + name[len("peek"):]
+    if available(wanted):
+        return wanted
+    if prefix in CLIMBING_SETS:
+        base = wanted.removesuffix("_blink")
+        return base if available(base) else f"{prefix}_idle"
+    return name
 
 
 def side_for(x: float, left: float, right: float, snap: float, y: float | None = None,
-             top: float | None = None) -> str:
+             top: float | None = None, bottom: float | None = None) -> str:
     """Dropped within `snap` pixels of the top of the screen: hanging from the top edge, or from the top
-    corner if it is also near a side. Near a side lower down: that bottom corner. Otherwise the bottom edge."""
+    corner if it is also near a side. Near a side lower down: that bottom corner, or (given `bottom`, for a
+    model that can climb) clinging to that side when it is well above the bottom. Otherwise the bottom edge."""
     if y is not None and top is not None and y <= top + snap:
         if x >= right - snap:
             return "top-right"
         if x <= left + snap:
             return "top-left"
         return "top"
+    high = y is not None and bottom is not None and y < bottom - 2 * snap
     if x >= right - snap:
-        return "right"
+        return "side-right" if high else "right"
     if x <= left + snap:
-        return "left"
+        return "side-left" if high else "left"
     return "edge"
 
 
