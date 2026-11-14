@@ -1,0 +1,90 @@
+# Simulated-user conversations: the local model plays a person with a mood and a goal. Only the opener is
+# fixed; after that every line is the model's. Graded by the rules (and the judge, with --judge).
+
+[[scenario]]
+id = "sim-bored"
+category = "sim-bored"
+kind = "sim"
+tags = ["sim"]
+companion = "*"
+persona = { mood = "bored", goal = "wants something to do tonight", style = "short, lazy, lowercase" }
+opener = "man I'm so bored"
+turns_min = 4
+turns_max = 6
+
+[[scenario]]
+id = "sim-angry"
+category = "sim-angry"
+kind = "sim"
+tags = ["sim"]
+companion = "*"
+persona = { mood = "angry", goal = "wants to vent about a terrible day and be heard", style = "blunt, a bit rude, short" }
+opener = "ugh, today was the worst"
+turns_min = 4
+turns_max = 6
+
+[[scenario]]
+id = "sim-lonely"
+category = "sim-lonely"
+kind = "sim"
+tags = ["sim"]
+companion = "*"
+persona = { mood = "lonely", goal = "wants company and someone who remembers things about them", style = "quiet, honest, short" }
+opener = "hey, you there?"
+turns_min = 4
+turns_max = 7
+
+[[scenario]]
+id = "sim-happy"
+category = "sim-happy"
+kind = "sim"
+tags = ["sim"]
+companion = "*"
+persona = { mood = "happy", goal = "wants to share good news and celebrate, maybe with a song", style = "excited, short" }
+opener = "guess what, I finally finished my project"
+turns_min = 4
+turns_max = 6
+
+[[scenario]]
+id = "sim-teasing"
+category = "sim-teasing"
+kind = "sim"
+tags = ["sim"]
+companion = "*"
+persona = { mood = "teasing", goal = "pokes fun at the companion and tests whether it can take a joke", style = "playful, cheeky, short" }
+opener = "you're kind of a nerd, you know that?"
+turns_min = 4
+turns_max = 6
+
+[[scenario]]
+id = "sim-tasks"
+category = "sim-tasks"
+kind = "sim"
+tags = ["sim"]
+companion = ["red", "asha", "remy"]
+persona = { mood = "tired", goal = "is working on the laptop and keeps asking for small things: open an app, play music, set a timer, look something up", style = "brisk, short, talks to a friend" }
+opener = "ok I need to focus, open VS Code"
+turns_min = 5
+turns_max = 8
+
+[[scenario]]
+id = "sim-music"
+category = "sim-music"
+kind = "sim"
+tags = ["sim"]
+companion = ["red", "remy", "asha"]
+persona = { mood = "curious", goal = "wants the companion to choose a song for them and talk about music taste, never names a song themselves", style = "casual, short" }
+opener = "play me something you like"
+turns_min = 3
+turns_max = 5
+
+[[scenario]]
+id = "sim-switcher"
+category = "sim-switch"
+kind = "sim"
+tags = ["sim"]
+companion = ["red"]
+persona = { mood = "curious", goal = "wants to meet the other companions, Remy and Asha, by asking to switch to them and chatting a little with each", style = "casual, short" }
+opener = "who else lives in here with you?"
+turns_min = 5
+turns_max = 8

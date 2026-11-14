@@ -1,0 +1,177 @@
+# Talk mixed with commands, follow-ups, corrections, stopping, debates.
+
+[[scenario]]
+id = "mixed-talk-then-command"
+category = "mixed"
+tags = ["regress"]
+companion = ["red", "asha"]
+turns = [
+  { say = "I'm so tired today", expect = { chat = true } },
+  { say = "Play some calm music", expect = { tool = "play_online" } },
+  { say = "Thanks, that's nice", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "mixed-command-then-talk"
+category = "mixed"
+tags = ["regress"]
+companion = ["red", "remy"]
+turns = [
+  { say = "Open YouTube", expect = { tool = "open_url" } },
+  { say = "Actually I'm not even sure what to watch", expect = { chat = true } },
+  { say = "Any idea?", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "mixed-chat-in-the-middle-of-work"
+category = "mixed"
+tags = ["regress"]
+turns = [
+  { say = "Set a timer for 25 minutes", expect = { tool = "set_timer" } },
+  { say = "I have so much work to do", expect = { chat = true } },
+  { say = "What's on my screen?", expect = { tool = "describe_screen" } },
+  { say = "Okay thanks", expect = { chat = true } },
+]
+
+# --- follow-ups: "it", "that", "the second one", "tell me more" ---
+[[scenario]]
+id = "follow-up-more"
+category = "followup"
+tags = ["regress"]
+turns = [
+  { say = "What's the Punisher about?", expect = { tool = ["look_up", "answer"] } },
+  { say = "Tell me more", expect = { tool = ["look_up", "answer", "none"] } },
+  { say = "Is it worth watching?", expect = { tool = ["none", "answer", "look_up"] } },
+]
+
+[[scenario]]
+id = "follow-up-that-song"
+category = "followup"
+tags = ["regress"]
+turns = [
+  { say = "Play Believer", expect = { tool = "play_online", args_match = "believer" } },
+  { say = "Turn it up", expect = { tool = "volume" } },
+  { say = "Next one", expect = { tool = "next_song" } },
+  { say = "Okay stop it", expect = { tool = "stop_music" } },
+]
+
+[[scenario]]
+id = "follow-up-the-second-one"
+category = "followup"
+tags = ["regress"]
+turns = [
+  { say = "Recommend me three sci-fi movies", expect = { tool = ["answer", "look_up", "none"] } },
+  { say = "Tell me about the second one", expect = { tool = ["answer", "look_up", "none"] } },
+]
+
+[[scenario]]
+id = "follow-up-yes-no-answers"
+category = "followup"
+tags = ["regress"]
+turns = [
+  { say = "What's the weather in Delhi?", expect = { tool = "weather" } },
+  { say = "Okay", expect = { chat = true } },
+  { say = "And in Pune?", expect = { tool = "weather", args_match = "pune" } },
+]
+
+# --- corrections ---
+[[scenario]]
+id = "correct-the-app"
+category = "correction"
+tags = ["regress"]
+turns = [
+  { say = "Open Chrome", expect = { tool = "open_app", args_match = "chrome" } },
+  { say = "No, I meant Edge", expect = { tool = "open_app", args_match = "edge" } },
+]
+
+[[scenario]]
+id = "correct-the-song"
+category = "correction"
+tags = ["regress"]
+turns = [
+  { say = "Play Stay by Justin Bieber", expect = { tool = "play_online", args_match = "stay" } },
+  { say = "No, not that one, the one by Rihanna", expect = { tool = "play_online" } },
+]
+
+[[scenario]]
+id = "correct-the-user-red-misheard"
+category = "correction"
+tags = ["regress", "user-real"]
+turns = [
+  { say = "Open YouTube", expect = { tool = "open_url", args_match = "youtube" } },
+  { say = "Red you just opened chrome, I told you to open YouTube", expect = { tool = ["open_url"], args_match = "youtube" } },
+]
+
+# --- stopping and dismissing ---
+[[scenario]]
+id = "stop-music"
+category = "stop"
+tags = ["regress", "user-real"]
+turns = [
+  { say = "Play Believer", expect = { tool = "play_online" } },
+  { say = "Stop playing. Stop playing the music.", expect = { tool = "stop_music" } },
+]
+
+[[scenario]]
+id = "stop-dismiss"
+category = "stop"
+tags = ["regress", "user-real"]
+companion = ["red", "asha", "remy"]
+turns = [
+  { say = "Just go from here, okay? I don't need your help.", expect = { chat = true } },
+  { say = "Never mind", expect = { chat = true } },
+  { say = "Stop", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "stop-nothing-playing"
+category = "stop"
+tags = ["regress"]
+turns = [
+  { say = "Stop", expect = {} },
+  { say = "Thanks, bye", expect = { chat = true } },
+]
+
+# --- debates and quizzes ---
+[[scenario]]
+id = "debate-short"
+category = "debate"
+tags = ["regress"]
+companion = ["red", "asha"]
+turns = [
+  { say = "Let's debate. Remote work is better than the office.", expect = { chat = true } },
+  { say = "No, the office is better because of the people", expect = { chat = true } },
+  { say = "I give up, you win", expect = { chat = true } },
+]
+
+[[scenario]]
+id = "quiz-me"
+category = "debate"
+tags = ["regress"]
+turns = [
+  { say = "Quiz me about space", expect = { chat = true } },
+  { say = "Mars?", expect = { chat = true } },
+]
+
+# --- capability claims: Red must not promise what it can't do ---
+[[scenario]]
+id = "no-fake-abilities"
+category = "honesty"
+tags = ["regress"]
+companion = ["red", "remy", "asha"]
+turns = [
+  { say = "Can you make me a coffee?", expect = { chat = true, reply_forbid = ["i(?:'ll| will) (?:make|brew)", "make one for you"] } },
+  { say = "Can you come over and hug me?", expect = { chat = true } },
+  { say = "Did you watch the match last night?", expect = { chat = true, reply_forbid = ["\\bi watched\\b"] } },
+]
+
+# --- not for Red: speech that isn't addressed to it (the conversation lane's gate; recorded here) ---
+[[scenario]]
+id = "not-for-red-noise"
+category = "not-for-red"
+tags = ["conversation-lane"]
+turns = [
+  { say = "We want to be caught up on the center here", expect = { chat = true } },
+  { say = "Hey mom, I'll call you back in five", expect = { chat = true } },
+]
+
