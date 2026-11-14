@@ -65,3 +65,7 @@ node_modules/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Installer build output
+installer/work/
+installer/out/

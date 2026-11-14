@@ -1,0 +1,15 @@
+{
+  "_note": "Everything the build downloads, pinned. Hashes were computed from the HTTPS download on 2026-11-13 (python.org publishes only an MD5 and a Sigstore bundle; GitHub shows no hash). To update a pin: download the new file, check it by hand, put its SHA-256 here.",
+  "python": {
+    "version": "3.11.9",
+    "url": "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip",
+    "sha256": "009d6bf7e3b2ddca3d784fa09f90fe54336d5b60f0e0f305c37f400bf83cfd3b",
+    "licence": "Python Software Foundation License"
+  },
+  "innosetup": {
+    "version": "6.7.4",
+    "url": "https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe",
+    "sha256": "a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c",
+    "licence": "Inno Setup License (free, including for commercial use); only a build tool, not shipped"
+  }
+}
