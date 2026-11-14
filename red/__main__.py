@@ -223,11 +223,12 @@ class Voice:
     chime: Callable[[], None]                  # audio.chime
     listener_factory: Callable[..., object]    # listener.Listener
     make_ask: Callable[..., Ask]               # voice_confirm.spoken_ask
+    mute_sound: Callable[[bool], None] | None = None   # audio.soft_chime: "microphone off/on"
 
 
 def load_voice(settings: Settings) -> Voice:
     """The real voice parts. Raises ImportError if the voice packages are missing."""
-    from .audio import chime, record_command
+    from .audio import chime, record_command, soft_chime
     from .listener import Listener
     from .stt import Transcriber
     from .voice_confirm import spoken_ask
@@ -250,6 +251,7 @@ def load_voice(settings: Settings) -> Voice:
         chime=chime,
         listener_factory=Listener,
         make_ask=spoken_ask,
+        mute_sound=soft_chime,
     )
 
 
@@ -334,7 +336,8 @@ class VoiceApp:
             try:
                 listener = self.voice.listener_factory(self.handle, s.hotkey, s.wakeword,
                                                        model_dir=model_dir,
-                                                       threshold=s.wakeword_threshold)
+                                                       threshold=s.wakeword_threshold,
+                                                       **self._mic_kwargs())
                 listener.start()
                 self.listener = listener
                 self._wire_interrupt(listener)
@@ -349,11 +352,17 @@ class VoiceApp:
             raise RuntimeError("The hotkey is off and the wake word isn't available, "
                                "so nothing can start Red. Set RED_HOTKEY in .env.")
         listener = self.voice.listener_factory(self.handle, s.hotkey, None, model_dir=model_dir,
-                                               threshold=s.wakeword_threshold)
+                                               threshold=s.wakeword_threshold, **self._mic_kwargs())
         listener.start()
         self.listener = listener
         self._wire_interrupt(listener)
         return listener
+
+    def _mic_kwargs(self) -> dict:
+        """Microphone off: its shortcut, where it is remembered, and the soft chime (not words)."""
+        s = self.settings
+        return {"mute_hotkey": getattr(s, "mic_hotkey", None), "mic_state": s.cache_dir / "mic.json",
+                "mute_sound": self.voice.mute_sound}
 
     def _wire_interrupt(self, listener) -> None:
         if hasattr(listener, "on_interrupt"):

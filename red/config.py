@@ -84,6 +84,8 @@ class Settings:
     github_token: str | None
     # Voice and UI. Defaults match the RED_* variables in .env.example.
     hotkey: str | None = DEFAULT_HOTKEY
+    # Microphone off / on (Listener.mute); "off" turns the shortcut off.
+    mic_hotkey: str | None = "<ctrl>+<alt>+m"
     wakeword: str | None = DEFAULT_WAKEWORD
     wakeword_threshold: float = DEFAULT_WAKEWORD_THRESHOLD
     whisper_model: str = DEFAULT_WHISPER_MODEL
@@ -276,6 +278,7 @@ def load_settings(home: Path | None = None) -> Settings:
         llm_keep_alive=_env("RED_LLM_KEEP_ALIVE") or "5m",
         github_token=_env("GITHUB_TOKEN"),
         hotkey=_switchable("RED_HOTKEY", DEFAULT_HOTKEY),
+        mic_hotkey=_switchable("RED_MIC_HOTKEY", "<ctrl>+<alt>+m"),
         wakeword=_switchable("RED_WAKEWORD", DEFAULT_WAKEWORD),
         wakeword_threshold=threshold,
         whisper_model=_env("RED_WHISPER_MODEL") or DEFAULT_WHISPER_MODEL,

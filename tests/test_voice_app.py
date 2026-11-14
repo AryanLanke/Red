@@ -57,7 +57,8 @@ class FakeListener:
     instances = []
 
     def __init__(self, on_trigger, hotkey, wakeword=None, *, model_dir=None, threshold=0.5,
-                 fail_wakeword=False):
+                 fail_wakeword=False, **kwargs):
+        self.kwargs = kwargs
         if wakeword and fail_wakeword:
             raise ValueError(f"Unknown wake word {wakeword!r}")
         self.on_trigger, self.hotkey, self.wakeword = on_trigger, hotkey, wakeword
@@ -958,3 +959,13 @@ def test_waking_reads_the_chat_prompt_ahead_once_a_minute(world, monkeypatch):
         if t.name == "red-prime":
             t.join(2)
     assert started == [1]
+
+
+def test_the_listener_gets_the_mic_shortcut_state_file_and_sound(world):
+    app, *_ = make_app(world)
+    app.start_listener()
+    kw = FakeListener.instances[-1].kwargs
+    from red.listener import normalize_hotkey
+    assert normalize_hotkey(kw["mute_hotkey"]) == "<ctrl>+<alt>+m"
+    assert kw["mic_state"] == app.settings.cache_dir / "mic.json"
+    assert "mute_sound" in kw

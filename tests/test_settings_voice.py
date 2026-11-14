@@ -88,3 +88,13 @@ def test_tools_with_details_expose_last_details():
     registry = default_registry()
     for name in ("find_file", "check_repos"):
         assert getattr(registry.get(name), "last_details", None) == ""
+
+
+def test_the_microphone_shortcut_setting(monkeypatch, tmp_path):
+    from red.config import load_settings
+    monkeypatch.delenv("RED_MIC_HOTKEY", raising=False)
+    assert load_settings(tmp_path).mic_hotkey == "<ctrl>+<alt>+m"
+    monkeypatch.setenv("RED_MIC_HOTKEY", "off")
+    assert load_settings(tmp_path).mic_hotkey is None
+    monkeypatch.setenv("RED_MIC_HOTKEY", "Ctrl+Shift+M")
+    assert load_settings(tmp_path).mic_hotkey == "Ctrl+Shift+M"

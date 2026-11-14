@@ -1,3 +1,4 @@
+import json
 import threading
 import time
 
@@ -47,12 +48,12 @@ class SlowMic(FakeMic):
 def listener_factory(tmp_path):
     made = []
 
-    def make(on_trigger, hotkey="<ctrl>+<alt>+r", wakeword=None, detector=None, mic=None):
+    def make(on_trigger, hotkey="<ctrl>+<alt>+r", wakeword=None, detector=None, mic=None, **extra):
         mic = mic or SlowMic(block=1280)
         detector = detector or FakeDetector()
         lst = Listener(on_trigger, hotkey, wakeword, model_dir=tmp_path,
                        hotkey_factory=FakeHotKeys, mic_factory=lambda: mic,
-                       detector_factory=lambda d, w: detector)
+                       detector_factory=lambda d, w: detector, **extra)
         made.append(lst)
         return lst, mic, detector
 
@@ -380,3 +381,96 @@ def test_a_handler_that_leaves_it_open_is_closed(listener_factory):
     FakeHotKeys.instances[-1].press()
     assert wait_for(lambda: not lst.busy)
     assert lst._interrupt_open is False and lst._pauses == 0
+
+
+# --- microphone off (night 1) ---------------------------------------------------------
+
+def test_muting_closes_the_mic_and_nothing_is_heard(listener_factory):
+    rec = Recorder()
+    det = FakeDetector(fire_at={50})
+    lst, mic, _ = listener_factory(rec, wakeword="hey_red", detector=det)
+    lst.start()
+    assert wait_for(lambda: mic.is_open)
+    assert lst.mute(True) is True
+    assert lst.muted and not mic.is_open            # closed by the time mute() returns
+    frames = det.frames
+    time.sleep(0.05)
+    assert det.frames == frames and rec.calls == []  # not even the wake word is checked
+
+
+def test_unmuting_listens_again(listener_factory):
+    lst, mic, det = listener_factory(Recorder(), wakeword="hey_red")
+    lst.start()
+    lst.mute(True)
+    lst.mute(False)
+    assert wait_for(lambda: mic.is_open)
+    assert not lst.muted
+
+
+def test_mute_with_no_argument_toggles(listener_factory):
+    lst, _, _ = listener_factory(Recorder())
+    assert lst.mute() is True and lst.mute() is False
+
+
+def test_the_hotkey_does_nothing_while_muted(listener_factory):
+    rec = Recorder()
+    lst, _, _ = listener_factory(rec)
+    lst.start()
+    lst.mute(True)
+    lst._hotkeys.press()
+    time.sleep(0.05)
+    assert rec.calls == []
+    lst.mute(False)
+    lst._hotkeys.press()
+    assert rec.entered.wait(3)
+
+
+def test_mute_is_remembered_in_mic_json(listener_factory, tmp_path):
+    state = tmp_path / "cache" / "mic.json"
+    lst, _, _ = listener_factory(Recorder(), mic_state=state)
+    lst.mute(True)
+    assert json.loads(state.read_text(encoding="utf-8")) == {"muted": True}
+    # A new Listener (a restart) starts deaf.
+    again, _, _ = listener_factory(Recorder(), mic_state=state)
+    assert again.muted
+    again.mute(False)
+    assert not json.loads(state.read_text(encoding="utf-8"))["muted"]
+
+
+def test_a_broken_mic_json_means_not_muted(listener_factory, tmp_path):
+    state = tmp_path / "mic.json"
+    state.write_text("{not json", encoding="utf-8")
+    lst, _, _ = listener_factory(Recorder(), mic_state=state)
+    assert not lst.muted
+
+
+def test_mute_emits_the_mic_event_and_plays_a_sound_not_words(listener_factory):
+    from red import events
+    seen, sounds = [], []
+    events.on("mic", lambda muted: seen.append(muted))
+    try:
+        lst, _, _ = listener_factory(Recorder(), mute_sound=sounds.append)
+        lst.mute(True)
+        lst.mute(True)                                # no change: no second event or sound
+        lst.mute(False)
+    finally:
+        events.clear()
+    assert seen == [True, False] and sounds == [True, False]
+
+
+def test_the_mute_hotkey_toggles(listener_factory):
+    lst, _, _ = listener_factory(Recorder(), mute_hotkey="Ctrl+Alt+M")
+    lst.start()
+    hk = lst._hotkeys
+    assert set(hk.mapping) == {"<ctrl>+<alt>+r", "<ctrl>+<alt>+m"}
+    hk.press("<ctrl>+<alt>+m")
+    assert wait_for(lambda: lst.muted)
+    hk.press("<ctrl>+<alt>+m")
+    assert wait_for(lambda: not lst.muted)
+
+
+def test_a_failing_sound_does_not_undo_the_mute(listener_factory):
+    def boom(muted):
+        raise RuntimeError("no speakers")
+    lst, _, _ = listener_factory(Recorder(), mute_sound=boom)
+    assert lst.mute(True) is True and lst.muted

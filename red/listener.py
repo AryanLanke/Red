@@ -22,6 +22,7 @@ detector are passed in, so tests use fakes.
 
 from __future__ import annotations
 
+import json
 import logging
 import queue
 import threading
@@ -31,6 +32,7 @@ from typing import Callable, Protocol
 
 import numpy as np
 
+from red import events
 from red.audio import AudioError, Microphone, PinnedFiles, to_int16
 from red.config import red_home
 from red.llm import Asset
@@ -56,6 +58,7 @@ HEY_RED = "hey_red"            # Red's own wake phrase; see red/wakeword.py
 DEFAULT_WAKEWORD = HEY_RED
 DEFAULT_THRESHOLD = 0.5
 DEFAULT_HOTKEY = "<ctrl>+<alt>+r"
+DEFAULT_MIC_HOTKEY = "<ctrl>+<alt>+m"      # microphone off / on
 WAKE_BLOCK_SECONDS = 0.08      # openWakeWord works on 80 ms frames (1280 samples)
 
 _MODIFIERS = {"ctrl", "control", "alt", "shift", "cmd", "win", "super", "alt_gr"}
@@ -143,6 +146,24 @@ def make_detector(model_dir: Path, wakeword: str) -> Detector:
     return WakeWordDetector(model_dir, wakeword)
 
 
+def read_mic_state(path: Path | None) -> bool:
+    """Was the microphone left off? (the cache folder's mic.json: {"muted": true})."""
+    if path is None:
+        return False
+    try:
+        return bool(json.loads(Path(path).read_text(encoding="utf-8")).get("muted"))
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def write_mic_state(path: Path, muted: bool) -> None:
+    try:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Path(path).write_text(json.dumps({"muted": bool(muted)}), encoding="utf-8")
+    except OSError:
+        log.warning("Couldn't save the microphone state to %s", path, exc_info=True)
+
+
 class _HotKeys(Protocol):
     def start(self) -> None: ...
     def stop(self) -> None: ...
@@ -158,6 +179,9 @@ class Listener:
                  wakeword: str | None = None, *,
                  model_dir: Path | None = None,
                  threshold: float = DEFAULT_THRESHOLD,
+                 mute_hotkey: str | None = None,
+                 mic_state: Path | None = None,
+                 mute_sound: Callable[[bool], None] | None = None,
                  hotkey_factory: Callable[[dict], _HotKeys] = _pynput_hotkeys,
                  mic_factory: Callable[[], object] = lambda: Microphone(block_seconds=WAKE_BLOCK_SECONDS),
                  detector_factory: Callable[[Path, str], Detector] = make_detector):
@@ -166,6 +190,10 @@ class Listener:
         self.wakeword = resolve_wakeword(wakeword) if wakeword else None
         self.model_dir = Path(model_dir) if model_dir else red_home() / "models" / "wakeword"
         self.threshold = threshold
+        self.mute_hotkey = normalize_hotkey(mute_hotkey) if mute_hotkey else None
+        self._mic_state = Path(mic_state) if mic_state else None    # the cache folder's mic.json
+        self._mute_sound = mute_sound
+        self._muted = read_mic_state(self._mic_state)
         self._hotkey_factory = hotkey_factory
         self._mic_factory = mic_factory
         self._detector_factory = detector_factory
@@ -212,8 +240,15 @@ class Listener:
         if self._detector is not None:
             self._audio_thread = threading.Thread(target=self._listen, name="red-wakeword", daemon=True)
             self._audio_thread.start()
+        mapping: dict[str, Callable[[], None]] = {}
         if self.hotkey:
-            self._hotkeys = self._hotkey_factory({self.hotkey: lambda: self._fire("hotkey")})
+            mapping[self.hotkey] = lambda: self._fire("hotkey")
+        if self.mute_hotkey:
+            # On its own thread: the pynput thread must not wait for the sound.
+            mapping[self.mute_hotkey] = lambda: threading.Thread(
+                target=self.mute, name="red-mute", daemon=True).start()
+        if mapping:
+            self._hotkeys = self._hotkey_factory(mapping)
             self._hotkeys.start()
 
     def stop(self) -> None:
@@ -232,6 +267,36 @@ class Listener:
             if t is not None and t is not me:
                 t.join(timeout=5)
         self._audio_thread = self._worker = None
+
+    @property
+    def muted(self) -> bool:
+        """Microphone off: Red hears nothing, not even "Hey Red" (the hotkey does nothing either)."""
+        return self._muted
+
+    def mute(self, on: bool | None = None) -> bool:
+        """Turn the microphone off (True), on (False), or the other way round (None).
+
+        Remembered in mic.json in the cache folder, so Red stays deaf after a restart. Says so with a
+        soft chime, not words. Returns once the wake word's microphone is closed. Returns the new state.
+        """
+        with self._cond:
+            on = (not self._muted) if on is None else bool(on)
+            changed = on != self._muted
+            self._muted = on
+            self._cond.notify_all()
+        if self._mic_state is not None:
+            write_mic_state(self._mic_state, on)
+        if on and threading.current_thread() is not self._audio_thread:
+            self._mic_closed.wait(timeout=3)
+        if changed:
+            log.info("Microphone %s", "off" if on else "on")
+            events.emit("mic", muted=on)
+            if self._mute_sound is not None:
+                try:
+                    self._mute_sound(on)
+                except Exception:  # noqa: BLE001 - a sound that fails must not undo the mute
+                    log.warning("Couldn't play the microphone sound", exc_info=True)
+        return on
 
     def pause(self) -> None:
         """Stop listening for the wake word until resume(). Returns once the mic is closed."""
@@ -279,7 +344,7 @@ class Listener:
 
     def _fire(self, source: str) -> None:
         """Called from the hotkey or wake word thread. Must return quickly."""
-        if not self._running:
+        if not self._running or self._muted:
             return
         if self._busy.is_set():
             # Busy: ignored, unless Red is talking and you may cut in.
@@ -311,7 +376,7 @@ class Listener:
                 self._busy.clear()
 
     def _should_listen(self) -> bool:
-        return self._running and self._pauses == 0
+        return self._running and self._pauses == 0 and not self._muted
 
     def _listen(self) -> None:
         detector = self._detector

@@ -154,3 +154,30 @@ def test_mic_device_from_env(monkeypatch):
     assert audio.default_input_device() == 3
     monkeypatch.setenv("RED_MIC_DEVICE", "Headset")
     assert audio.default_input_device() == "Headset"
+
+
+def test_the_microphone_chime_plays_on_its_own_stream_and_is_quiet(monkeypatch):
+    import sys
+    import types
+    written = []
+
+    class Stream:
+        def __init__(self, **kw):
+            self.kw = kw
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return None
+
+        def write(self, data):
+            written.append(data)
+
+    fake = types.SimpleNamespace(OutputStream=Stream, play=lambda *a, **k: pytest.fail("sd.play would cut Red's voice"))
+    monkeypatch.setitem(sys.modules, "sounddevice", fake)
+    audio.soft_chime(True)
+    audio.soft_chime(False)
+    off, on = written
+    assert 0.15 < off.size / 22_050 < 0.3 and abs(off).max() < 0.1
+    assert off.shape == on.shape and not (off == on).all()      # falling is not the same as rising

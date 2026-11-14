@@ -413,3 +413,23 @@ def chime(frequency: float = 880.0, seconds: float = 0.12, volume: float = 0.2) 
     tone = (volume * np.sin(2 * np.pi * frequency * t) * fade).astype(np.float32)
     sd.play(tone, sr)
     sd.wait()
+
+
+def soft_chime(muted: bool, volume: float = 0.06) -> None:
+    """A quiet two-note sound for "microphone off" (falling) and "microphone on" (rising).
+
+    It plays on a stream of its own, so it never cuts off Red's voice (sd.play would replace it).
+    Blocks for about 0.25 s.
+    """
+    import sounddevice as sd
+
+    sr = 22_050
+    notes = (660.0, 440.0) if muted else (440.0, 660.0)
+    pieces = []
+    for frequency in notes:
+        t = np.arange(int(sr * 0.1)) / sr
+        fade = np.minimum(1.0, np.minimum(t, 0.1 - t) / 0.03)
+        pieces.append(volume * np.sin(2 * np.pi * frequency * t) * fade)
+    tone = np.concatenate(pieces).astype(np.float32).reshape(-1, 1)
+    with sd.OutputStream(samplerate=sr, channels=1, dtype="float32") as stream:
+        stream.write(tone)
