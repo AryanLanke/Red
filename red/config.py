@@ -253,7 +253,7 @@ def load_settings(home: Path | None = None) -> Settings:
 
     # Like the search engine: an unknown value means the default, not an error.
     chattiness = (_env("RED_CHATTINESS") or "friendly").lower()
-    if chattiness not in ("quiet", "friendly", "chatty"):
+    if chattiness not in ("quiet", "friendly", "chatty", "companion"):
         chattiness = "friendly"
 
     # Keep model caches under RED_HOME for this process only.

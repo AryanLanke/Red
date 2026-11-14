@@ -13,7 +13,7 @@ with a command.
 Chattiness (RED_CHATTINESS):
 - quiet: Red only answers.
 - friendly (default): the greetings above.
-- chatty: greetings, plus a one-liner at most once an hour when there's
+- chatty (and companion, which also lets a companion with music play a song of its own, red/idle.py): greetings, plus a one-liner at most once an hour when there's
   something worth saying ("It's 2 AM, you're still at it?").
 
 Away time comes from Windows' GetLastInputInfo (no keyboard or mouse input),
@@ -36,7 +36,7 @@ from .memory import memory_dir
 
 log = logging.getLogger(__name__)
 
-CHATTINESS = ("quiet", "friendly", "chatty")
+CHATTINESS = ("quiet", "friendly", "chatty", "companion")
 DEFAULT_CHATTINESS = "friendly"
 AWAY_SECONDS = 30 * 60          # this long with no input is "away"
 BACK_SECONDS = 15.0             # input this recent means you're at the PC
@@ -287,7 +287,7 @@ class Greeter:
         state = self._state()
         new_day = state.get("day") != day_of(now)
         if not ((first_tick or came_back) and (new_day or came_back)):
-            return self._chatty(now, state) if self.chattiness == "chatty" else None
+            return self._chatty(now, state) if self.chattiness in ("chatty", "companion") else None
         if self._blocked():
             return None                     # a game or a call: no hello, and none later either
         pool = hello_lines(now) if new_day else BACK

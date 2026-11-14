@@ -419,6 +419,9 @@ class VoiceApp:
         greeter = getattr(self, "greeter", None)
         if greeter is not None:
             greeter.stop()
+        idle = getattr(self, "idle", None)
+        if idle is not None:
+            idle.stop()
         hotkey = getattr(getattr(self, "chat_window", None), "hotkey", None)
         if hotkey is not None:
             try:
@@ -445,6 +448,8 @@ class VoiceApp:
         self._state("idle", f"Red is ready. {ready}")
         from .greeter import attach_greeter
         self.greeter = attach_greeter(self)     # hello, never a briefing (RED_CHATTINESS)
+        from .idle import attach_idle
+        self.idle = attach_idle(self)           # looks around, grumbles, plays a song (red/idle.py)
         from . import chat_window
         self.chat_window = chat_window.attach_chat_window(self)   # Ctrl+Alt+Space or "open chat"
         try:
@@ -574,6 +579,11 @@ class VoiceApp:
             logging.getLogger("red.commands").info("%r -> name", text)
             self._say(named)
             return named, tool, False
+        stopped = self._stop_own_song(text)
+        if stopped is not None:                    # "stop" after a song Red put on by itself
+            logging.getLogger("red.commands").info("%r -> stop the idle song", text)
+            self._say(stopped)
+            return stopped, tool, False
         switched = companions.handle_switch(text, self.settings.home)   # "switch to Remy"
         if switched is not None:
             logging.getLogger("red.commands").info("%r -> switch companion", text)
@@ -686,6 +696,12 @@ class VoiceApp:
         return last, tools[-1], again
 
     # --- helpers -------------------------------------------------------------
+
+    def _stop_own_song(self, text: str) -> str | None:
+        idle = getattr(self, "idle", None)
+        if idle is None:
+            return None
+        return idle.stop_reply(text, lambda: self.executor.registry.get("stop_music").run())
 
     def _prime_chat(self) -> None:
         """Red just woke: let the model read the chat prompt (and load, if it was unloaded)

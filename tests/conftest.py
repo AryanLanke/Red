@@ -56,6 +56,8 @@ def _no_real_memory(monkeypatch, tmp_path):
     monkeypatch.setattr(red.memory.Learner, "start", lambda self: None)
     import red.greeter
     monkeypatch.setattr(red.greeter.Greeter, "start", lambda self: None)   # no real idle checks or hellos
+    import red.idle
+    monkeypatch.setattr(red.idle.IdleLife, "start", lambda self: None)     # no idle life, no real songs
     import red.plugins
     monkeypatch.setattr(red.plugins, "user_plugins_dir", lambda home: tmp_path / "plugins")   # never the user's
     monkeypatch.setattr(red.plugins, "state_path", lambda home: tmp_path / "config" / "plugins.json")
