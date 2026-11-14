@@ -9,7 +9,8 @@ This is the only plan file. It lists **everything** that has to be done to ship 
 | When | What | Why |
 |---|---|---|
 | ~~Day 1~~ | ✅ **Kaggle: done.** The access token is in `D:\RED\config\secrets\kaggle\access_token.txt` and the GPU is on | Training (Day 7) |
-| **Day 1** | **Accounts (all free):** SignPath Foundation application (code signing for open source), SourceForge, itch.io, a Microsoft Partner Center developer account (free for individuals; check when signing up), Chocolatey. The track B session prepares every text | Signed installer and the download sites |
+| **Day 1** | **Accounts (all free):** SignPath Foundation application (code signing for open source), SourceForge, itch.io, a Microsoft Partner Center developer account (free for individuals; check when signing up), Chocolatey. **The texts are ready in `docs/accounts.md`. First make the GitHub repo public** (SignPath, SourceForge and free GitHub Pages need it; the history was scanned for secrets: none) | Signed installer and the download sites |
+| **Day 1** | Open GitHub → Actions → **installer** and check that the run is green (or run `gh auth login` once so sessions can read it themselves) | The only clean-Windows install test: this PC has Windows 11 Home (no Sandbox) and Smart App Control blocks the unsigned exe |
 | **Day 3** | Listen to the voice, laugh, whistle and nature-sound sheet (`D:\RED\cache\voice-picks-young\`) and pick | Only you can judge how they sound |
 | **Day 4** | Allow "keep clips Red misheard" (stays on this PC, never uploaded or committed) | Misheard voice gets fed back into the tests |
 | **Day 8** | Use Red for the day: talk, dictate, drag the companions around; fill the 10-line score sheet | The one day you test by hand |
@@ -300,7 +301,17 @@ Each day's exit check must pass before the next day starts. The lines under a ti
 
 ### Day 1, Sun 11-15: measure everything, install anywhere
 - [ ] **A1.** Replay tests: label all real sentences in `logs\commands.jsonl` (`tests/test_replay.py` + `tests/replay/*.toml`, no private details). Fix the dropped "write a code" requests (`dictation_like`, ask "for me?" instead of dropping, "I said…" always for Red, clear `write_code` feedback). Fix `listener.write_mic_state` dropping mic.json's "zipped". `python -m red score` with the baseline recorded here.
-- [ ] **B1.** `Red-Setup.exe` builds; `installer/sandbox-test.wsb` + `sandbox_test.ps1` install it silently, run `red doctor` and uninstall; the nightly scheduled task (`red/nightly.py`, `python -m red nightly on|off`). Prepare the SignPath, SourceForge, itch.io, Partner Center and Chocolatey texts for the user.
+- [x] **B1.** `Red-Setup.exe` builds; `installer/sandbox-test.wsb` + `sandbox_test.ps1` install it silently, run `red doctor` and uninstall; the nightly scheduled task (`red/nightly.py`, `python -m red nightly on|off`). Prepare the SignPath, SourceForge, itch.io, Partner Center and Chocolatey texts for the user.
+  - 2026-11-14, `90fea7a` `8074804` `5b3ac47`. **Measured:**
+    - Red-Setup.exe builds from main: 144 MB in 5:00.
+    - The install test, staged on this PC: 15 of 15 checks in 1:08 (install, files, doctor with Python, core, voice, overlay and RED_HOME ok, plugins, wizard imports, uninstall keeps memory, reinstall, `/DELETEDATA=1` removes all). Doctor's 4 problems are the 4 model downloads, as expected.
+    - Suite: 2680 passed, 209 skipped.
+    - The nightly task "Red nightly" is **on**: 03:00, only after 10 idle minutes, from `D:\RED\worktrees\nightly` (origin/main). A real run of its installer steps was all green (`D:\RED\cache\nightly\2026-11-14\report.md`).
+
+    **Not met here:** this PC is Windows 11 **Home**, so there's no Windows Sandbox, and Smart App Control blocks the unsigned exe. The `.wsb` and `-Mode host` are ready for a Pro PC. `.github/workflows/installer.yml` runs the real exe on a clean Windows VM (`-Mode guest`). The push to main started it, but no session can see the result without `gh` (B1b).
+  - **For track A:** `nightly.morning_line(home)` is the greeting's line. `python -m red score` should print `Red Score: <n>/10` so the nightly picks it up. Replay and score run as soon as `tests/test_replay.py` and `red/score.py` exist.
+  - **Try:** `python -m red nightly` (status), `python -m red nightly run --only installer-build,installer-test`, and the texts in `docs/accounts.md`.
+- [ ] **B1b.** The clean-VM install test is green: read the `installer` Actions run (the user checks it, or `gh auth login` lets a session read it) and fix what it finds (start-with-Windows, Start menu, the uninstall question on a real install).
 - Exit check: baseline score recorded; the installer installs and uninstalls in Sandbox; replay green.
 
 ### Day 2: fast answers, the voice decision
