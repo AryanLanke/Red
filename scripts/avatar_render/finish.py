@@ -76,6 +76,14 @@ def existing_crop(entries: list[dict], images: list[Image.Image], kept: dict, pp
     return None
 
 
+CLIMBING = ("sideL", "sideR", "climbL", "climbR", "bars", "sit")
+SETS = ("peek", "cornerR", "cornerL", "top", "topL", "topR", "body") + CLIMBING
+
+
+def _hand_xs(entries: list[dict]) -> list[int]:
+    return [e["marks"][k][0] for e in entries for k in ("leftHand", "rightHand") if e["marks"].get(k)]
+
+
 def finish_set(name: str, entries: list[dict], raw: Path, out: Path, ppm: float, kept: dict | None = None) -> dict:
     images = [Image.open(raw / f"{e['name']}.png").convert("RGBA") for e in entries]
     fixed = existing_crop(entries, images, kept, ppm) if kept else None
@@ -84,8 +92,8 @@ def finish_set(name: str, entries: list[dict], raw: Path, out: Path, ppm: float,
         idle = entries[0]
     else:
         left, top, right, bottom = union_box(images)
+    idle = next((e for e in entries if e["name"] == f"{name}_idle"), entries[0])
     if not fixed and name in ("peek", "cornerR", "cornerL", "top", "topL", "topR"):
-        idle = next((e for e in entries if e["name"] == f"{name}_idle"), entries[0])
         if name.startswith("top"):
             top = edge_line(idle, upside_down=True)   # the window puts the top of these on the top edge
         else:
@@ -101,6 +109,15 @@ def finish_set(name: str, entries: list[dict], raw: Path, out: Path, ppm: float,
         left = idle["marks"]["leftHand"][0]
     elif name == "topR":
         right = idle["marks"]["rightHand"][0]
+    # The climbing frame: the side edge runs through the wrist nearest it (over every frame of a climb, so
+    # no hand pokes past the screen's side), and the top edge through the wrists of the hands on the bars.
+    # A window seat (sit) is not cut: the window puts the hips mark on the window's edge.
+    elif name in ("sideR", "climbR"):
+        right = max(_hand_xs(entries if name == "climbR" else [idle]))
+    elif name in ("sideL", "climbL"):
+        left = min(_hand_xs(entries if name == "climbL" else [idle]))
+    elif name == "bars":
+        top = min(idle["marks"][k][1] for k in ("leftHand", "rightHand"))
     scale = ppm / entries[0]["pxPerMetre"]
     width, height = round((right - left) * scale), round((bottom - top) * scale)
 
@@ -137,7 +154,7 @@ def main() -> None:
     old = args.out / "frames.json"
     kept = json.loads(old.read_text(encoding="utf-8")) if old.exists() else {}
     sets = dict(kept.get("sets", {}))          # sets this raw folder doesn't have stay as they were
-    for name in ("peek", "cornerR", "cornerL", "top", "topL", "topR", "body"):
+    for name in SETS:
         entries = [f for f in meta["frames"] if f["set"] == name and (args.raw / f"{f['name']}.png").exists()]
         if entries:
             sets[name] = finish_set(name, entries, args.raw, args.out, args.ppm, (kept.get("sets", {}).get(name) if args.keep_crop else None))

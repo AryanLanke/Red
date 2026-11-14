@@ -245,4 +245,127 @@ function hang(frame, from, set) {
 const TOP_L = CORNER_R.map((f) => hang(f, /^cornerR_/, 'topL'));
 const TOP_R = CORNER_L.map((f) => hang(f, /^cornerL_/, 'topR'));
 
-export const FRAMES = [...PEEK, ...CORNER_R, ...CORNER_L, ...TOP, ...TOP_L, ...TOP_R, ...BODY];
+// --- The climbing frame: the screen's sides, the top edge as monkey bars, app windows as seats ---------------
+// These show the whole body. `yaw` turns the whole model about the vertical axis (degrees, + turns its front
+// toward the viewer's right); the head is turned back so the face still reads. Each set takes every peek frame's
+// face and head (talk, feelings, looks, sleep), with the set's own arms and legs; a few frames free one hand
+// (wave, yawn, chin in hand). Directions in `aim` are in the picture, as everywhere else.
+const ONE_HAND = {
+  wave_1: waveArm(-0.45), wave_2: waveArm(0.0), wave_3: waveArm(0.45),
+  yawn: yawnHand, think: chinOnHand, think_blink: chinOnHand,
+};
+const SKIP = new Set(['peek_cry']);
+
+function onFrame(frame, set, pose) {
+  const short = frame.name.replace(/^peek_/, '');
+  const h = frame.bones.head || [0, 0, 0];
+  const n = frame.bones.neck || [0, 0, 0];
+  const turn = pose.headTurn || 0;
+  const bones = { ...pose.bones, head: [h[0] + (pose.headTilt || 0), h[1] + turn, h[2]], neck: [n[0], n[1] + turn / 3, n[2]] };
+  if (frame.bones.spine && pose.keepSpine) bones.spine = frame.bones.spine;
+  const aim = { ...pose.arms, ...(pose.free === false ? {} : (ONE_HAND[short] || {})) };
+  return { ...frame, name: `${set}_${short}`, set, bones, aim, yaw: pose.yaw || 0, screenLook: false };
+}
+function fromPeek(set, pose) {
+  return PEEK.filter((f) => !SKIP.has(f.name)).map((f) => onFrame(f, set, pose));
+}
+// Mirror a whole-body frame: the posed mirror above, and the turn about the vertical axis the other way.
+function mirrorBody(frame, from, set) {
+  const m = mirror({ ...frame, name: frame.name.replace(from, 'cornerR_') }, set);
+  return { ...m, yaw: -(frame.yaw || 0) };
+}
+
+// Legs hanging: a little bend at the knees, one leg a touch ahead of the other.
+const hangLegs = {
+  leftUpperLeg: [-14, 0, 5], leftLowerLeg: [26, 0, 0],
+  rightUpperLeg: [-4, 0, -5], rightLowerLeg: [16, 0, 0],
+};
+
+// sideR: clinging to the RIGHT side of the screen with both hands, body inside the screen, turned toward the
+// edge. Both hands hold the edge one above the other, the fingers curled round it (finish.py cuts the
+// picture at the wrists). sideL is its posed mirror.
+// The far hand (its left) holds the edge above the head, the near hand (its right) at the waist, clear of the face.
+const sideHands = {
+  leftUpperArm: [0.62, 0.74, -0.25], leftLowerArm: [0.45, 0.89, -0.05], leftHand: [-0.2, 0.97, 0.1],
+  rightUpperArm: [0.5, -0.72, 0.48], rightLowerArm: [0.9, 0.3, 0.3], rightHand: [0.2, 0.97, 0.1],
+};
+const SIDE_POSE = { yaw: 40, headTurn: -30, arms: sideHands,
+  bones: { spine: [0, -6, -4], chest: [0, -4, 0], ...hangLegs } };
+const SIDE_R = fromPeek('sideR', SIDE_POSE);
+const SIDE_L = SIDE_R.map((f) => mirrorBody(f, /^sideR_/, 'sideL'));
+
+// climbR: hand over hand up (or down, played backwards) the right side; 4 frames a cycle.
+function climbFrame(i, high, low, legs) {
+  return { name: `climbR_${i}`, set: 'climbR', state: null, emotion: null, face: F.neutral, yaw: 42, look: [0, 0.4],
+    bones: { spine: [0, -6, -4], head: [-6, -30, 0], neck: [0, -10, 0], ...legs },
+    aim: { ...high, ...low } };
+}
+const leftHigh = { leftUpperArm: [0.5, 0.85, -0.2], leftLowerArm: [0.3, 0.95, -0.05], leftHand: [-0.2, 0.97, 0.1] };
+const leftLow = { leftUpperArm: [0.7, -0.55, -0.45], leftLowerArm: [0.9, 0.35, -0.2], leftHand: [0.2, 0.97, 0.1] };
+// (behind the head, so the face stays in sight while the near hand goes up)
+const rightHigh = { rightUpperArm: [0.45, 0.8, -0.4], rightLowerArm: [0.35, 0.93, -0.1], rightHand: [-0.2, 0.97, 0.1] };
+const rightLow = { rightUpperArm: [0.5, -0.72, 0.48], rightLowerArm: [0.9, 0.3, 0.3], rightHand: [0.2, 0.97, 0.1] };
+const step = (a, b) => ({
+  leftUpperLeg: [-a, 0, 5], leftLowerLeg: [a + 20, 0, 0],
+  rightUpperLeg: [-b, 0, -5], rightLowerLeg: [b + 20, 0, 0],
+});
+const leftMid = { leftUpperArm: [0.85, 0.2, -0.45], leftLowerArm: [0.5, 0.85, -0.1], leftHand: [0, 1, 0.1] };
+const rightMid = { rightUpperArm: [0.85, 0.05, 0.5], rightLowerArm: [0.6, 0.78, 0.15], rightHand: [0, 1, 0.1] };
+// up: 1 -> 2 -> 3 -> 4 (the low hand passes the high one); down: the same frames backwards
+const CLIMB_R = [
+  climbFrame(1, leftHigh, rightLow, step(40, 5)),
+  climbFrame(2, leftHigh, rightMid, step(20, 20)),
+  climbFrame(3, rightHigh, leftLow, step(5, 40)),
+  climbFrame(4, rightHigh, leftMid, step(20, 20)),
+];
+const CLIMB_L = CLIMB_R.map((f) => mirrorBody(f, /^climbR_/, 'climbL'));
+
+// bars: hanging from the top edge by both hands, facing you, legs dangling. finish.py cuts the picture at the
+// wrists, so the hands hold the edge. bars_moveR_1..4 go hand over hand to the right; bars_moveL_* to the left.
+const barHands = {
+  leftUpperArm: [0.22, 0.97, 0.05], leftLowerArm: [0.12, 0.99, 0.0], leftHand: [0.05, 0.99, 0.12],
+  rightUpperArm: [-0.22, 0.97, 0.05], rightLowerArm: [-0.12, 0.99, 0.0], rightHand: [-0.05, 0.99, 0.12],
+};
+const BAR_POSE = { arms: barHands, free: true, headTilt: -4,
+  bones: { spine: [2, 0, 0], ...hangLegs } };
+const BARS = fromPeek('bars', BAR_POSE);
+// Moving right, the left hand (on the viewer's right) leads.
+const reachR = { leftUpperArm: [0.62, 0.78, 0.05], leftLowerArm: [0.5, 0.86, 0.0], leftHand: [0.3, 0.95, 0.12] };
+const reachL = { rightUpperArm: [-0.62, 0.78, 0.05], rightLowerArm: [-0.5, 0.86, 0.0], rightHand: [-0.3, 0.95, 0.12] };
+const crossR = { rightUpperArm: [0.15, 0.98, 0.1], rightLowerArm: [0.3, 0.95, 0.0], rightHand: [0.2, 0.97, 0.12] };
+function barMove(i, arms, sway, legs, face = F.neutral) {
+  return { name: `bars_moveR_${i}`, set: 'bars', state: null, emotion: null, face, look: [0.5, 0.1],
+    bones: { spine: [2, 0, sway], chest: [0, 0, sway / 2], head: [-4, 10, -sway], ...legs },
+    aim: { ...barHands, ...arms } };
+}
+const BARS_MOVE_R = [
+  barMove(1, reachR, -6, step(25, -5)),
+  barMove(2, { ...reachR, ...crossR }, 0, step(10, 10)),
+  barMove(3, crossR, 6, step(-5, 25)),
+  barMove(4, {}, 0, step(10, 10)),
+];
+const BARS_MOVE_L = BARS_MOVE_R.map((f) => {
+  const m = mirrorBody(f, /^bars_moveR_/, 'bars');
+  return { ...m, name: f.name.replace('moveR', 'moveL') };
+});
+
+// sit: sitting on an app window's top edge, legs dangling over it, hands on the edge beside the hips, turned
+// a little so the thighs read. The window puts the hips' mark (plus the seat) on the window's edge.
+const sitArms = {
+  leftUpperArm: [0.3, -0.92, 0.2], leftLowerArm: [0.15, -0.8, 0.55], leftHand: [0.1, -0.3, 0.95],
+  rightUpperArm: [-0.3, -0.92, 0.2], rightLowerArm: [-0.15, -0.8, 0.55], rightHand: [-0.1, -0.3, 0.95],
+};
+const sitLegs = (a, b) => ({
+  leftUpperLeg: [-84, 0, 6], leftLowerLeg: [80 + a, 0, 0],
+  rightUpperLeg: [-84, 0, -6], rightLowerLeg: [80 + b, 0, 0],
+});
+const SIT_POSE = { yaw: 28, headTurn: -22, arms: sitArms, keepSpine: true, bones: { ...sitLegs(0, 6) } };
+const SIT = [
+  ...fromPeek('sit', SIT_POSE),
+  // swinging the legs while sitting
+  ...[[-25, 20], [20, -25]].map(([a, b], i) => onFrame(PEEK[0], 'sit', { ...SIT_POSE, bones: sitLegs(a, b) }))
+    .map((f, i) => ({ ...f, name: `sit_swing_${i + 1}` })),
+];
+
+export const CLIMBING = [...SIDE_R, ...SIDE_L, ...CLIMB_R, ...CLIMB_L, ...BARS, ...BARS_MOVE_R, ...BARS_MOVE_L, ...SIT];
+export const FRAMES = [...PEEK, ...CORNER_R, ...CORNER_L, ...TOP, ...TOP_L, ...TOP_R, ...BODY, ...CLIMBING];
