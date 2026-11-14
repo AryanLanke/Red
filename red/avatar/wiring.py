@@ -142,6 +142,9 @@ def wire_menu(overlay, app) -> MenuActions | None:
         window.on_settings = settings_function()
         window.on_quit = quit_function()
         start_summon_hotkey(overlay, app.settings)
+        if getattr(app.settings, "tray", "on"):
+            from ..tray import attach_tray
+            attach_tray(overlay)
         threading.Thread(target=sync_mic_badge, args=(overlay, lambda: app.listener), name="red-mic-badge",
                          daemon=True).start()
         return actions

@@ -44,6 +44,14 @@ Red loads the model only while you're using it. After 5 minutes without a comman
 
 ## Install
 
+### One file (preview)
+
+`Red-Setup.exe` installs Red for you alone (no administrator, no Python, no command line) into `%LOCALAPPDATA%\Red`, adds a Start menu entry and, if you tick it, starts Red when you sign in. The first time you open Red it asks your name, which companion and voice you want and how they should talk, then downloads the models (3.5 to 6 GB, checked against checksums). Uninstalling asks whether to keep your memory, settings and models. Build it yourself with `installeruild.ps1` (see `installer\README.md`).
+
+The installer is not code-signed yet, so Windows may stop it: SmartScreen says "unknown publisher" (More info, Run anyway), and **Smart App Control** blocks unsigned programs outright (Settings, Privacy & security, Windows Security, App & browser control). Until it is signed, use the PowerShell route below on such a PC.
+
+### From the source
+
 Open PowerShell and run:
 
 ```powershell

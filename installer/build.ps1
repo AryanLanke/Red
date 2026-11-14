@@ -87,6 +87,37 @@ if ($LASTEXITCODE -ne 0) { throw "installing the wheels failed" }
 Get-ChildItem "$stage\python\Lib\site-packages" -Filter "__pycache__" -Recurse -Directory |
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
+# --- 2b. trim what Red never uses, then prove the rest still loads ------------------------------------------
+Step "Trimming unused parts (QML, Qt translations and tools, test folders)"
+$sp = "$stage\python\Lib\site-packages"
+$before = (Get-ChildItem $sp -Recurse -File | Measure-Object Length -Sum).Sum
+# Red's windows are Qt Widgets only: no QML/Quick, no Designer, no Qt translations, no developer tools.
+foreach ($d in "qml", "translations", "include", "typesystems", "scripts", "metatypes") {
+    Remove-Item "$sp\PySide6\$d" -Recurse -Force -ErrorAction SilentlyContinue
+}
+foreach ($pattern in "Qt6Quick*.dll", "Qt6Qml*.dll", "Qt6Designer*.dll", "Qt6Help*.dll", "QtQuick*.pyd", "QtQml*.pyd",
+                     "QtDesigner*.pyd", "QtHelp*.pyd", "QtUiTools*.pyd", "designer.exe", "lupdate.exe", "linguist.exe",
+                     "assistant.exe", "uic.exe", "rcc.exe", "qml*.exe", "svgtoqml.exe", "pyside6-*.exe", "*.pyi") {
+    Get-ChildItem "$sp\PySide6" -Filter $pattern -File -ErrorAction SilentlyContinue | Remove-Item -Force
+}
+# Test folders of the big scientific packages (about 20 percent of them).
+Get-ChildItem (Join-Path $sp "scipy"), (Join-Path $sp "sklearn"), (Join-Path $sp "numpy") -Recurse -Directory -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -in "tests", "test" } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+$after = (Get-ChildItem $sp -Recurse -File | Measure-Object Length -Sum).Sum
+Write-Host ("trimmed {0:N0} MB" -f (($before - $after) / 1MB))
+
+Step "Smoke test: every package Red needs imports from the staged Python"
+$smoke = "import PySide6.QtCore, PySide6.QtGui, PySide6.QtWidgets, numpy, scipy, sklearn, onnxruntime, ctranslate2, " +
+         "faster_whisper, piper, openwakeword, sounddevice, pynput, av, PIL, jsonschema, dotenv; " +
+         "from PySide6.QtWidgets import QApplication, QWidget; a = QApplication([]); w = QWidget(); " +
+         "print('Qt platform:', a.platformName())"
+Push-Location "$stage\app"
+try {
+    $env:PYTHONDONTWRITEBYTECODE = "1"
+    & "$stage\python\python.exe" -c $smoke
+    if ($LASTEXITCODE -ne 0) { throw "the trimmed Python can't import everything Red needs" }
+} finally { Remove-Item Env:PYTHONDONTWRITEBYTECODE -ErrorAction SilentlyContinue; Pop-Location }
+
 # --- 3. the app -------------------------------------------------------------------------------------------
 Step "Red's own files"
 $skip = @("__pycache__", "*.pyc")

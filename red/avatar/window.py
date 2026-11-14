@@ -1338,6 +1338,9 @@ class CompanionOverlay(Overlay):
 
     def close(self) -> None:
         self._closed = True
+        tray = getattr(self, "tray", None)
+        if tray is not None:
+            tray.close()
         hotkey = getattr(self, "summon_hotkey", None)
         if hotkey is not None:
             try:
