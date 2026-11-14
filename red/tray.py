@@ -95,7 +95,9 @@ class TrayIcon:
 def attach_tray(overlay, *, available=None, tray_class=None):
     """Give a CompanionOverlay a tray icon. None when the desktop has no tray (or it is turned off)."""
     try:
-        from PySide6.QtWidgets import QSystemTrayIcon
+        from PySide6.QtWidgets import QApplication, QSystemTrayIcon
+        if available is None and QApplication.instance() is None:
+            return None                   # no Qt app (a test, a broken start): asking Qt would crash Python
         if (available or QSystemTrayIcon.isSystemTrayAvailable)() is False:
             return None
         tray = TrayIcon(overlay.window, tray_class=tray_class)
