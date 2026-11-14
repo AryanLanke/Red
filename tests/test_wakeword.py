@@ -26,7 +26,7 @@ def test_wake_phrase_variants(text, expected):
 
 
 @pytest.mark.parametrize("text", [
-    "", "Red", "Hey", "Hey there", "Hey, Fred.", "Hey, ready to go?", "I read the red book.",
+    "", "Read.", "Hey", "Hey there", "Hey, Fred.", "Hey, ready to go?", "I read the red book.",
     "He read it yesterday.", "They said red.", "The red car is fast.", "A red car",
     "Hey computer", "Hey red one two three four",
 ])
@@ -120,9 +120,63 @@ def test_repeated_phrases_still_wake(heard):
 
 
 @pytest.mark.parametrize("heard", ["Not waking up", "It's okay", "What is?", "Song by Liz Adafim",
-                                   "Two Satora Lamb", "Red red red", "Invite this was happening"])
+                                   "Two Satora Lamb", "Invite this was happening"])
 def test_the_other_things_heard_in_that_test_stay_asleep(heard):
     assert match_score(heard) < 0.5
+
+
+# A bare "Red" in red.log (2026-11-13) was always the user's quiet "Hey Red" with the "Hey" lost (6 of 6,
+# each right before a "Hey Red" that woke): the name said on its own now wakes, a little below "Hey Red".
+@pytest.mark.parametrize("heard", ["Red", "Red.", "Red?", "Red red red", "Here Red", "Remy!", "Asha."])
+def test_a_name_on_its_own_wakes(heard):
+    assert 0.5 <= match_score(heard) < 1.0
+
+
+# --- the companions' names (night 2) ----------------------------------------------------------------
+
+@pytest.mark.parametrize("heard, who", [
+    ("Hey Asha", "asha"), ("Hey, Asha!", "asha"), ("Hey Usha", "asha"), ("Hey Asia.", "asha"),
+    ("Hey Remy", "remy"), ("Hey Rémy", "remy"), ("Hey Rennel", "remy"), ("Hey Remi.", "remy"),
+    ("Heyasha", "asha"), ("Hey Red", "red"), ("Hey Bruno", "bruno"), ("Hey Winston", "winston"),
+    ("Red, open YouTube.", "red"), ("Asha, what's up?", "asha"), ("Remy, play something.", "remy"),
+])
+def test_companion_names_wake_and_say_who(heard, who):
+    from red.wakeword import match_wake
+    score, name, _ = match_wake(heard)
+    assert score >= 0.5 and name == who
+
+
+@pytest.mark.parametrize("heard", [
+    "Asia is big.", "Usha", "I read the red book.", "Red is my favourite colour", "Remy said hi to me",
+    "The Asia trip was fun", "Rainy day.", "Hi Asia",
+])
+def test_names_in_ordinary_speech_do_not_wake(heard):
+    assert match_score(heard) < 0.5
+
+
+@pytest.mark.parametrize("heard, rest", [
+    ("Red, open YouTube.", "open YouTube."), ("Asha, what's the time?", "what's the time?"),
+    ("Hey Remy, play some jazz.", "play some jazz."), ("Hey Red, open YouTube.", "open YouTube."),
+])
+def test_name_first_is_stripped_from_the_command(heard, rest):
+    assert strip_wake_phrase(heard) == rest
+
+
+def test_name_first_with_a_command_keeps_the_command_audio():
+    det, _, _ = make("Red, open YouTube.")
+    assert max(run(det, noise(1.0), tone(1.0), noise(1.0))) == pytest.approx(0.75)
+    assert det.command_audio is not None and det.last_name == "red"
+
+
+def test_add_names_takes_a_new_companion():
+    from red import wakeword
+    saved = dict(wakeword.NAMES)
+    try:
+        wakeword.add_names({"kiko": ("Kiko", "hey kiko")})
+        assert wakeword.match_wake("Hey Kiko")[1] == "kiko"
+    finally:
+        wakeword.NAMES.clear()
+        wakeword.NAMES.update(saved)
 
 
 def test_head_mode_looks_only_at_the_first_two_words():

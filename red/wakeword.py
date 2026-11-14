@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+import unicodedata
 from collections import deque
 from pathlib import Path
 from typing import Callable
@@ -53,14 +54,54 @@ TARGET_PEAK = 0.3                  # a quieter clip is made this loud before Whi
 MAX_GAIN = 20.0
 
 _HEY = {"hey", "hay", "hei", "heh", "hej"}
-_HEY_CLOSE = {"hi", "eh", "ay", "ey", "heyy"}   # not "a": "a red car" must not match
-_RED = {"red"}
-_RED_CLOSE = {"redd", "rhed", "read", "wred", "rad", "rid"}
+# Not "a": "a red car" must not match. "here": a quiet "Hey Red" came out as "Here Red" (red.log, 2026-11-13).
+_HEY_CLOSE = {"hi", "eh", "ay", "ey", "heyy", "here"}
 _MERGED = {"heyred": 0.9, "hayred": 0.8, "heyread": 0.5}
+
+# The companions' names: (exactly, close to it). The close ones are how Whisper mishears them; they count
+# only after "hey" ("Hey Asia" wakes Asha, "Asia" alone doesn't). Red's come from the user's red.log.
+NAMES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
+    "red": (frozenset({"red"}), frozenset({"redd", "rhed", "read", "wred", "rad", "rid"})),
+    "remy": (frozenset({"remy", "remi", "remmy"}),
+             frozenset({"rami", "ramy", "remey", "ramey", "reme", "rennel", "renny", "rimi", "reemy", "rammy",
+                        "remy's", "remix", "romy", "ronny", "rainy", "remie"})),
+    "asha": (frozenset({"asha", "aasha"}),
+             frozenset({"usha", "asia", "asher", "ashah", "osha", "isha", "aisha", "ayesha", "ashia", "ashe",
+                        "ashaa", "archer", "asa"})),
+    "bruno": (frozenset({"bruno"}), frozenset({"bruna", "brunno", "bruneau", "brunel"})),
+    "winston": (frozenset({"winston"}), frozenset({"winstone", "winstun", "weston"})),
+}
+NAME_ALONE_SCORE = 0.6      # "Red." said on its own (a quiet "Hey Red" whose "Hey" was lost)
+NAME_FIRST_SCORE = 0.75     # "Red, open YouTube": the name, set off by a comma, at the start
+
+
+def add_names(names: dict[str, tuple[str, ...]]) -> None:
+    """More companions (id -> how they are called, from companion.toml `name` and `wake`)."""
+    for cid, called in names.items():
+        exact, close = NAMES.get(cid, (frozenset(), frozenset()))
+        words = {w for phrase in called for w in _words(phrase) if w not in _HEY and len(w) >= 3}
+        NAMES[cid] = (exact | words, close)
+
+
+def _fold(text: str) -> str:
+    """'Rémy' -> 'Remy'."""
+    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
 
 
 def _words(text: str) -> list[str]:
-    return re.sub(r"[^a-z' ]", " ", text.lower().replace("-", " ")).split()
+    return re.sub(r"[^a-z' ]", " ", _fold(text).lower().replace("-", " ")).split()
+
+
+def name_of(word: str, close: bool = True) -> tuple[str, float] | None:
+    """(companion id, 1.0) for a name, (id, 0.6) for a close mishearing of one, else None."""
+    for cid, (exact, _) in NAMES.items():
+        if word in exact:
+            return cid, 1.0
+    if close:
+        for cid, (_, near) in NAMES.items():
+            if word in near:
+                return cid, 0.6
+    return None
 
 
 def phrase_key(text: str) -> str:
@@ -115,16 +156,31 @@ def collapse_repeats(words: list[str]) -> list[str]:
     return out
 
 
+def _separated_after_one_word(text: str) -> bool:
+    """Is there a comma, full stop, '!' or '?' right after the transcript's first word ("Red, open...")?"""
+    return bool(re.match(r"\s*[^\w']*[\w'-]+(\s*[,.!?])", text))
+
+
 def match_score(text: str, personal: frozenset[str] = frozenset(), head: bool = False) -> float:
-    """How much a short transcript sounds like "Hey Red": 1.0, partial, or 0.
+    """How much a short transcript sounds like a wake phrase ("Hey Red", "Hey Asha"...): 1.0, partial, or 0."""
+    return match_wake(text, personal, head)[0]
+
+
+def match_wake(text: str, personal: frozenset[str] = frozenset(), head: bool = False) -> tuple[float, str, int]:
+    """(score, which companion was called, how many words the wake phrase takes).
 
     Only the start of the clip counts, so "I read the red book" or "they said
     red" never match. A clip with more than a couple of extra words isn't a
     wake phrase either. `personal` holds how Whisper hears *your* "Hey Red"
     (from python -m red voice-setup); those count as a strong match.
+    Any companion's name works the same way ("Hey Remy", "Hey Asha"), and so does a name said on its own
+    at the start, set off by a comma ("Red, open YouTube", "Asha?").
     """
     words = collapse_repeats(_words(text))
+    if not words:
+        return 0.0, "", 0
     whole_clip_words = len(words)
+    named = _name_first(text, words)
     # "Hey Red, open YouTube": Whisper puts a comma (or a full stop) after a wake phrase that has a
     # command after it, and none in a misheard "a red light" ("Hey Red Light"). So the words after
     # a separated "Hey Red" don't count against it.
@@ -132,50 +188,68 @@ def match_score(text: str, personal: frozenset[str] = frozenset(), head: bool = 
         head = True
     if head:
         words = words[:2]                # the rest of the sentence was cut off; only its start counts
-    if not words or len(words) > 4:
-        return 0.0
-    mine = 0.0                           # how well it matches *your* "Hey Red" (voice-setup, --learn)
-    if personal and " ".join(words[:2]) in personal:
-        mine = 0.9 if len(words) <= 2 else 0.6
-    # Only a clip that is just those one or two words: "The rest of us..." starts like "here at".
-    elif personal and whole_clip_words <= 2 and _close_to_personal("".join(words), personal):
-        mine = PERSONAL_CLOSE_SCORE      # "Headered", "Head in": how the user says it, heard a bit off
-    # A plain "Hey Red" keeps its full score even when it is also close to a learned phrase.
-    return max(mine, _standard_score(words))
+    best = (0.0, "", 0)
+    if len(words) <= 4:
+        mine = 0.0                       # how well it matches *your* "Hey Red" (voice-setup, --learn)
+        if personal and " ".join(words[:2]) in personal:
+            mine = 0.9 if len(words) <= 2 else 0.6
+        # Only a clip that is just those one or two words: "The rest of us..." starts like "here at".
+        elif personal and whole_clip_words <= 2 and _close_to_personal("".join(words), personal):
+            mine = PERSONAL_CLOSE_SCORE  # "Headered", "Head in": how the user says it, heard a bit off
+        standard = _standard_score(words)
+        # A plain "Hey Red" keeps its full score even when it is also close to a learned phrase.
+        best = standard if standard[0] >= mine else (mine, "red", min(2, len(words)))
+    if named is not None and named[0] > best[0]:
+        best = named
+    return best
 
 
-def _standard_score(words: list[str]) -> float:
-    """'hey red' and its close variants, from the start of the clip."""
+def _name_first(text: str, words: list[str]) -> tuple[float, str, int] | None:
+    """"Red." alone, or "Asha, what's up?": a companion's name (exactly) said first, on its own."""
+    found = name_of(words[0], close=False)
+    if found is None:
+        return None
+    if len(words) == 1:
+        return NAME_ALONE_SCORE, found[0], 1
+    if _separated_after_one_word(text):
+        return NAME_FIRST_SCORE, found[0], 1
+    return None
+
+
+def _standard_score(words: list[str]) -> tuple[float, str, int]:
+    """'hey red', 'hey asha' and their close variants, from the start of the clip."""
     if words[0] in _MERGED:
-        return _MERGED[words[0]]
+        return _MERGED[words[0]], "red", 1
+    if words[0][:3] in ("hey", "hay") and len(words[0]) > 5:
+        merged = name_of(words[0][3:], close=False)      # "Heyasha", "Hayremy"
+        if merged is not None:
+            return 0.8, merged[0], 1
     if len(words) < 2:
-        return 0.0
+        return 0.0, "", 0
     first, second = words[0], words[1]
     if first in _HEY:
         hey = 1.0
     elif first in _HEY_CLOSE:
         hey = 0.7
     else:
-        return 0.0
-    if second in _RED:
-        red = 1.0
-    elif second in _RED_CLOSE:
-        red = 0.6
-    else:
-        return 0.0
+        return 0.0, "", 0
+    found = name_of(second)
+    if found is None:
+        return 0.0, "", 0
     # The phrase is said on its own, so extra words make it unlikely: Whisper's
     # "Hey Red" bias can turn "a red light" into "Hey Red Light".
     extra = 0.45 if len(words) > 2 else 1.0
-    return round(hey * red * extra, 3)
+    return round(hey * found[1] * extra, 3), found[0], 2
 
 
 def strip_wake_phrase(text: str, personal: frozenset[str] = frozenset()) -> str:
     """'Hey Red, open YouTube.' -> 'open YouTube.'; text that doesn't start with the wake phrase
     is returned unchanged. Used when the command was said in the same breath as "Hey Red"."""
     words = collapse_repeats(_words(text))
-    if not words or match_score(text, personal, head=True) <= 0:
+    score, _, drop = match_wake(text, personal, head=True)
+    if not words or score <= 0:
         return text.strip()
-    drop = 1 if words[0] in _MERGED else 2
+    drop = max(1, drop)
     # Skip that many words of the original text (keeping the command's own punctuation and case),
     # plus any repeats Whisper wrote ("Hey Red, hey Red, open...").
     rest = text
@@ -232,7 +306,20 @@ def load_profile(model_dir: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def make_wake_transcriber(model_dir: Path):
+WAKE_HOTWORDS = "Hey Red"
+
+
+def companion_names(home: Path | None = None) -> dict[str, tuple[str, ...]]:
+    """Each companion's id -> its name and wake phrases (companion.toml), for NAMES."""
+    try:
+        from . import companions
+        return {cid: (c.name, *c.wake) for cid, c in companions.load_all(home).items()}
+    except Exception:  # noqa: BLE001 - the built-in names still work
+        log.warning("Couldn't read the companions' names for the wake word", exc_info=True)
+        return {}
+
+
+def make_wake_transcriber(model_dir: Path, hotwords: str = WAKE_HOTWORDS):
     """Whisper (WAKE_WHISPER_MODEL, base.en) set up exactly as the detector uses it
     (voice-setup uses it too)."""
     from red.stt import Transcriber, install_window_patch
@@ -244,7 +331,7 @@ def make_wake_transcriber(model_dir: Path):
                             cpu_threads=WAKE_CPU_THREADS)
 
     return Transcriber(Path(model_dir).parent / "whisper", WAKE_WHISPER_MODEL, device="cpu",
-                       beam_size=5, vad_filter=False, hotwords="Hey Red", max_new_tokens=12,
+                       beam_size=5, vad_filter=False, hotwords=hotwords, max_new_tokens=12,
                        # The full 30 s window: a shorter one halves the time (0.72 -> 0.33 s) but missed 2 more of
                        # the 40 recorded "Hey Red"s. The checks are only ~0.6% of the time (progress.md).
                        fit_window=False, model_factory=factory)
@@ -271,11 +358,13 @@ class HeyRedDetector:
         self.evaluations = 0                 # clips sent to Whisper
         self.busy_seconds = 0.0              # time spent in Whisper
         self.last_text = ""
+        self.last_name = ""                  # which companion the last wake called ("red", "asha"...)
         self.reset()
 
     @classmethod
     def create(cls, model_dir: Path) -> "HeyRedDetector":
         """The real detector. model_dir is RED_HOME\\models\\wakeword; Whisper goes in models\\whisper."""
+        add_names(companion_names(Path(model_dir).parent.parent))    # RED_HOME\models\wakeword -> RED_HOME
         whisper = make_wake_transcriber(model_dir)
         whisper.load()
         profile = load_profile(model_dir)
@@ -317,17 +406,19 @@ class HeyRedDetector:
         self.busy_seconds += self._clock() - t0
         self.evaluations += 1
         self.last_text = text
-        score = match_score(text, self.personal, head=head)
+        score, name, phrase_words = match_wake(text, self.personal, head=head)
+        self.last_name = name if score > 0 else ""
         # Logged so a missed "Hey Red" can be explained (RED_HOME\logs\red.log).
         # The loudness shows a microphone that is too quiet.
-        log.info("Wake check: heard %r (score %.2f, %s, peak %.2f)", text[:60], score,
-                 "start of a longer phrase" if head else "short phrase", peak)
+        log.info("Wake check: heard %r (score %.2f, %s, peak %.2f%s)", text[:60], score,
+                 "start of a longer phrase" if head else "short phrase", peak,
+                 f", {name}" if score > 0 and name and name != "red" else "")
         if score > 0 and self.owner is not None and not self.owner(clip):
             return 0.0                       # the right words, but not your voice
-        # "Hey Red, open YouTube" in one breath: keep the whole burst so far, so the command
-        # in it isn't lost (the Listener hands it to the recording, which carries on from it).
+        # "Hey Red, open YouTube" (or "Red, open YouTube") in one breath: keep the whole burst so far, so
+        # the command in it isn't lost (the Listener hands it to the recording, which carries on from it).
         self.command_audio = None
-        if score > 0 and (head or len(collapse_repeats(_words(text))) > 2):
+        if score > 0 and (head or len(collapse_repeats(_words(text))) > phrase_words):
             self.command_audio = np.concatenate(self._clip)
         return score
 
