@@ -118,6 +118,7 @@ class Settings:
     chattiness: str = "friendly"
     # Opens and hides the chat window (red/chat_window.py); None turns the hotkey off.
     chat_hotkey: str | None = "<ctrl>+<alt>+<space>"
+    summon_hotkey: str | None = "<ctrl>+<alt>+h"          # show the companion (it waves) or hide it
     # Plain talk skips the router and goes straight to chat (red/gate.py). RED_CHAT_FIRST=off undoes it.
     chat_first: bool = True
 
@@ -304,6 +305,7 @@ def load_settings(home: Path | None = None) -> Settings:
         voice_match_threshold=float(match_threshold) if match_threshold is not None else None,
         chattiness=chattiness,
         chat_hotkey=_switchable("RED_CHAT_HOTKEY", "<ctrl>+<alt>+<space>"),
+        summon_hotkey=_switchable("RED_SUMMON_HOTKEY", "<ctrl>+<alt>+h"),
         chat_first=(_env("RED_CHAT_FIRST") or "on").lower() not in {"off", "0", "false", "no"},
     )
 

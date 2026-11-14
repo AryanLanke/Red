@@ -1171,3 +1171,52 @@ def test_dialogs_open_next_to_the_companion_and_go_on_escape(app, window, tmp_pa
     assert area.top() <= d.y() and d.y() + d.height() <= area.bottom() + 1
     d.keyPressEvent(QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Escape, Qt.KeyboardModifier.NoModifier))
     assert not d.isVisible()
+
+
+# --- the summon / hide hotkey ------------------------------------------------------------------------
+
+def test_summon_hides_it_and_then_brings_it_back_waving(window):
+    w = window.window
+    assert w.isVisible()
+    w.summon()
+    assert not w.isVisible()
+    window.clock.t += 5
+    w.look.state = "sleeping"
+    w.summon()
+    assert w.isVisible() and w.look.state == "idle"
+    seen = set()
+    for _ in range(12):
+        window.clock.t += 0.1
+        w.tick()
+        seen.add(as_peek(w.frame_name))
+    assert {"peek_wave_1", "peek_wave_2", "peek_wave_3"} <= seen          # it waves
+    assert not w.grab().isNull()
+
+
+def test_summon_does_nothing_over_a_full_screen_app(window):
+    w = window.window
+    w.hide()
+    w.check_fullscreen = lambda: True
+    w.summon()
+    assert not w.isVisible()
+
+
+def test_summon_from_the_hotkey_thread_goes_through_the_queued_signal(app, window):
+    import threading
+    w = window.window
+    t = threading.Thread(target=w.summon_signal.emit)
+    t.start()
+    t.join()
+    assert w.isVisible()                                      # nothing ran on the other thread
+    app.processEvents()
+    assert not w.isVisible()
+
+
+def test_the_summon_hotkey_setting(tmp_path, monkeypatch):
+    for key in [k for k in os.environ if k.startswith("RED_")]:
+        monkeypatch.delenv(key)
+    assert load_settings(tmp_path).summon_hotkey == "<ctrl>+<alt>+h"
+    monkeypatch.setenv("RED_SUMMON_HOTKEY", "<ctrl>+<alt>+j")
+    assert load_settings(tmp_path).summon_hotkey == "<ctrl>+<alt>+j"
+    monkeypatch.setenv("RED_SUMMON_HOTKEY", "off")
+    assert load_settings(tmp_path).summon_hotkey is None

@@ -97,6 +97,7 @@ def _window_class():
         heard_signal = Signal(str)            # events "heard", "said" and "mic" arrive on Red's voice
         said_signal = Signal(str)             # thread: these queued signals hand them to Qt
         mic_signal = Signal(bool)
+        summon_signal = Signal()              # the summon/hide hotkey (pynput's thread -> Qt)
         companion_signal = Signal(str)        # event "companion": switched by a voice command or the app
         idle_signal = Signal(str)             # event "idle_action": look around, yawn, doze, wander...
         finished = Signal()
@@ -177,6 +178,7 @@ def _window_class():
             self.mic_signal.connect(self._on_mic, Qt.ConnectionType.QueuedConnection)
             self.idle_signal.connect(self._on_idle_action, Qt.ConnectionType.QueuedConnection)
             self.companion_signal.connect(self._on_companion, Qt.ConnectionType.QueuedConnection)
+            self.summon_signal.connect(self.summon, Qt.ConnectionType.QueuedConnection)
             self.timer = QTimer(self)
             self.timer.timeout.connect(self.tick)
             self.timer.start(NORMAL)
@@ -906,6 +908,26 @@ def _window_class():
                 except Exception:  # noqa: BLE001
                     log.exception("Couldn't switch quiet mode")
 
+        def summon(self) -> None:
+            """The summon/hide hotkey: hidden, it appears and waves; showing, it goes away."""
+            now = self.clock()
+            if self.isVisible() and not self.hidden_for_fullscreen:
+                self.cancel_idle()
+                self.hide()
+                return
+            if self.check_fullscreen():
+                return                                   # a game or a video: not now
+            self.hidden_for_fullscreen = False
+            self.look.state = "idle"
+            self.look.since = now
+            self.last_activity = now
+            self.until["greeting"] = now + GREETING_SECONDS
+            self.show()
+            self.perch()
+            self.animate("land")
+            self._speed(FAST)
+            self.tick()
+
         def open_settings(self) -> None:
             if self.on_settings is not None:
                 self.on_settings()
@@ -1266,6 +1288,12 @@ class CompanionOverlay(Overlay):
 
     def close(self) -> None:
         self._closed = True
+        hotkey = getattr(self, "summon_hotkey", None)
+        if hotkey is not None:
+            try:
+                hotkey.stop()
+            except Exception:  # noqa: BLE001
+                pass
         for undo in self._unsubscribe:
             undo()
         self._unsubscribe = []

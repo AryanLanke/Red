@@ -92,6 +92,24 @@ def quit_function() -> Callable[[], None]:
     return quit_red
 
 
+def start_summon_hotkey(overlay, settings, starter=None):
+    """Ctrl+Alt+H (RED_SUMMON_HOTKEY): show the companion, which waves, or hide it. The hotkey's own thread
+    only emits a queued Qt signal. Returns the hotkey (stop() it), or None when it is off or can't start."""
+    hotkey = getattr(settings, "summon_hotkey", None)
+    if not hotkey:
+        return None
+    try:
+        if starter is None:
+            from ..chat_window import start_hotkey as starter
+        window = overlay.window
+        listener = starter(hotkey, window.summon_signal.emit)
+        overlay.summon_hotkey = listener
+        return listener
+    except Exception:  # noqa: BLE001 - the menu's Hide still works
+        log.exception("Couldn't start the summon hotkey %r", hotkey)
+        return None
+
+
 def wire_menu(overlay, app) -> MenuActions | None:
     """Give a CompanionOverlay its menu back end. Never raises: the menu just stays greyed out."""
     try:
@@ -107,6 +125,7 @@ def wire_menu(overlay, app) -> MenuActions | None:
         window.on_quiet = quiet_function(app)
         window.on_settings = settings_function()
         window.on_quit = quit_function()
+        start_summon_hotkey(overlay, app.settings)
         return actions
     except Exception:  # noqa: BLE001 - the companion is only a display
         log.exception("Couldn't connect the companion's menu")

@@ -106,3 +106,27 @@ def test_wire_menu_fills_the_window_and_survives_a_broken_app(tmp_path):
     assert callable(window.on_switch) and callable(window.on_quiet) and callable(window.on_settings)
     assert wiring.wire_menu(SimpleNamespace(), SimpleNamespace()) is None       # no window, no settings: no crash
     events.clear()
+
+
+def test_the_summon_hotkey_calls_the_windows_queued_signal():
+    emitted = []
+    window = SimpleNamespace(summon_signal=SimpleNamespace(emit=lambda: emitted.append("summon")))
+    overlay = SimpleNamespace(window=window)
+    started = []
+
+    class Hotkey:
+        def stop(self):
+            started.append("stopped")
+
+    def starter(hotkey, callback):
+        started.append(hotkey)
+        callback()                                       # pynput's thread pressing it
+        return Hotkey()
+    listener = wiring.start_summon_hotkey(overlay, SimpleNamespace(summon_hotkey="<ctrl>+<alt>+h"), starter)
+    assert started == ["<ctrl>+<alt>+h"] and emitted == ["summon"] and overlay.summon_hotkey is listener
+    assert wiring.start_summon_hotkey(overlay, SimpleNamespace(summon_hotkey=None), starter) is None   # off
+    assert wiring.start_summon_hotkey(overlay, SimpleNamespace(), starter) is None
+
+    def broken(hotkey, callback):
+        raise OSError("no keyboard hook")
+    assert wiring.start_summon_hotkey(overlay, SimpleNamespace(summon_hotkey="x"), broken) is None
