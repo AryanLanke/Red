@@ -209,6 +209,10 @@ def _typed_loop(handle: Callable[[str], None], banner: str) -> None:
 # Voice mode
 # --------------------------------------------------------------------------
 
+# One or two words ("Hope.") might be the start of more: wait this long instead of the quick pause.
+SHORT_REPLY_SILENCE = 0.8
+
+
 @dataclass
 class Voice:
     """The voice parts, so tests can pass fakes instead of a microphone and models."""
@@ -230,7 +234,10 @@ def load_voice(settings: Settings) -> Voice:
 
     models = settings.models_dir
     return Voice(
+        # Greedy decoding (beam 1) heard as well as beam 5 and is faster; 8 threads on a PC with the cores
+        # (scripts/voice_bench.py, progress.md "Hearing fast").
         transcriber=Transcriber(models / "whisper", settings.whisper_model, settings.whisper_device,
+                                beam_size=1, cpu_threads=8 if (os.cpu_count() or 0) >= 12 else 0,
                                 hotwords=vocabulary(settings),
                                 vocabulary_file=settings.vocabulary_path),
         speaker=make_speaker(settings),
@@ -238,6 +245,7 @@ def load_voice(settings: Settings) -> Voice:
                                  max_seconds=settings.max_command_seconds,
                                  silence_seconds=settings.end_silence_seconds,
                                  quick_silence=settings.quick_end_silence_seconds,
+                                 speculate_after=settings.speculate_after_seconds,
                                  start_timeout=START_TIMEOUT_SECONDS),
         chime=chime,
         listener_factory=Listener,
@@ -491,20 +499,25 @@ class VoiceApp:
     def _record(self, follow_up: bool, prefix=None):
         """Record one command. `prefix`: speech heard with the wake word, to carry on from.
 
-        Returns (audio, its transcript if a pause check already made one, how long that check took).
+        Returns (audio, its transcript if a pause check already made one, what the recording
+        measured: how long the pause was, and when the text was ready).
         """
         heard: dict = {}
+        stats: dict = {}
 
-        def is_complete(audio) -> bool:
+        def is_complete(audio):
             # A short pause: if what you said so far is a whole sentence,
             # stop now and keep this transcript instead of making another.
             start = time.perf_counter()
             text = (self.voice.transcriber.transcribe(audio) or "").strip()
             heard.update(size=getattr(audio, "size", None), text=text,
                          seconds=time.perf_counter() - start)
-            return sounds_finished(text)
+            if not sounds_finished(text):
+                return False
+            # "Hope." or "Yes." may be the start of more: a little longer for one or two words.
+            return True if len(text.split()) >= 3 else max(SHORT_REPLY_SILENCE, 0.0)
 
-        kwargs: dict = {}
+        kwargs: dict = {"stats": stats}
         if follow_up:
             timeout = self.settings.follow_up_seconds
             if self.chat.is_debate:
@@ -516,8 +529,8 @@ class VoiceApp:
             kwargs["prefix"] = prefix
         audio = self.voice.record(**kwargs)
         if heard and heard["size"] == getattr(audio, "size", None):
-            return audio, heard["text"], heard["seconds"]
-        return audio, None, 0.0
+            return audio, heard["text"], stats
+        return audio, None, stats
 
     def _exchange(self, tool, *, follow_up: bool, prefix=None):
         """Listen once and answer. Returns (last reply, tool, whether to keep listening).
@@ -531,8 +544,8 @@ class VoiceApp:
         if prefix is None:
             self.voice.chime()
         timer = Timing(self.settings)
-        audio, early, check_seconds = self._record(follow_up, prefix)
-        timer.recorded(quick=early is not None, check_seconds=check_seconds)
+        audio, early, stats = self._record(follow_up, prefix)
+        timer.recorded(quick=early is not None, stats=stats)
         if getattr(audio, "size", 0) == 0:
             if follow_up:
                 if self.chat.is_debate:
@@ -794,13 +807,18 @@ class Timing:
         self.start = self._last = clock()
         self.speech_end = self.start
         self.pause = 0.0
+        self.text_ready: float | None = None      # seconds after you stopped that the text was ready
         self.steps: list[tuple[str, float]] = []
         self.done_at: dict[str, float] = {}
 
-    def recorded(self, quick: bool, check_seconds: float = 0.0) -> None:
+    def recorded(self, quick: bool, check_seconds: float = 0.0, stats: dict | None = None) -> None:
+        """The recording ended. `stats` (from record_command) has the pause it really waited."""
         now = self._clock()
         s = self._settings
         self.pause = (s.quick_end_silence_seconds + check_seconds) if quick else s.end_silence_seconds
+        if stats and stats.get("quiet"):
+            self.pause = stats["quiet"]
+        self.text_ready = stats.get("ready") if stats else None
         self.speech_end = max(self.start, now - self.pause)
         self.steps.append(("listen", now - self.start))
         self._last = now
@@ -824,7 +842,8 @@ class Timing:
         tail += f", first word at {first:.2f} s" if first is not None else ""
         spoken = self.done_at.get("speak")
         tail += f", reply spoken by {spoken:.2f} s" if spoken is not None else ""
-        return f"Timing {text[:60]!r} -> {tool}: {steps} (pause waited {self.pause:.2f} s){tail}"
+        ready = f", text ready {self.text_ready:.2f} s after you stopped" if self.text_ready is not None else ""
+        return f"Timing {text[:60]!r} -> {tool}: {steps} (pause waited {self.pause:.2f} s{ready}){tail}"
 
     def log(self, text: str, tool: str) -> None:
         log.info(self.summary(text, tool))

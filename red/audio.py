@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import queue
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Protocol
@@ -264,12 +265,50 @@ class Endpointer:
         return allaudio[begin:]
 
 
+class _Speculation:
+    """One transcription of the speech so far, run in a thread while the pause carries on."""
+
+    def __init__(self, audio: np.ndarray, check: Callable[[np.ndarray], object], pause_id: int,
+                 quiet_at_start: float):
+        self.audio = audio
+        self.pause_id = pause_id
+        self.quiet_at_start = quiet_at_start
+        self.result: object = None
+        self.seconds = 0.0
+        self.error: Exception | None = None
+        self._check = check
+        self._thread = threading.Thread(target=self._run, name="red-speculate", daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        start = time.perf_counter()
+        try:
+            self.result = self._check(self.audio)
+        except Exception as e:  # noqa: BLE001 - a failed guess just means waiting the full pause
+            self.error = e
+        self.seconds = time.perf_counter() - start
+
+    @property
+    def done(self) -> bool:
+        return not self._thread.is_alive()
+
+    def join(self) -> None:
+        self._thread.join()
+
+    @property
+    def ready_after(self) -> float:
+        """Seconds of quiet that had passed when the text was ready."""
+        return self.quiet_at_start + self.seconds
+
+
 def record_command(max_seconds: float = 8.0, silence_seconds: float = 0.8, *,
                    start_timeout: float | None = None,
                    mic: AudioSource | None = None,
                    stop_event: threading.Event | None = None,
                    quick_silence: float = 0.0,
-                   is_complete: Callable[[np.ndarray], bool] | None = None,
+                   is_complete: Callable[[np.ndarray], object] | None = None,
+                   speculate_after: float = 0.0,
+                   stats: dict | None = None,
                    prefix: np.ndarray | None = None) -> np.ndarray:
     """Record one spoken command from the microphone.
 
@@ -282,9 +321,20 @@ def record_command(max_seconds: float = 8.0, silence_seconds: float = 0.8, *,
     sent to Whisper (which tends to invent words for silence).
 
     With `is_complete`, a shorter pause (`quick_silence`) is enough when what
-    was said so far is a finished sentence: "open Edge" ends after 0.8 s,
-    "open Edge and..." still waits the full `silence_seconds`. The check runs
-    once per pause; the microphone keeps buffering meanwhile.
+    was said so far is a finished sentence: "open Edge" ends after the short
+    pause, "open Edge and..." still waits the full `silence_seconds`. It returns
+    True (the quick pause is enough), a number of seconds of quiet that this
+    sentence needs, or False. The check runs once per pause; the microphone keeps
+    buffering meanwhile.
+
+    With `speculate_after` too (seconds of quiet, like 0.15), the check runs in a
+    thread as soon as that much quiet has passed, so the transcript is ready
+    during the pause instead of after it. If you carry on talking, the guess is
+    thrown away. When it ends the recording, the audio returned is the audio
+    that was checked, so the caller can keep that transcript.
+
+    `stats` (a dict) gets "quiet": the seconds of quiet waited, and, when a guess
+    ended it, "ready": how many seconds after you stopped the text was ready.
 
     Returns 16 kHz mono float32.
     """
@@ -297,24 +347,60 @@ def record_command(max_seconds: float = 8.0, silence_seconds: float = 0.8, *,
     max_samples = int(max_seconds * SAMPLE_RATE) + (ep.total if prefix is not None else 0)
     start_samples = int(start_timeout * SAMPLE_RATE)
     quick = is_complete is not None and 0 < quick_silence < silence_seconds
-    checked = False         # this pause was already checked
+    early = quick and speculate_after > 0
+    checked = False         # this pause was already checked (without speculation)
+    pause_id = 0            # which pause we are in; a new one starts each time you stop talking
+    in_pause = False
+    guess: _Speculation | None = None
+    result_audio: np.ndarray | None = None
     with mic:
-        while ep.total < max_samples:
-            if stop_event is not None and stop_event.is_set():
-                break
-            if ep.feed(mic.read()):
-                break
-            if not ep.started and ep.total >= start_samples:
-                break
-            if quick:
+        try:
+            while ep.total < max_samples:
+                if stop_event is not None and stop_event.is_set():
+                    break
+                if ep.feed(mic.read()):
+                    break
+                if not ep.started and ep.total >= start_samples:
+                    break
+                if not quick:
+                    continue
                 quiet = ep.quiet_seconds
                 if quiet == 0.0:
-                    checked = False                # talking again: a new pause can be checked
+                    checked = in_pause = False       # talking again: a new pause can be checked
+                    continue
+                if not in_pause:
+                    in_pause = True
+                    pause_id += 1
+                if early:
+                    if guess is not None and guess.done and guess.pause_id == pause_id:
+                        need = _needed_quiet(guess.result, quick_silence)
+                        if need is not None and quiet >= need:
+                            result_audio = guess.audio
+                            if stats is not None:
+                                stats["ready"] = guess.ready_after
+                            break
+                    elif ((guess is None or guess.done) and not checked and quiet >= speculate_after):
+                        checked = True
+                        guess = _Speculation(ep.audio(), is_complete, pause_id, quiet)
                 elif quiet >= quick_silence and not checked:
                     checked = True
-                    if is_complete(ep.audio()):
+                    if _needed_quiet(is_complete(ep.audio()), quick_silence) is not None:
                         break
-    return ep.audio()
+        finally:
+            if guess is not None:
+                guess.join()            # never leave Whisper running under the next transcription
+    if stats is not None:
+        stats["quiet"] = ep.quiet_seconds
+    return result_audio if result_audio is not None else ep.audio()
+
+
+def _needed_quiet(result: object, quick_silence: float) -> float | None:
+    """Seconds of quiet a finished sentence needs, from what is_complete returned (None: unfinished)."""
+    if result is True:
+        return quick_silence
+    if isinstance(result, (int, float)) and not isinstance(result, bool) and result > 0:
+        return max(float(result), quick_silence)
+    return None
 
 
 def chime(frequency: float = 880.0, seconds: float = 0.12, volume: float = 0.2) -> None:

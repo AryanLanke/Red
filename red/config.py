@@ -47,7 +47,12 @@ COMPANION_SIZES = ("small", "medium", "large")
 DEFAULT_END_SILENCE = 1.5      # seconds of quiet that end a command
 # A shorter pause is enough when what you said is a finished sentence
 # ("open Edge"); "open Edge and..." still waits DEFAULT_END_SILENCE. 0 turns it off.
-DEFAULT_QUICK_END_SILENCE = 0.8
+# 0.5 s since 2026-11-13: the transcript is made during the pause (below), so a finished
+# sentence no longer waits for Whisper after it.
+DEFAULT_QUICK_END_SILENCE = 0.5
+# Whisper starts on what you said after this much quiet, while the pause goes on; if you
+# carry on talking the guess is thrown away. 0 turns it off.
+DEFAULT_SPECULATE_AFTER = 0.15
 DEFAULT_MAX_COMMAND = 20.0     # seconds; a command is cut off after this
 # After chat, a question back or a failure, Red keeps listening this long
 # for a reply. 0 turns follow-ups off.
@@ -101,6 +106,7 @@ class Settings:
     companion_size: str = "medium"
     end_silence_seconds: float = DEFAULT_END_SILENCE
     quick_end_silence_seconds: float = DEFAULT_QUICK_END_SILENCE
+    speculate_after_seconds: float = DEFAULT_SPECULATE_AFTER
     max_command_seconds: float = DEFAULT_MAX_COMMAND
     follow_up_seconds: float = DEFAULT_FOLLOW_UP
     # Answer only the owner's voice (red/voice_match.py). Off until tested.
@@ -224,6 +230,7 @@ def load_settings(home: Path | None = None) -> Settings:
         raise ValueError(f"RED_COMPANION_SIZE must be one of {COMPANION_SIZES}, got {companion_size!r}")
     end_silence =_seconds("RED_END_SILENCE", DEFAULT_END_SILENCE, 0.3, 5.0)
     quick_end = _seconds("RED_QUICK_END_SILENCE", DEFAULT_QUICK_END_SILENCE, 0.0, 5.0)
+    speculate = _seconds("RED_SPECULATE_AFTER", DEFAULT_SPECULATE_AFTER, 0.0, 1.0)
     max_command = _seconds("RED_MAX_COMMAND_SECONDS", DEFAULT_MAX_COMMAND, 3.0, 120.0)
     follow_up = _seconds("RED_FOLLOW_UP_SECONDS", DEFAULT_FOLLOW_UP, 0.0, 30.0)
     tts = (_env("RED_TTS") or "kokoro").lower()
@@ -287,6 +294,7 @@ def load_settings(home: Path | None = None) -> Settings:
         companion_size=companion_size,
         end_silence_seconds=end_silence,
         quick_end_silence_seconds=quick_end,
+        speculate_after_seconds=speculate,
         max_command_seconds=max_command,
         follow_up_seconds=follow_up,
         voice_match=match_text in {"on", "1", "true", "yes"},

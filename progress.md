@@ -552,6 +552,24 @@ Every command writes a `Timing` line to `red.log`: listen, transcribe, route, ac
 - **`play_local`** (`red/tools/local_music.py`): files under the Music folder only (Known Folder), audio extensions only, found by scanning; the model's words are only a search key against names that were found; symlinks and junctions out of the folder aren't followed (junction test); played with `os.startfile`. It is not in the router's tool list (each tool costs ~130 prompt tokens; "play X" belongs to `play_online`); `local_music_tools()` adds it if wanted.
 - Tests: `tests/test_idle.py` (fake clock and fake world, 38 tests), `tests/test_local_music.py`.
 
+#### Hearing fast (2026-11-13, plan.md 0.3 lane 1 task 1, night 1)
+
+- **Where the 1.65 s went** (red.log Timing lines, the user's last 50 chit-chat commands): "pause waited" median **1.36 s** (0.8 s of silence, then Whisper base.en re-reading the whole clip, 0.45-0.7 s), 1.5-3 s when the sentence did not sound finished.
+- **Why Whisper took 0.5 s for a 2 s clip:** the encoder always reads 30 s of padding. A 14 s window (the clip plus a margin, in 2 s steps; the full 30 s over 15 s of speech) gives the same words at 0.2 s. Shorter windows (4-10 s) made Whisper repeat words on clean clips (word errors 170-300%), so 14 s is the floor, and a transcript that loops is redone with the full window (`red/stt.py`: `short_window`, `looks_looped`). Greedy decoding (beam 1) and 8 threads took another 30 ms with the same errors.
+- **Transcribing during the pause** (`record_command(speculate_after=...)`, `RED_SPECULATE_AFTER`, default 0.15 s): Whisper starts on the speech so far as soon as 0.15 s of quiet has passed, in a thread, while the pause goes on. If you carry on, the guess is dropped. If it sounds finished, the recording ends at `RED_QUICK_END_SILENCE` (now 0.5 s, one or two words 0.8 s) with the text already made. Unfinished text still waits `RED_END_SILENCE` (1.5 s).
+- **Measured** (`scripts/voice_bench.py endpoint`, 16 Kokoro clips with room noise played into `record_command` in real time, real base.en):
+
+  | | pause waited (median) | text ready after you stop (median / max) |
+  |---|---|---|
+  | before (0.8 s quiet, then Whisper, 30 s window) | 1.43 s | 1.43 s / 1.49 s |
+  | after (speculate 0.15 s, quick 0.5 s, 14 s window) | **0.51 s** | **0.43 s / 0.50 s** |
+
+  The text is ready 0.43 s after the stop, not the 0.3 s asked for: 0.15 s of quiet, 0.2 s of Whisper, and the endpointer's own lag. Speculating after 0.10 s gives 0.38 s but sometimes wastes a run in the middle of a sentence (max 1.69 s), so 0.15 s stays. The pause the user feels fell from about 1.4 s to 0.5 s. `red.log` Timing lines now say "pause waited 0.51 s, text ready 0.40 s after you stopped".
+- **Word errors** (44 Kokoro clips, `scripts/voice_bench.py run`, base.en): 30 s window 6.9% (clean) and 7.6% (noisy); 14 s window 7.2% both; beam 1 6.9%. On the user's 10 recorded "Hey Red, open YouTube" the errors are the same with and without the window (their accent, not the window).
+- **The wake word's "Wake check" runs:** 2,937 checks in the log, 24 an hour, median 0.85 s each on 4 threads: about **0.6% of the time**. Not a drag, so no change. The window would halve a check (0.72 -> 0.33 s) but cost 2 of the 40 recorded "Hey Red"s (25/30 + 9/10 -> 23/30 + 8/10), so the wake word keeps the full window. Beam 1 cost more (22/30 + 6/10). Numbers from `python -m red wake-test --replay` variants.
+- **Also found:** Kokoro's British voices (`bm_*`, `bf_*`) never worked: `en-gb` is not an espeak voice in Piper's data (Red fell back to Piper). Now `en-gb-x-rp`.
+- GPU Whisper stays off: cuBLAS isn't installed, and the 6 GB card is shared with the model.
+
 ### 7.3 Overlay (Track C)
 
 - PySide6. Frameless, always on top, translucent, and doesn't take keyboard focus. Sits in the bottom-right corner of the primary screen.

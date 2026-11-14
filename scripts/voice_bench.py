@@ -145,9 +145,73 @@ def run(args) -> None:
                   f"WER {err / n * 100:.1f}% ({err}/{n})")
 
 
+class RealtimeMic:
+    """Plays a clip into record_command at the speed of speech, then quiet room noise."""
+
+    def __init__(self, clip: np.ndarray, tail_seconds: float = 4.0):
+        self.audio = np.concatenate([clip, np.random.default_rng(3).normal(0, 0.002, int(tail_seconds * 16_000))
+                                     .astype(np.float32)])
+        self.pos = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return None
+
+    def read(self, timeout: float = 2.0) -> np.ndarray:
+        time.sleep(0.03)
+        block = self.audio[self.pos:self.pos + 480]
+        self.pos += 480
+        return block
+
+
+def endpoint(args) -> None:
+    """How long after you stop talking is the text ready, and how long is the pause? Real Whisper, real time."""
+    from red.audio import record_command
+    from red.smalltalk import sounds_finished
+    from red.stt import Transcriber
+    from red.wake_corpus import read_wav
+
+    t = Transcriber(home() / "models" / "whisper", args.model, "cpu", beam_size=args.beam,
+                    fit_window=args.window == "on", cpu_threads=args.threads)
+    t.load()
+    t.transcribe(read_wav(bench_dir() / "00.wav"))
+    quick, spec = (0.8, 0.0) if args.old else (args.quick, args.speculate)
+    items = json.loads((bench_dir() / "items.json").read_text(encoding="utf-8"))
+    pauses, readies, wrong = [], [], 0
+    for i, item in enumerate(items[:args.count]):
+        clip = read_wav(bench_dir() / f"{i:02d}-noisy.wav")[: -int(0.45 * 16_000)]      # no trailing silence
+        heard: dict = {}
+        stats: dict = {}
+
+        def check(audio):
+            start = time.perf_counter()
+            text = t.transcribe(audio)
+            heard.update(text=text, seconds=time.perf_counter() - start, size=audio.size)
+            return sounds_finished(text) and (True if len(text.split()) >= 3 else 0.8)
+
+        out = record_command(max_seconds=20, silence_seconds=1.5, quick_silence=quick, speculate_after=spec,
+                             is_complete=check, mic=RealtimeMic(clip), stats=stats)
+        quiet = stats["quiet"]
+        # Old way: the check starts after the pause and Whisper's time is waited on top.
+        pause = quiet + (0.0 if spec else heard.get("seconds", 0.0))
+        ready = stats.get("ready", pause)
+        pauses.append(pause)
+        readies.append(ready)
+        full = word_errors(item["said"], heard.get("text", ""))[0] if heard.get("size") == out.size else -1
+        print(f"  {i:02d} pause {pause:.2f} s, text ready {ready:.2f} s  {heard.get('text', '')!r}")
+    print(f"{'old way' if args.old else 'new way'} (quick {quick}, speculate {spec}): median pause {statistics.median(pauses):.2f} s, "
+          f"median text ready {statistics.median(readies):.2f} s, max ready {max(readies):.2f} s")
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("action", choices=("render", "run"))
+    p.add_argument("action", choices=("render", "run", "endpoint"))
+    p.add_argument("--old", action="store_true")
+    p.add_argument("--quick", type=float, default=0.5)
+    p.add_argument("--speculate", type=float, default=0.15)
+    p.add_argument("--count", type=int, default=16)
     p.add_argument("--model", default="base.en")
     p.add_argument("--beam", type=int, default=5)
     p.add_argument("--threads", type=int, default=0)
@@ -159,7 +223,7 @@ def main() -> None:
     p.add_argument("--corpus", choices=("on", "off"), default="on")
     p.add_argument("--verbose", action="store_true")
     args = p.parse_args()
-    render() if args.action == "render" else run(args)
+    {"render": lambda: render(), "run": lambda: run(args), "endpoint": lambda: endpoint(args)}[args.action]()
 
 
 if __name__ == "__main__":

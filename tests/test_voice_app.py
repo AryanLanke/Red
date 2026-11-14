@@ -443,7 +443,7 @@ class SilentThenWords:
     @property
     def timeouts(self):
         """The calls without the pause check (VoiceApp always passes one)."""
-        return [{k: v for k, v in kw.items() if k != "is_complete"} for kw in self.calls]
+        return [{k: v for k, v in kw.items() if k not in ("is_complete", "stats")} for kw in self.calls]
 
 
 def follow_app(world, monkeypatch, *texts, speech_calls=None, **kw):

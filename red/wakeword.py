@@ -245,7 +245,9 @@ def make_wake_transcriber(model_dir: Path):
 
     return Transcriber(Path(model_dir).parent / "whisper", WAKE_WHISPER_MODEL, device="cpu",
                        beam_size=5, vad_filter=False, hotwords="Hey Red", max_new_tokens=12,
-                       model_factory=factory)
+                       # The full 30 s window: a shorter one halves the time (0.72 -> 0.33 s) but missed 2 more of
+                       # the 40 recorded "Hey Red"s. The checks are only ~0.6% of the time (progress.md).
+                       fit_window=False, model_factory=factory)
 
 
 class HeyRedDetector:
