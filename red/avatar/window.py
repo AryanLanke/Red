@@ -773,15 +773,21 @@ def _window_class():
             g = self.geometry()
             self.setGeometry(g.left(), round(self.fall_y), g.width(), g.height())
 
-        def _react(self, kind: str, every: float = 0.0) -> bool:
+        def _react(self, kind: str, every: float = 0.0, quiet: bool | None = None) -> bool:
             """A sound of the companion's own pack (companion.toml `sounds`, red/sounds.py) for `kind`
-            (pickup, drop, hover...). False when there is none, so the caller can fall back."""
+            (pickup, drop, hover, poke, dizzy...). False when there is none, so the caller can fall
+            back. At most one reaction a second (`sounds.MIN_GAP`), never over Red's voice, and none
+            in quiet mode (`quiet` overrides the window's own flag)."""
             try:
                 from .. import companions, sounds
                 now = self.clock()
                 last = self.__dict__.setdefault("_react_at", {})
                 if every and now - last.get(kind, -1e9) < every:
                     return True                                   # too soon: say nothing, not the old clip
+                if self.quiet if quiet is None else quiet:
+                    return True                                   # quiet mode: no sounds
+                if now - last.get("*", -1e9) < sounds.MIN_GAP:
+                    return True                                   # one reaction a second at most
                 if self.meter.level() != 0.0 or sounds.red_speaking():
                     return True                                   # never over Red's own voice
                 home = Path(self.state_file).parent.parent if self.state_file else None
@@ -789,13 +795,23 @@ def _window_class():
                                    avoid=self.__dict__.get("_react_last"))
                 if path is None:
                     return False
-                last[kind] = now
+                last[kind] = last["*"] = now
                 self._react_last = path
                 sounds.play(path)
                 return True
             except Exception:  # noqa: BLE001 - sounds are a nicety
                 log.debug("Reaction sound failed", exc_info=True)
                 return False
+
+        def react(self, kind: str, *, quiet: bool | None = None) -> bool:
+            """The one call the motion code makes for a funny reaction: "poke", "drag_fast", "dizzy",
+            "pout", "sneeze", "hiccup", "climb", "zip" (or any kind in `sounds.KINDS`). True when a
+            sound played or was held back on purpose (too soon, quiet, Red is talking); False when
+            this companion's pack has no sound of that kind. Never raises."""
+            from .. import sounds
+            if kind not in sounds.KINDS:
+                return False
+            return self._react(kind, quiet=quiet)
 
         def _sound(self, clips: list[Path], kind: str | None = None) -> None:
             if kind and self._react(kind):

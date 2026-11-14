@@ -51,6 +51,33 @@ PAUSE_SECONDS = 0.12        # a breath after each piece, so sentences don't run 
 VOCAB: dict[str, int] = json.loads((Path(__file__).with_name("kokoro_vocab.json")).read_text(encoding="utf-8"))
 
 
+def parse_voice(voice: str, known=None) -> list[tuple[str, float]] | None:
+    """[(voice, weight)] for a Kokoro voice id or a blend like "af_bella:0.6+af_sky:0.4" (weights
+    add up to 1; "a+b" is half and half). None when a part is not a Kokoro voice, a weight is not a
+    positive number, or the blend mixes accents or a man with a woman (the a- and b- voices use\n    different phonemizers)."""
+    parts: list[tuple[str, float]] = []
+    for piece in str(voice or "").split("+"):
+        name, _, w = piece.strip().partition(":")
+        if name not in (VOICES if known is None else known):
+            return None
+        try:
+            weight = float(w) if w else 1.0
+        except ValueError:
+            return None
+        if not weight > 0:
+            return None
+        parts.append((name, weight))
+    if not parts or len({n[0] for n, _ in parts}) != 1 or len({n[1] for n, _ in parts}) != 1:
+        return None
+    total = sum(w for _, w in parts)
+    return [(n, w / total) for n, w in parts]
+
+
+def is_voice(voice: str) -> bool:
+    """A Kokoro voice or a blend of them."""
+    return parse_voice(voice) is not None
+
+
 def _language(voice: str) -> str:
     # Piper's bundled espeak-ng has no plain "en-gb" voice (set_voice fails); "en-gb-x-rp" is the
     # British voice kokoro-onnx's "en-gb" maps to. Found 2026-11-13 while testing the bm_* voices.
@@ -114,6 +141,19 @@ class KokoroEngine:
         self._tokens_input = "input_ids" if "input_ids" in names else "tokens"
         self.voices = np.load(voices_path)
 
+    def style_for(self, voice: str, n_tokens: int) -> np.ndarray:
+        """The style vector for a phoneme count. `voice` is one voice or a blend
+        ("af_bella:0.6+af_sky:0.4"): the weighted mean of the voices' style vectors."""
+        parts = parse_voice(voice, set(getattr(self.voices, "files", VOICES)))
+        if parts is None:
+            raise KeyError(voice)
+        mixed = None
+        for name, weight in parts:
+            styles = self.voices[name]
+            one = np.asarray(styles[min(n_tokens, len(styles)) - 1], dtype=np.float32) * weight
+            mixed = one if mixed is None else mixed + one
+        return mixed
+
     def create(self, text: str, voice: str, speed: float = 1.0) -> np.ndarray:
         return self.create_phonemes(phonemize(text, _language(voice)), voice, speed)
 
@@ -123,8 +163,7 @@ class KokoroEngine:
         tokens = [VOCAB[c] for c in phonemes if c in VOCAB][:MAX_TOKENS]
         if not tokens:
             return np.zeros(0, dtype=np.float32)
-        styles = self.voices[voice]
-        style = styles[min(len(tokens), len(styles)) - 1]       # one style per phoneme count
+        style = self.style_for(voice, len(tokens))
         feed = {self._tokens_input: np.array([[0, *tokens, 0]], dtype=np.int64),
                 "style": np.asarray(style, dtype=np.float32),
                 "speed": np.array([speed], dtype=np.float32)}
@@ -143,7 +182,7 @@ class KokoroSpeaker(Speaker):
                  fallback: Speaker | None = None, engine_loader: Callable = _load_kokoro,
                  player=None):
         super().__init__(model_dir, voice or DEFAULT_VOICE, player=player)
-        if self.voice_name not in VOICES:
+        if not is_voice(self.voice_name):
             log.warning("Unknown Kokoro voice %r; using %s", self.voice_name, DEFAULT_VOICE)
             self.voice_name = DEFAULT_VOICE
         self.speed = speed
@@ -155,7 +194,7 @@ class KokoroSpeaker(Speaker):
 
     def set_voice(self, voice: str, speed: float | None = None) -> None:
         """Speak with another Kokoro voice from the next sentence on (the companion changed)."""
-        if voice not in VOICES:
+        if not is_voice(voice):
             log.warning("Unknown Kokoro voice %r; keeping %s", voice, self.voice_name)
             return
         self.voice_name = voice
@@ -233,7 +272,7 @@ def companion_voice(settings, companion_id: str | None = None) -> tuple[str, flo
     try:
         from red import companions
         who = companions.load(companion_id, settings.home) if companion_id else companions.active(settings.home)
-        if who.voice.get("engine", "kokoro") == "kokoro" and who.voice_id in VOICES:
+        if who.voice.get("engine", "kokoro") == "kokoro" and is_voice(who.voice_id):
             voice = who.voice_id if not explicit_voice else voice
             if not explicit_speed:
                 speed = float(who.voice.get("speed", 1.0))
