@@ -44,8 +44,14 @@ def bench_dir() -> Path:
     return home() / "cache" / "voice-bench"
 
 
+_NUMBERS = ("zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen "
+            "sixteen seventeen eighteen nineteen twenty").split()
+
+
 def words(text: str) -> list[str]:
-    return re.sub(r"[^a-z0-9' ]", " ", text.lower().replace("-", " ")).split()
+    """Lowercase words; "10" and "ten" count as the same word (Whisper writes digits)."""
+    out = re.sub(r"[^a-z0-9' ]", " ", text.lower().replace("-", " ")).split()
+    return [_NUMBERS[int(w)] if w.isdigit() and int(w) < len(_NUMBERS) else w for w in out]
 
 
 def word_errors(reference: str, heard: str) -> tuple[int, int]:

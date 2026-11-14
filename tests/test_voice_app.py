@@ -750,15 +750,24 @@ def test_vocabulary_has_apps_and_contacts(world):
     (home / "config" / "contacts.toml").write_text(
         '[contacts]\nrahul = "rahul@example.com"\n', encoding="utf-8")
     words = cli.vocabulary(load_settings(home))
-    assert words.startswith("Hey Copilot, Hey Siri, Alexa, OK Google, Gemini, YouTube")
+    assert "Hey Copilot, Hey Siri, Alexa, OK Google, Gemini, YouTube" in words
     assert "Spotify" in words and "Rahul" in words
+
+
+def test_vocabulary_starts_with_your_name_and_the_companions(world):
+    from red.memory import Memory
+    home = world["home"]
+    Memory(home).set_name("Aryan")
+    words = cli.vocabulary(load_settings(home))
+    assert words.startswith("Aryan, Asha, Bruno, Red, Remy, Winston, Hey Copilot")
+    assert "Downloads" in words and "Documents" in words
 
 
 def test_a_broken_allowlist_still_gives_a_vocabulary(world):
     home = world["home"]
     (home / "config").mkdir(exist_ok=True)
     (home / "config" / "allowlist.toml").write_text("[apps\n", encoding="utf-8")
-    assert cli.vocabulary(load_settings(home)).startswith("Hey Copilot")
+    assert "Hey Copilot" in cli.vocabulary(load_settings(home))
 
 
 # --- speak while the model writes; "Hey Red" cuts in (plan.md task 6) -----------------
@@ -969,3 +978,9 @@ def test_the_listener_gets_the_mic_shortcut_state_file_and_sound(world):
     assert normalize_hotkey(kw["mute_hotkey"]) == "<ctrl>+<alt>+m"
     assert kw["mic_state"] == app.settings.cache_dir / "mic.json"
     assert "mute_sound" in kw
+
+
+def test_fillers_and_self_corrections_are_cleaned_before_anything_runs(world):
+    app, speaker, *_ = make_app(world, "Um, open my documents, no wait, open my downloads.")
+    app.handle("wakeword")
+    assert speaker.said == ["Opening Downloads."]

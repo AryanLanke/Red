@@ -47,6 +47,7 @@ from .llm import LLMError, connect
 from .router import RouteError, Router
 from .chat import Chat, make_chat
 from .smalltalk import dismissal_reply, is_filler, is_goodbye, quick_reply, sounds_finished
+from .transcript import clean_transcript
 from .speech import SpeechStream, speaking_to
 from .tools import default_registry
 
@@ -262,13 +263,30 @@ def make_speaker(settings: Settings):
 
 
 def vocabulary(settings: Settings) -> str:
-    """Whisper's hotwords: assistant and browser names, your allowlisted apps and your contacts."""
+    """Whisper's hotwords: the user's name, the companions' names, assistant and browser names, the
+    folders and apps you can name, and your contacts (the most useful first; the list is kept short)."""
     from .stt import command_vocabulary
 
     names: list[str] = []
+    first: list[str] = []
+    try:
+        from .memory import Memory
+        who = Memory(settings.home).name()
+        if who:
+            first.append(who)
+    except Exception:  # noqa: BLE001 - no memory yet is fine
+        log.debug("No name for Whisper's vocabulary", exc_info=True)
+    try:
+        from . import companions
+        first += [c.name for c in companions.load_all(settings.home).values()]
+    except Exception:  # noqa: BLE001
+        log.warning("Couldn't read the companions for Whisper's vocabulary", exc_info=True)
     try:
         from .allowlist import load_allowlist
-        names += [n.title() for n in load_allowlist(settings.allowlist_path).app_names()]
+        from .known_folders import FOLDER_IDS
+        allow = load_allowlist(settings.allowlist_path)
+        names += [n.title() for n in FOLDER_IDS] + [n.title() for n in allow.folders]
+        names += [n.title() for n in allow.app_names()]
     except Exception:  # noqa: BLE001 - a broken allowlist.toml must not stop the voice
         log.warning("Couldn't read the allowlist for Whisper's vocabulary", exc_info=True)
     try:
@@ -276,7 +294,7 @@ def vocabulary(settings: Settings) -> str:
         names += [n.title() for n in load_contacts(settings.contacts_path)]
     except Exception:  # noqa: BLE001
         log.warning("Couldn't read the contacts for Whisper's vocabulary", exc_info=True)
-    return command_vocabulary(*names)
+    return command_vocabulary(*names, first=tuple(first))
 
 
 def pretty_hotkey(hotkey: str) -> str:
@@ -541,6 +559,13 @@ class VoiceApp:
             return audio, heard["text"], stats
         return audio, None, stats
 
+    def _clean(self, text: str) -> str:
+        """Fillers and self-corrections out, the way Wispr Flow does it (red/transcript.py)."""
+        cleaned = clean_transcript(text)
+        if cleaned != text:
+            log.info("Heard %r, understood %r", text, cleaned)
+        return cleaned
+
     def _exchange(self, tool, *, follow_up: bool, prefix=None):
         """Listen once and answer. Returns (last reply, tool, whether to keep listening).
 
@@ -565,6 +590,7 @@ class VoiceApp:
             return last, tool, True
         self._state("thinking", "")
         text = early if early is not None else (self.voice.transcriber.transcribe(audio) or "").strip()
+        text = self._clean(text)
         timer.mark("transcribe")
         if prefix is not None:
             from .wakeword import strip_wake_phrase

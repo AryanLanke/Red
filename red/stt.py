@@ -103,12 +103,13 @@ def read_vocabulary(path: Path | str | None) -> list[str]:
     return names
 
 
-def command_vocabulary(*names: str) -> str:
-    """The hotwords for commands: the fixed names, then app and contact names, kept short."""
+def command_vocabulary(*names: str, first: tuple[str, ...] = ()) -> str:
+    """The hotwords for commands: `first` (the user's name, the companions), the fixed names, then app
+    and contact names, kept short."""
     seen: set[str] = set()
     words: list[str] = []
     size = 0
-    for name in (*BASE_VOCABULARY, *names):
+    for name in (*first, *BASE_VOCABULARY, *names):
         name = " ".join(str(name).split())
         key = name.lower()
         if not name or key in seen or len(name) > 40:

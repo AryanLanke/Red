@@ -602,6 +602,25 @@ am_eric         160    9.3  -20.8  0.53   8.5    19.3   0.0
 - **Talk skipping the router, re-checked on logs/commands.jsonl (161 commands):** 75 of the 104 talk sentences skip it now; none of the tool commands is skipped except the ones that are answers to Red's own question ("Blink Crazy by Lisa Raffin" after "which song?"; the gate keeps those for the router by looking at the last tool) and two mis-heard sentences the router itself got wrong. The rest of the 29 are questions or "can you ..." sentences that should be routed.
 - **Shorter first spoken piece:** the first sentence of a reply, if 60 characters or more, starts with its first clause (at a comma, at least 12 characters, with 20 left over) and the rest is made while it plays. "No." and "Oh no." are sentences again (they were held back as the abbreviation "no."). Kokoro's time per piece is roughly 0.25 s plus 0.35 s per second of speech; under the GPU/CPU sharing tonight its numbers swung 2x between runs, so the gain is by that rule (about 0.3 s on a 70 character first sentence), not measured end to end.
 
+#### Hearing like Wispr Flow (2026-11-13, plan.md 0.3 lane 1 task 4, night 1)
+
+Two parts, no model call: a personal vocabulary for Whisper, and a clean-up of what it wrote (`red/transcript.py`).
+
+- **Vocabulary** (`vocabulary()` in `__main__.py`, Whisper's hotwords, kept to 250 characters): your name (memory profile), the companions' names (Red, Remy, Asha, Bruno, Winston and any of yours), then the fixed names (Hey Copilot ... Edge), the standard folders and your allowlist's folders and apps, then your contacts. `RED_HOME\configocabulary.txt` still adds names. No time cost (273 ms with it, 292 ms without).
+- **Clean-up** (`clean_transcript`): fillers ("um", "uh", a leading "so,"/"like,"/"you know,"/"I mean,", ", like,"), stutters ("open open"), and self-corrections: after a pause comes a cue ("no wait", "I mean", "sorry", "scratch that", "make it", "or rather", a short "no"/"wait", "oh yes") and the replacement, which replaces what it corrects: from the same word ("open Edge" for "open Chrome", "by Lisa", "the documents folder"), the last number ("ten minutes" for "five"), the last word ("down" for "up"), or everything. "No, I don't want that.", "No no no", "I'm sorry, Dave." and a bare "um" are left alone. The log says `Heard 'X', understood 'Y'` when it changes something.
+- **Measured** (`scripts/voice_bench.py run`, 44 Kokoro clips in 8 voices, spoken with ums and corrections; the same clips with room noise; base.en; "10" counts as "ten"). Word error rate:
+
+  | | vs the words said | vs what was meant | time per clip |
+  |---|---|---|---|
+  | before (30 s window, beam 5, no names, no clean-up) | 4.7% clean, 5.4% noisy | **21.1%** clean, **22.4%** noisy | 864 ms |
+  | names only | 3.6% | 19.8% | 265 ms |
+  | clean-up only | 4.7% | 3.9% | 263 ms |
+  | after (names + clean-up + window, beam 1, 8 threads) | **3.6%** | **2.6%** (6 of 232 words) | **270 ms** |
+
+  The "meant" column is the one that matters: the clean-up takes it from a fifth wrong to 1 in 40. The first time column was measured while the PC was busy (the window alone measured 0.2 s against 0.5 s when quiet).
+- **The user's own recordings** (10 "Hey Red, open YouTube", their accent): word errors 82.5% before, **45.0%** after (the names prompt, which has "Red" in it, helps: "Here at open YouTube" -> "Hey Red, open YouTube"). 44 sentences is a small test: the fixtures are `tests/fixtures/voice/sentences.json`, spoken by Kokoro, not by you. Real speech will have more kinds of corrections than these; add yours to the file.
+- Not done: spoken numbers stay as Whisper writes them ("10"); no punctuation model; the confirmation answers ("yes", "no") are not cleaned (they go straight to the yes check).
+
 ### 7.3 Overlay (Track C)
 
 - PySide6. Frameless, always on top, translucent, and doesn't take keyboard focus. Sits in the bottom-right corner of the primary screen.
