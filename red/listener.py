@@ -157,9 +157,17 @@ def read_mic_state(path: Path | None) -> bool:
 
 
 def write_mic_state(path: Path, muted: bool) -> None:
+    """Save Microphone off into mic.json, keeping what else is there (conversation's "zipped")."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    data["muted"] = bool(muted)
     try:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        Path(path).write_text(json.dumps({"muted": bool(muted)}), encoding="utf-8")
+        Path(path).write_text(json.dumps(data), encoding="utf-8")
     except OSError:
         log.warning("Couldn't save the microphone state to %s", path, exc_info=True)
 

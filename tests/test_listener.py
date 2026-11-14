@@ -437,6 +437,17 @@ def test_mute_is_remembered_in_mic_json(listener_factory, tmp_path):
     assert not json.loads(state.read_text(encoding="utf-8"))["muted"]
 
 
+def test_mute_keeps_the_zipped_mouth_in_mic_json(listener_factory, tmp_path):
+    from red import conversation as conv
+    state = tmp_path / "mic.json"
+    conv.Conversation(state).zip("test")
+    lst, _, _ = listener_factory(Recorder(), mic_state=state)
+    lst.mute(True)
+    lst.mute(False)
+    assert json.loads(state.read_text(encoding="utf-8")) == {"zipped": True, "muted": False}
+    assert conv.Conversation(state).zipped                 # a restart is still zipped
+
+
 def test_a_broken_mic_json_means_not_muted(listener_factory, tmp_path):
     state = tmp_path / "mic.json"
     state.write_text("{not json", encoding="utf-8")
