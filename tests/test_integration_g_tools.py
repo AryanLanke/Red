@@ -85,7 +85,7 @@ CASES = [
     ("cancel the shutdown", "cancel_shutdown", ANY),
     ("shut down in 10 minutes", "shutdown", has(minutes=10)),
     # offline answers
-    ("what is hugging face", "answer", contains("question", "hugging face")),
+    ("what is hugging face", "look_up", contains("topic", "hugging face")),   # a named thing: look_up (the router prompt says so)
     ("explain recursion", "answer", contains("question", "recursion")),
     ("who was alan turing", ("answer", "look_up"),
      lambda a: "turing" in norm(a.get("question", a.get("topic", "")))),

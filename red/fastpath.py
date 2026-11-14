@@ -86,6 +86,10 @@ _FIXED = [
     (r"(?:how much battery (?:do i have|is left|have i got)(?: left)?|battery(?: level)?|"
      r"what's (?:my|the) battery(?: level)?)", _call("tell_status", what="battery")),
     (r"(?:take a screenshot|take a screen ?shot|screenshot|capture (?:the|my) screen)", _call("take_screenshot")),
+    # The user's own logged sentences (5 of 161 commands): the model's route was 1-2 s of the wait.
+    (r"(?:what(?:'s| is) on my screen(?: (?:right )?now)?|what(?:'s| is) on the screen(?: (?:right )?now)?|"
+     r"(?:do you |can you )?see (?:what(?:'s| is) on )?my screen|(?:look at|read|describe) (?:my|the) screen|"
+     r"what(?:'s| is) on my screen right now)", _call("describe_screen", question="What's on my screen?")),
 ]
 _FIXED_RE = [(re.compile(p), c) for p, c in _FIXED]
 

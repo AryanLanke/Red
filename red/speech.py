@@ -135,7 +135,7 @@ def stream_field(llm, system: str, user: str, schema: dict, key: str, **options)
 # --- sentences ------------------------------------------------------------------------
 
 _END = re.compile(r"[.!?]+[\"')\]”’]*(?=\s)|\n+")
-_ABBREVIATION = re.compile(r"(?:\b(?:mr|mrs|ms|dr|st|jr|sr|vs|etc|no|vol|fig|approx|inc|ltd|co)\.|"
+_ABBREVIATION = re.compile(r"(?:\b(?:mr|mrs|ms|dr|st|jr|sr|vs|etc|vol|fig|approx|inc|ltd|co)\.|"
                            r"\b(?:[a-z]\.){1,3})$", re.IGNORECASE)
 
 
@@ -198,6 +198,8 @@ SENTENCE_PAUSE = 0.3
 LONG_PAUSE = 0.5               # "..." or a dash: a trailing-off beat
 LONG_SENTENCE = 90             # characters; longer sentences are cut at commas
 _MIN_PIECE = 20                # never cut off a scrap shorter than this
+FIRST_LONG = 60                # the first sentence of a reply is cut at its first comma from this length
+FIRST_HEAD = 12                # ...if that leaves at least this much to say first
 
 _TRAIL = re.compile(r"(?:\.\.\.|…|\s[-–—]|[-–—])$")
 # Where a sentence may be cut: after "..." or a spaced dash always, after a comma
@@ -236,7 +238,7 @@ def _cut(text: str, pattern: re.Pattern) -> list[str]:
     return [p for p in pieces if p]
 
 
-def speech_pieces(sentence: str, long_sentence: int = LONG_SENTENCE) -> list[str]:
+def speech_pieces(sentence: str, long_sentence: int = LONG_SENTENCE, first: bool = False) -> list[str]:
     """One sentence as the pieces to say, each followed by its own pause.
 
     "Rust if you like compilers... some people do." trails off at the "...";
@@ -244,6 +246,13 @@ def speech_pieces(sentence: str, long_sentence: int = LONG_SENTENCE) -> list[str
     """
     sentence = " ".join(sentence.split())
     pieces = []
+    if first and len(sentence) >= FIRST_LONG:
+        # The first piece decides when Red starts talking, and Kokoro's time grows with its length:
+        # start with the first clause, say the rest while it plays.
+        for m in _COMMA_CUT.finditer(sentence):
+            head, rest = sentence[:m.end()].strip(), sentence[m.end():].strip()
+            if len(head) >= FIRST_HEAD and len(rest) >= _MIN_PIECE:
+                return [head, *speech_pieces(rest, long_sentence)]
     for part in _cut(sentence, _TRAIL_CUT):
         pieces.extend(_cut(part, _COMMA_CUT) if len(part) > long_sentence else [part])
     return pieces
@@ -308,6 +317,7 @@ class SpeechStream:
         synthesize = getattr(self.speaker, "synthesize", None)
         player = getattr(self.speaker, "player", None)
         playing = False
+        started = False                              # the first sentence gets a shorter first piece
         pause = 0.0                                  # after the piece that's playing now
         while True:
             item = self._queue.get()
@@ -321,7 +331,8 @@ class SpeechStream:
                 except Exception:  # noqa: BLE001 - no speakers: the text is still shown
                     log.exception("Couldn't speak %r", item[:60])
                 continue
-            for piece in speech_pieces(item):
+            first_item, started = not started, True
+            for piece in speech_pieces(item, first=first_item):
                 try:
                     audio, rate = synthesize(piece)  # while the last piece still plays
                     if self.cancelled:

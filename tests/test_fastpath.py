@@ -82,6 +82,12 @@ def call(tool, **args):
     ("search lofi on YouTube", call("web_search", query="lofi", site="youtube")),
     ("search lofi in Edge", call("web_search", query="lofi", browser="edge")),
     ("google cheap flights to Goa", call("web_search", query="cheap flights to Goa")),
+    # the screen: the user's own sentences (logs/commands.jsonl), no model call to route them
+    ("What's on my screen right now", call("describe_screen", question="What's on my screen?")),
+    ("Can you see what's on my screen?", call("describe_screen", question="What's on my screen?")),
+    ("Do you see my screen?", call("describe_screen", question="What's on my screen?")),
+    ("Hey Red, read my screen", call("describe_screen", question="What's on my screen?")),
+    ("what is on the screen", call("describe_screen", question="What's on my screen?")),
     ("search the web for cheap flights to Goa", call("web_search", query="cheap flights to Goa")),
 ])
 def test_clear_commands_skip_the_model(said, expected):
@@ -98,7 +104,7 @@ def test_clear_commands_skip_the_model(said, expected):
     "play the next one please and then pause",
     "don't open youtube", "sleep",                              # not matched: still the model
     "cancel it", "shut down in a while", "shut down at 10 pm",  # needs the model (or a clock)
-    "empty the recycle bin", "what's on my screen",
+    "empty the recycle bin", "what's on my screen and what should I fix", "what's on my screen tomorrow",
     "I'm feeling lonely.", "banana", "", "   ",
     "open " + "x" * 90,
     "play Believer in Chrome",                              # play_online has no browser yet

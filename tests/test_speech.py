@@ -229,3 +229,55 @@ def test_speaking_to_is_per_thread_and_restored():
         t.join()
         assert other == [None]
     assert sp.current() is None
+
+
+# --- a shorter first piece (night 1): Red starts with the first clause --------------------------------
+
+def test_the_first_long_sentence_starts_with_its_first_clause():
+    sentence = "Okay, that stings more than a compiler error, but I guess that is fair enough to say."
+    assert sp.speech_pieces(sentence) == [sentence], "later sentences are cut only past 90 characters"
+    assert sp.speech_pieces(sentence, first=True) == ["Okay, that stings more than a compiler error,",
+                                                     "but I guess that is fair enough to say."]
+
+
+def test_a_short_first_sentence_is_left_alone():
+    assert sp.speech_pieces("Not much, just thinking.", first=True) == ["Not much, just thinking."]
+    assert sp.speech_pieces("Yes, " + "a" * 70, first=True) == ["Yes, " + "a" * 70], "a head under 12 characters isn't worth it"
+
+
+def test_no_is_a_sentence_not_an_abbreviation():
+    assert list(sp.sentences(["No. I don't think ", "so. Maybe."])) == ["No.", "I don't think so.", "Maybe."]
+    assert list(sp.sentences(["Oh no. But hey, tomorrow."])) == ["Oh no.", "But hey, tomorrow."]
+    assert list(sp.sentences(["Dr. Smith agrees. Fine."])) == ["Dr. Smith agrees.", "Fine."]
+
+
+def test_only_the_first_sentence_of_a_reply_gets_the_short_first_piece():
+    played = []
+
+    class Player:
+        def play(self, audio, rate):
+            played.append(audio)
+
+        def wait(self):
+            pass
+
+    class Speaker:
+        using_fallback = True
+        player = Player()
+        spoken = []
+
+        def synthesize(self, text):
+            Speaker.spoken.append(text)
+            import numpy as np
+            return np.ones(10, dtype=np.float32), 24000
+
+        def stop(self):
+            pass
+
+    stream = sp.SpeechStream(Speaker(), sleep=lambda s: None)
+    long = "Honestly, I think that is a pretty long first sentence, and it keeps going for a while."
+    stream.say(long)
+    stream.say(long)
+    stream.finish(5)
+    assert Speaker.spoken[:3] == ["Honestly, I think that is a pretty long first sentence,",
+                                  "and it keeps going for a while.", long], Speaker.spoken

@@ -123,7 +123,8 @@ def _num(x) -> int:
 class Weather(Tool):
     name = "weather"
     description = ("Get the live weather or forecast for a city from the internet, for "
-                   "example 'what's the weather in Pune' or 'will it rain tomorrow'.")
+                   "example 'what's the weather in Pune', 'will it rain tomorrow' or just "
+                   "'what's the weather like' (no city said: leave place out).")
     args_schema = {
         "type": "object",
         "properties": {

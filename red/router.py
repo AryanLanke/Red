@@ -89,6 +89,50 @@ def split_commands(text: str) -> list[str]:
     return parts if 1 < len(parts) <= MAX_STEPS else [text.strip()]
 
 
+def _kind(prop: dict) -> str:
+    """One property's type in a few words: 'string', 'chrome|edge|firefox', 'integer 5-1440', 'list of string'."""
+    if "enum" in prop:
+        return "|".join(str(v) for v in prop["enum"])
+    kind = prop.get("type", "any")
+    if kind in ("integer", "number"):
+        low, high = prop.get("minimum"), prop.get("maximum")
+        if low is not None and high is not None:
+            return f"{kind} {low}-{high}"
+        return f"{kind} >= {low}" if low is not None else f"{kind} <= {high}" if high is not None else kind
+    if kind == "array":
+        item = prop.get("items", {})
+        return f"list of {_kind(item) if isinstance(item, dict) else 'any'}"
+    if kind == "object":
+        return "object " + json.dumps(prop.get("properties", {}), separators=(",", ":"), ensure_ascii=False)
+    if kind == "boolean":
+        return "true|false"
+    return str(kind)
+
+
+def compact_args(schema: dict) -> str:
+    """A tool's arguments as a short line for the router prompt: 'url* (string); browser (chrome|edge|firefox): ...'.
+
+    `*` marks a required argument. The full JSON schema is what constrains the model's reply
+    (Router.schema) and what parse() checks, so the prompt only needs the names, kinds and the
+    descriptions; patterns and length limits are left out. The full schema took 60% of the prompt:
+    27,000 characters, about 6,500 tokens, read again for every command. A pattern with no
+    description to explain it is kept, since the model has nothing else to go by.
+    """
+    props = schema.get("properties", {})
+    if not props:
+        return "none"
+    required = set(schema.get("required", ()))
+    parts = []
+    for name, prop in props.items():
+        text = f"{name}{'*' if name in required else ''} ({_kind(prop)})"
+        if prop.get("description"):
+            text += f": {prop['description']}"
+        elif prop.get("pattern"):
+            text += f" matching {prop['pattern']}"
+        parts.append(text)
+    return "; ".join(parts)
+
+
 class RouteError(ValueError):
     """The LLM's reply was not a valid tool call."""
 
@@ -154,7 +198,7 @@ class Router:
         self.schema = self._build_schema()
         self._validator = Draft202012Validator(self.schema)
         self.system_prompt = SYSTEM_PROMPT.format(tools="\n".join(
-            f"- {t.name}: {t.description} args schema: {json.dumps(t.args_schema, separators=(',', ':'), ensure_ascii=False)}"
+            f"- {t.name}: {t.description} args: {compact_args(t.args_schema)}"
             for t in registry
         ))
         fit_context(llm, self.system_prompt)
