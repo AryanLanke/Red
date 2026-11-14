@@ -387,14 +387,21 @@ def make_music(registry, rng: random.Random | None = None, *, local=None, window
             recent.append(path)
             del recent[:-8]
             return Song(announce(c, title_of(path)), lambda: local.play(path), "local")
-        title, query = rng.choice(SONGS.get(c.id, GENERIC_SONGS))
+        # One of the companion's own songs (red/taste.py), with why; the old famous list without them.
+        from . import taste
+        favourite = taste.pick_song(c, rng=rng)
+        if favourite is not None:
+            title, query, line = favourite.title, favourite.query, taste.pick_line(c, favourite, rng)
+        else:
+            title, query = rng.choice(SONGS.get(c.id, GENERIC_SONGS))
+            line = announce(c, title)
         tool_name = "play_online" if source == "online" else "spotify_search"
 
         def play():
             tool = registry.get(tool_name)
             tool.run(query=query)
             run_later(tool.take_later())            # bring the window to the front, like a command would
-        text = announce(c, title) if source == "online" else f"Pulling up {title} on Spotify."
+        text = line if source == "online" else f"Pulling up {title} on Spotify."
         return Song(text, play, source)
     return choose
 

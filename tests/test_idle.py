@@ -433,7 +433,8 @@ def test_make_music_falls_back_to_youtube_with_a_famous_song(tmp_path):
     song = choose(companions.load("red", tmp_path))
     assert song.source == "online" and song.announce.startswith(("Putting on", "I'm putting on")) or "Trust me" in song.announce
     song.play()
-    assert registry.get("play_online").calls[0] in [q for _, q in idlemod.SONGS["red"]]
+    red = companions.load("red", tmp_path)
+    assert registry.get("play_online").calls[0] in [s.query for s in red.songs]
 
 
 def test_make_music_uses_spotify_only_when_it_is_open(tmp_path):

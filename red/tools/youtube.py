@@ -2,6 +2,9 @@
 
 Red has no local music player: the user plays everything online.
 
+"Play whatever you like", "surprise me", "something calm": the active companion picks one of its own
+songs (red/taste.py), searches its real title and artist, and says what and why in one line.
+
 Red fetches YouTube's public results page for the user's words, reads the
 first video in it, and opens https://www.youtube.com/watch?v=<id> in the
 browser (RED_BROWSER, Chrome by default), which starts playing, and brings
@@ -16,6 +19,7 @@ fixed template, so nothing from the page reaches the shell.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import socket
 import unicodedata
@@ -28,6 +32,8 @@ from urllib.parse import quote_plus
 from .. import browser as _browser
 from .. import windows as _windows
 from .base import Tool, ToolError
+
+log = logging.getLogger(__name__)
 
 SEARCH_URL = "https://www.youtube.com/results?search_query={q}"
 WATCH_URL = "https://www.youtube.com/watch?v={id}"
@@ -126,6 +132,12 @@ class Video:
         if not _ID_OK.fullmatch(self.id):
             raise ValueError(f"not a YouTube video id: {self.id!r}")
         return WATCH_URL.format(id=self.id)
+
+
+def own_pick(query: str):
+    """'play whatever you like': one of the active companion's own songs (red/taste.py), or None."""
+    from .. import companions, taste
+    return taste.own_pick(query, companions.active())
 
 
 def search_url(query: str) -> str:
@@ -303,11 +315,12 @@ class PlayOnline(Tool):
 
     def __init__(self, open_browser: Callable[[str], bool] | None = None,
                  find: Callable[[str], Video | None] = fetch_results, watch: Callable | None = None,
-                 browsers: _browser.Browsers | None = None):
+                 browsers: _browser.Browsers | None = None, pick: Callable[[str], object] | None = None):
         # open_browser on its own (tests) is the Windows-default opener.
         self._browsers = browsers or _browser.Browsers(default_open=open_browser)
         self._find = find
         self._watch = watch
+        self._pick = pick or own_pick       # "play whatever you like": the companion's own song (red/taste.py)
 
     def _open_and_front(self, url: str) -> bool:
         choice = self._browsers.pick()
@@ -321,7 +334,10 @@ class PlayOnline(Tool):
     def run(self, query: str) -> str:
         if not " ".join(query.split()):
             raise ToolError("What should I play?")
-        if is_liked_songs(query):
+        picked = self._own_pick(query)
+        if picked is not None:
+            query = picked.query            # the real title and artist, never "whatever you like"
+        elif is_liked_songs(query):
             if not self._open_and_front(LIKED_URL):
                 raise ToolError("I couldn't open the browser.")
             return "Opening your liked songs on YouTube."
@@ -332,12 +348,29 @@ class PlayOnline(Tool):
             # Offline, slow or a changed page: the results page still lets you pick.
             if not self._open_and_front(search_url(query)):
                 raise ToolError("I couldn't open the browser.") from e
+            if picked is not None:
+                return f"{picked.line} YouTube didn't answer, so I opened the search for it."
             return f"I couldn't reach YouTube's results, so I opened the search for {query}."
         if video is None:
             if not self._open_and_front(search_url(query)):
                 raise ToolError("I couldn't open the browser.")
+            if picked is not None:
+                return f"{picked.line} I couldn't start it, so here's the search for it."
             return f"I didn't find a video to start, so here's the YouTube search for {query}."
         if not self._open_and_front(video.url):
             raise ToolError("I couldn't open the browser.")
+        if picked is not None:
+            return picked.line              # what, and why, in the companion's words
         title = spoken_title(video.title)
         return f"Playing {title} on YouTube." if title else f"Playing {query} on YouTube."
+
+    def _own_pick(self, query: str):
+        """The companion's own song when the user left the choice to it, else None."""
+        from .. import taste
+        if not taste.wants_own_pick(query):
+            return None
+        try:
+            return self._pick(query)
+        except Exception:  # noqa: BLE001 - a mix of popular songs beats nothing
+            log.exception("Couldn't pick a song of the companion's own")
+            return None

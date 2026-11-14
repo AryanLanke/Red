@@ -27,6 +27,14 @@ def _no_window_fronting(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_song_picks(monkeypatch, tmp_path):
+    """No test reads or writes the user's last song picks (RED_HOME\\cache\\taste.json)."""
+    import red.taste
+    monkeypatch.setattr(red.taste, "_state_path",
+                        lambda home: (Path(home) if home else tmp_path) / "cache" / "taste.json")
+
+
+@pytest.fixture(autouse=True)
 def _no_real_searxng(monkeypatch):
     """No test starts Red's SearXNG, even with RED_HOME pointing at a real install."""
     import red.searxng
